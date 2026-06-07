@@ -22,6 +22,11 @@
     removeExchange,
   } from "$lib/helpers/mrm/admin/growdata";
   import { encryptSecret } from "$lib/helpers/encryption/crypto";
+  import {
+    buildAdminApiKeySubmission,
+    getAdminApiKeyCredentialCopy,
+    toAdminApiKeyDisplayRecord,
+  } from "$lib/helpers/admin/api-key-credentials";
   import { getExchangeReadiness, summarizeExchangeReadiness } from "$lib/helpers/admin/exchange-readiness";
   import {
     getApiKeyPermissionViews,
@@ -124,6 +129,7 @@
   let encryptionReady = $derived(Boolean(publicKey) && !metadataLoading && !metadataError);
   let accountExchangeQuery = $derived(accountForm.exchange.trim().toLowerCase());
   let supportedExchangeIds = $derived(new Set(supportedExchanges.map((exchange) => exchange.toLowerCase())));
+  let accountCredentialCopy = $derived(getAdminApiKeyCredentialCopy(accountForm.exchange));
   let matchingCcxtExchanges = $derived(
     allCcxtExchanges
       .filter((exchange) => !accountExchangeQuery || exchange.toLowerCase().includes(accountExchangeQuery))
@@ -150,13 +156,6 @@
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
     return date.toLocaleString();
-  };
-
-  const fingerprint = (value?: string): string => {
-    const raw = String(value || "").replace(/\s/g, "");
-    if (!raw) return $_("admin_unavailable");
-    const tail = raw.slice(-8).padStart(8, "*");
-    return tail;
   };
 
   const formatBalanceAmount = (value: number | string | undefined): string => {
@@ -377,10 +376,10 @@
 
     if (!exchange) nextErrors.exchange = $_("admin_form_choose_exchange");
     if (!name) nextErrors.name = $_("admin_form_enter_account_label");
-    if (!apiKey) nextErrors.apiKey = $_("admin_form_paste_api_key");
-    if (!apiSecret) nextErrors.apiSecret = $_("admin_form_paste_api_secret");
-    if (apiKey && apiKey.length < 4) nextErrors.apiKey = $_("admin_form_api_key_min_length");
-    if (apiSecret && apiSecret.length < 4) nextErrors.apiSecret = $_("admin_form_api_secret_min_length");
+    if (!apiKey) nextErrors.apiKey = $_(accountCredentialCopy.apiKeyRequired);
+    if (!apiSecret) nextErrors.apiSecret = $_(accountCredentialCopy.apiSecretRequired);
+    if (apiKey && apiKey.length < 4) nextErrors.apiKey = $_(accountCredentialCopy.apiKeyMinLength);
+    if (apiSecret && apiSecret.length < 4) nextErrors.apiSecret = $_(accountCredentialCopy.apiSecretMinLength);
     if (apiKey && existingExchangeApiKeys.has(`${exchange.toLowerCase()}:${apiKey}`)) {
       nextErrors.duplicate = $_("admin_form_api_key_duplicate");
     }
@@ -406,13 +405,13 @@
     try {
       const encryptedSecret = await encryptSecret(accountForm.apiSecret.trim(), publicKey);
       await addAPIKey(
-        {
+        buildAdminApiKeySubmission({
           exchange,
           name: accountForm.name.trim(),
-          api_key: accountForm.apiKey.trim(),
-          api_secret: encryptedSecret,
+          apiKey: accountForm.apiKey.trim(),
+          encryptedSecret,
           permissions: accountForm.permissions,
-        },
+        }),
         adminToken,
       );
       toast.success($_("admin_connectivity_account_added"));
@@ -758,19 +757,20 @@
                         <tbody>
                           {#each exchangeKeys as key (key.key_id)}
                             {@const keyReadiness = getApiKeyReadiness(key)}
+                            {@const displayKey = toAdminApiKeyDisplayRecord(key)}
                             <tr class="border-b border-base-300 last:border-b-0">
                               <td>
                                 <button
                                   type="button"
                                   class="group flex max-w-[260px] flex-col rounded-md px-2 py-1 text-left transition-colors hover:bg-base-200 focus:outline-none focus:ring-2 focus:ring-primary/40"
                                   onclick={() => openAccountDetailDialog(key)}
-                                  aria-label={$_("admin_connectivity_view_account_details", { values: { name: key.name } })}
+                                  aria-label={$_("admin_connectivity_view_account_details", { values: { name: displayKey.name } })}
                                 >
-                                  <span class="truncate text-sm font-medium text-base-content group-hover:text-primary">{key.name}</span>
+                                  <span class="truncate text-sm font-medium text-base-content group-hover:text-primary">{displayKey.name}</span>
                                   <span class="text-xs text-base-content/45">{$_("admin_connectivity_view_balances")}</span>
                                 </button>
                               </td>
-                              <td class="font-mono text-xs text-base-content/70">{fingerprint(key.api_key)}</td>
+                              <td class="font-mono text-xs text-base-content/70">{displayKey.publicCredentialFingerprint}</td>
                               <td>
                                 <span class="flex flex-wrap gap-1">
                                   {#each getApiKeyPermissionViews(key) as permission (permission.capability)}
@@ -902,14 +902,16 @@
       <div class="my-1 h-px bg-base-300"></div>
 
       <label class="flex flex-col gap-1.5">
-        <span class="label-text text-xs font-medium capitalize text-base-content/60">{$_("api_key")}</span>
-        <input class="input input-bordered w-full rounded-2xl border-base-300 bg-base-100 font-mono text-sm" placeholder={$_("admin_connectivity_paste_api_key")} bind:value={accountForm.apiKey} />
+        <span class="label-text text-xs font-medium capitalize text-base-content/60">{$_(accountCredentialCopy.apiKeyLabel)}</span>
+        <input class="input input-bordered w-full rounded-2xl border-base-300 bg-base-100 font-mono text-sm" placeholder={$_(accountCredentialCopy.apiKeyPlaceholder)} bind:value={accountForm.apiKey} />
+        <span class="text-xs text-base-content/50">{$_(accountCredentialCopy.apiKeyHelp)}</span>
         {#if accountFormErrors.apiKey}<span class="text-xs text-error">{accountFormErrors.apiKey}</span>{/if}
       </label>
 
       <label class="flex flex-col gap-1.5">
-        <span class="label-text text-xs font-medium capitalize text-base-content/60">{$_("api_secret")}</span>
-        <input class="input input-bordered w-full rounded-2xl border-base-300 bg-base-100 font-mono text-sm" type="password" placeholder={$_("admin_connectivity_paste_api_secret")} bind:value={accountForm.apiSecret} />
+        <span class="label-text text-xs font-medium capitalize text-base-content/60">{$_(accountCredentialCopy.apiSecretLabel)}</span>
+        <input class="input input-bordered w-full rounded-2xl border-base-300 bg-base-100 font-mono text-sm" type="password" placeholder={$_(accountCredentialCopy.apiSecretPlaceholder)} bind:value={accountForm.apiSecret} />
+        <span class="text-xs text-base-content/50">{$_(accountCredentialCopy.apiSecretHelp)}</span>
         {#if accountFormErrors.apiSecret}<span class="text-xs text-error">{accountFormErrors.apiSecret}</span>{/if}
       </label>
 
@@ -952,9 +954,9 @@
   <div class="modal-box max-w-3xl rounded-t-3xl border border-base-300 bg-base-100 p-0 shadow-2xl sm:rounded-3xl">
     <div class="flex items-start justify-between gap-4 border-b border-base-300 px-6 pb-5 pt-6">
       <span class="flex min-w-0 flex-col gap-1">
-        <span class="truncate text-xl font-semibold tracking-tight text-base-content">{selectedAccountKey?.name || $_("admin_connectivity_account")}</span>
+        <span class="truncate text-xl font-semibold tracking-tight text-base-content">{selectedAccountKey ? toAdminApiKeyDisplayRecord(selectedAccountKey).name : $_("admin_connectivity_account")}</span>
         <span class="text-sm text-base-content/60">
-          {selectedAccountKey?.exchange || $_("exchange")} · {fingerprint(selectedAccountKey?.api_key)}
+          {selectedAccountKey ? toAdminApiKeyDisplayRecord(selectedAccountKey).exchange : $_("exchange")} · {selectedAccountKey ? toAdminApiKeyDisplayRecord(selectedAccountKey).publicCredentialFingerprint : $_("admin_unavailable")}
         </span>
       </span>
       <button

@@ -288,6 +288,7 @@ export class CampaignService {
       if (message) {
         return String(message);
       }
+
       return JSON.stringify(responseData);
     }
 

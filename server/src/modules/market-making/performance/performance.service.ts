@@ -24,6 +24,9 @@ export type OrderPerformanceDto = {
     tradedQuoteVolume: string;
     effectiveSpreadBps: string | null;
     fillCount: number;
+    inventoryBaseQty: string;
+    inventoryCostQuote: string;
+    inventoryAverageCostQuote: string | null;
     otherFees: Array<{ assetId: string; amount: string }>;
   };
   reconciliation?: {
@@ -204,6 +207,11 @@ export class PerformanceService {
               .toFixed()
           : null,
         fillCount,
+        inventoryBaseQty: inventoryBaseQty.toFixed(),
+        inventoryCostQuote: inventoryCostQuote.toFixed(),
+        inventoryAverageCostQuote: inventoryBaseQty.isGreaterThan(0)
+          ? inventoryCostQuote.dividedBy(inventoryBaseQty).toFixed()
+          : null,
         otherFees: [...otherFees.entries()].map(([assetId, amount]) => ({
           assetId,
           amount: amount.toFixed(),

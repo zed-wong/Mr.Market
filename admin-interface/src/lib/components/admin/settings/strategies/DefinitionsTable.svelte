@@ -54,12 +54,12 @@
   }
 </script>
 
-<div id="definitions-table" class="bg-base-100 rounded-2xl p-4 sm:p-6 shadow-sm border border-base-200/50">
+<div id="definitions-table" class="bg-base-100/70 rounded-2xl p-4 sm:p-6 shadow-sm border border-dashed border-base-300/80">
   <div
     class="flex flex-col sm:flex-row justify-between items-start xl:items-center gap-4 mb-6"
   >
     <div>
-      <h2 class="text-[1.1rem] font-bold text-base-content">
+      <h2 class="text-[1rem] font-bold text-base-content/80">
         {$_("admin_strategy_definitions_table_title")}
       </h2>
       <span class="text-[13px] text-base-content/50 mt-1">
@@ -69,7 +69,7 @@
 
     <div class="flex flex-wrap items-center gap-2 sm:gap-3">
       <button
-        class="btn bg-base-content hover:bg-base-content text-base-100 border-none min-h-[40px] h-10 px-4 rounded-lg text-sm font-semibold shadow-sm"
+        class="btn bg-base-200 hover:bg-base-300 text-base-content border-none min-h-[40px] h-10 px-4 rounded-lg text-sm font-semibold shadow-sm"
         on:click={onNewClick}
       >
         <svg

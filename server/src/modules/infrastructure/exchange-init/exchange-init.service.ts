@@ -221,7 +221,9 @@ export class ExchangeInitService {
 
         if (account.sandboxMode) {
           this.applySandboxExchangeOverrides(config.name, exchange);
+        }
 
+        if (account.sandboxMode) {
           if (typeof (exchange as any).setSandboxMode !== 'function') {
             throw new Error(
               `Exchange ${config.name} does not expose setSandboxMode(true)`,

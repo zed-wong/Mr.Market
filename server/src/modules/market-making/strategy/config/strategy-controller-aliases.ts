@@ -6,6 +6,8 @@ const CONTROLLER_TYPE_ALIASES: Record<string, string> = {
   'dual-account-volume': 'dualAccountVolume',
   dual_account_best_capacity_volume: 'dualAccountBestCapacityVolume',
   'dual-account-best-capacity-volume': 'dualAccountBestCapacityVolume',
+  efficient_dual_account_volume: 'efficientDualAccountVolume',
+  'efficient-dual-account-volume': 'efficientDualAccountVolume',
   time_indicator: 'timeIndicator',
 };
 

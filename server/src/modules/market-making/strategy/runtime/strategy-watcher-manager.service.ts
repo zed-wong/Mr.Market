@@ -126,7 +126,8 @@ export class StrategyWatcherManagerService {
   ): string | undefined {
     if (
       strategyType === 'dualAccountVolume' ||
-      strategyType === 'dualAccountBestCapacityVolume'
+      strategyType === 'dualAccountBestCapacityVolume' ||
+      strategyType === 'efficientDualAccountVolume'
     ) {
       return undefined;
     }
@@ -149,7 +150,8 @@ export class StrategyWatcherManagerService {
   ): string[] {
     if (
       strategyType === 'dualAccountVolume' ||
-      strategyType === 'dualAccountBestCapacityVolume'
+      strategyType === 'dualAccountBestCapacityVolume' ||
+      strategyType === 'efficientDualAccountVolume'
     ) {
       const dualParams = params as unknown as DualAccountVolumeStrategyParams;
 
@@ -167,7 +169,8 @@ export class StrategyWatcherManagerService {
     return (
       strategyType === 'pureMarketMaking' ||
       strategyType === 'dualAccountVolume' ||
-      strategyType === 'dualAccountBestCapacityVolume'
+      strategyType === 'dualAccountBestCapacityVolume' ||
+      strategyType === 'efficientDualAccountVolume'
     );
   }
 
@@ -176,7 +179,8 @@ export class StrategyWatcherManagerService {
       strategyType === 'pureMarketMaking' ||
       strategyType === 'timeIndicator' ||
       strategyType === 'dualAccountVolume' ||
-      strategyType === 'dualAccountBestCapacityVolume'
+      strategyType === 'dualAccountBestCapacityVolume' ||
+      strategyType === 'efficientDualAccountVolume'
     );
   }
 }

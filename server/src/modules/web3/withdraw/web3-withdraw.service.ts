@@ -185,15 +185,19 @@ export class Web3WithdrawService {
     });
 
     if (existingEvent) {
-      const existingWithdrawal = await this.loadWithdrawal(normalized.requestId);
+      const existingWithdrawal = await this.loadWithdrawal(
+        normalized.requestId,
+      );
 
       return this.serializeEventResponse(existingWithdrawal, false);
     }
 
     const withdrawal = await this.loadWithdrawal(normalized.requestId);
+
     this.assertWithdrawalEventMatchesRequest(withdrawal, normalized);
 
     const now = getRFC3339Timestamp();
+
     withdrawal.status = 'onchain_seen';
     withdrawal.requestTxHash = normalized.txHash;
     withdrawal.requestLogIndex = normalized.logIndex;
@@ -227,6 +231,7 @@ export class Web3WithdrawService {
     body: WithdrawalRequestBody,
   ) {
     const orderId = String(body?.orderId || '').trim();
+
     if (!orderId) {
       throw this.badRequest('ORDER_ID_REQUIRED', 'orderId is required');
     }
@@ -234,6 +239,7 @@ export class Web3WithdrawService {
       userId,
       orderId,
     );
+
     if (!order || order.source === 'admin_direct') {
       throw new NotFoundException('Market making order not found');
     }
@@ -262,7 +268,9 @@ export class Web3WithdrawService {
     const requestKey = this.normalizeRequestKey(body);
     const idempotencyKey = requestKey
       ? `web3:withdrawal-request:${userId}:${requestKey}`
-      : `web3:withdrawal-request:${userId}:${ethers.utils.hexlify(randomBytes(32))}`;
+      : `web3:withdrawal-request:${userId}:${ethers.utils.hexlify(
+          randomBytes(32),
+        )}`;
     const requestId = requestKey
       ? this.hashPayload({ type: 'withdrawal_request_id', idempotencyKey })
       : ethers.utils.hexlify(randomBytes(32));
@@ -327,9 +335,11 @@ export class Web3WithdrawService {
       refType: 'web3_order_withdrawal',
       refId: withdrawal.withdrawalId,
     });
+
     withdrawal.ledgerEntryId = ledgerResult.entry.entryId;
 
     const feeAmount = new BigNumber(withdrawal.feeAmount || 0);
+
     if (feeAmount.isGreaterThan(0)) {
       const feeResult = await this.balanceLedgerService.debitFee({
         orderId: withdrawal.orderId,
@@ -340,6 +350,7 @@ export class Web3WithdrawService {
         refType: 'web3_order_withdrawal_fee',
         refId: withdrawal.withdrawalId,
       });
+
       withdrawal.feeLedgerEntryId = feeResult.entry.entryId;
     }
 
@@ -386,12 +397,15 @@ export class Web3WithdrawService {
     receipt: ethers.providers.TransactionReceipt,
   ): WithdrawalRequestedEvent {
     for (const log of receipt.logs) {
-      if (log.address.toLowerCase() !== withdrawal.routerAddress.toLowerCase()) {
+      if (
+        log.address.toLowerCase() !== withdrawal.routerAddress.toLowerCase()
+      ) {
         continue;
       }
 
       try {
         const parsed = ROUTER_INTERFACE.parseLog(log);
+
         if (parsed.name !== 'WithdrawalRequested') {
           continue;
         }
@@ -451,7 +465,10 @@ export class Web3WithdrawService {
         'event chain does not match request',
       );
     }
-    if (withdrawal.routerAddress.toLowerCase() !== event.routerAddress.toLowerCase()) {
+    if (
+      withdrawal.routerAddress.toLowerCase() !==
+      event.routerAddress.toLowerCase()
+    ) {
       throw this.badRequest(
         'WITHDRAWAL_ROUTER_MISMATCH',
         'event router does not match request',
@@ -463,13 +480,18 @@ export class Web3WithdrawService {
         'event token does not match request',
       );
     }
-    if (withdrawal.recipientAddress.toLowerCase() !== event.recipient.toLowerCase()) {
+    if (
+      withdrawal.recipientAddress.toLowerCase() !==
+      event.recipient.toLowerCase()
+    ) {
       throw this.badRequest(
         'WITHDRAWAL_RECIPIENT_MISMATCH',
         'event recipient does not match request',
       );
     }
-    if (withdrawal.payloadHash.toLowerCase() !== event.payloadHash.toLowerCase()) {
+    if (
+      withdrawal.payloadHash.toLowerCase() !== event.payloadHash.toLowerCase()
+    ) {
       throw this.badRequest(
         'WITHDRAWAL_PAYLOAD_MISMATCH',
         'event payload hash does not match request',
@@ -479,7 +501,10 @@ export class Web3WithdrawService {
       withdrawal.chainId,
       withdrawal.tokenAddress,
     );
-    if (!this.toTokenBaseUnits(withdrawal.amount, token.decimals).eq(event.amount)) {
+
+    if (
+      !this.toTokenBaseUnits(withdrawal.amount, token.decimals).eq(event.amount)
+    ) {
       throw this.badRequest(
         'WITHDRAWAL_AMOUNT_MISMATCH',
         'event amount does not match request',
@@ -522,20 +547,60 @@ export class Web3WithdrawService {
 
   private normalizeWithdrawalRequestedEvent(event: WithdrawalRequestedEvent) {
     return {
-      chainId: this.parsePositiveInteger(event.chainId, 'CHAIN_ID_INVALID', 'chainId is required'),
-      requestId: this.normalizeBytes32(event.requestId, 'REQUEST_ID_INVALID', 'requestId must be bytes32 hex'),
-      user: this.normalizeAddress(event.user, 'USER_ADDRESS_INVALID', 'event user must be a valid EVM address'),
-      token: this.normalizeAddress(event.token, 'TOKEN_ADDRESS_INVALID', 'event token must be a valid EVM address'),
+      chainId: this.parsePositiveInteger(
+        event.chainId,
+        'CHAIN_ID_INVALID',
+        'chainId is required',
+      ),
+      requestId: this.normalizeBytes32(
+        event.requestId,
+        'REQUEST_ID_INVALID',
+        'requestId must be bytes32 hex',
+      ),
+      user: this.normalizeAddress(
+        event.user,
+        'USER_ADDRESS_INVALID',
+        'event user must be a valid EVM address',
+      ),
+      token: this.normalizeAddress(
+        event.token,
+        'TOKEN_ADDRESS_INVALID',
+        'event token must be a valid EVM address',
+      ),
       amount: this.normalizeBaseUnitAmount(event.amount),
-      recipient: this.normalizeAddress(event.recipient, 'RECIPIENT_ADDRESS_INVALID', 'event recipient must be a valid EVM address'),
-      payloadHash: this.normalizeBytes32(event.payloadHash, 'PAYLOAD_HASH_INVALID', 'payloadHash must be bytes32 hex'),
-      routerAddress: this.normalizeAddress(event.routerAddress, 'ROUTER_ADDRESS_INVALID', 'event router must be a valid EVM address'),
-      txHash: this.normalizeBytes32(event.txHash, 'TX_HASH_INVALID', 'txHash must be bytes32 hex'),
-      logIndex: this.parseNonNegativeInteger(event.logIndex, 'LOG_INDEX_INVALID', 'logIndex is required'),
+      recipient: this.normalizeAddress(
+        event.recipient,
+        'RECIPIENT_ADDRESS_INVALID',
+        'event recipient must be a valid EVM address',
+      ),
+      payloadHash: this.normalizeBytes32(
+        event.payloadHash,
+        'PAYLOAD_HASH_INVALID',
+        'payloadHash must be bytes32 hex',
+      ),
+      routerAddress: this.normalizeAddress(
+        event.routerAddress,
+        'ROUTER_ADDRESS_INVALID',
+        'event router must be a valid EVM address',
+      ),
+      txHash: this.normalizeBytes32(
+        event.txHash,
+        'TX_HASH_INVALID',
+        'txHash must be bytes32 hex',
+      ),
+      logIndex: this.parseNonNegativeInteger(
+        event.logIndex,
+        'LOG_INDEX_INVALID',
+        'logIndex is required',
+      ),
       blockNumber:
         event.blockNumber === undefined || event.blockNumber === null
           ? undefined
-          : this.parseNonNegativeInteger(event.blockNumber, 'BLOCK_NUMBER_INVALID', 'blockNumber must be non-negative'),
+          : this.parseNonNegativeInteger(
+              event.blockNumber,
+              'BLOCK_NUMBER_INVALID',
+              'blockNumber must be non-negative',
+            ),
     };
   }
 
@@ -562,7 +627,11 @@ export class Web3WithdrawService {
     ).trim();
   }
 
-  private normalizeAddress(addressInput: unknown, code: string, message: string) {
+  private normalizeAddress(
+    addressInput: unknown,
+    code: string,
+    message: string,
+  ) {
     try {
       return ethers.utils.getAddress(String(addressInput || '').trim());
     } catch {
@@ -571,7 +640,9 @@ export class Web3WithdrawService {
   }
 
   private normalizeBytes32(valueInput: unknown, code: string, message: string) {
-    const value = String(valueInput || '').trim().toLowerCase();
+    const value = String(valueInput || '')
+      .trim()
+      .toLowerCase();
 
     if (!ethers.utils.isHexString(value, 32)) {
       throw this.badRequest(code, message);
@@ -584,7 +655,10 @@ export class Web3WithdrawService {
     const amount = new BigNumber(String(amountInput || '').trim());
 
     if (!amount.isFinite() || amount.isLessThanOrEqualTo(0)) {
-      throw this.badRequest('AMOUNT_INVALID', 'amount must be a positive numeric string');
+      throw this.badRequest(
+        'AMOUNT_INVALID',
+        'amount must be a positive numeric string',
+      );
     }
 
     return amount.toFixed();
@@ -594,13 +668,20 @@ export class Web3WithdrawService {
     const amount = new BigNumber(String(amountInput || '').trim());
 
     if (!amount.isInteger() || amount.isLessThanOrEqualTo(0)) {
-      throw this.badRequest('AMOUNT_INVALID', 'event amount must be a positive integer base-unit amount');
+      throw this.badRequest(
+        'AMOUNT_INVALID',
+        'event amount must be a positive integer base-unit amount',
+      );
     }
 
     return ethers.BigNumber.from(amount.toFixed(0));
   }
 
-  private parsePositiveInteger(valueInput: unknown, code: string, message: string) {
+  private parsePositiveInteger(
+    valueInput: unknown,
+    code: string,
+    message: string,
+  ) {
     const value = Number(valueInput);
 
     if (!Number.isInteger(value) || value <= 0) {
@@ -610,7 +691,11 @@ export class Web3WithdrawService {
     return value;
   }
 
-  private parseNonNegativeInteger(valueInput: unknown, code: string, message: string) {
+  private parseNonNegativeInteger(
+    valueInput: unknown,
+    code: string,
+    message: string,
+  ) {
     const value = Number(valueInput);
 
     if (!Number.isInteger(value) || value < 0) {
@@ -624,12 +709,17 @@ export class Web3WithdrawService {
     try {
       return ethers.utils.parseUnits(amount, decimals);
     } catch {
-      throw this.badRequest('AMOUNT_INVALID', `amount must fit ${decimals} token decimals`);
+      throw this.badRequest(
+        'AMOUNT_INVALID',
+        `amount must fit ${decimals} token decimals`,
+      );
     }
   }
 
   private hashPayload(payload: unknown): string {
-    return `0x${createHash('sha256').update(this.stableStringify(payload)).digest('hex')}`;
+    return `0x${createHash('sha256')
+      .update(this.stableStringify(payload))
+      .digest('hex')}`;
   }
 
   private stableStringify(value: unknown): string {
@@ -644,7 +734,10 @@ export class Web3WithdrawService {
 
     return `{${Object.keys(objectValue)
       .sort()
-      .map((key) => `${JSON.stringify(key)}:${this.stableStringify(objectValue[key])}`)
+      .map(
+        (key) =>
+          `${JSON.stringify(key)}:${this.stableStringify(objectValue[key])}`,
+      )
       .join(',')}}`;
   }
 
@@ -652,7 +745,8 @@ export class Web3WithdrawService {
     idempotencyKey: string,
     operation: () => Promise<T>,
   ): Promise<T> {
-    const currentTail = this.requestLocks.get(idempotencyKey) || Promise.resolve();
+    const currentTail =
+      this.requestLocks.get(idempotencyKey) || Promise.resolve();
     let releaseCurrent: () => void = () => {};
     const nextTail = new Promise<void>((resolve) => {
       releaseCurrent = resolve;
@@ -673,7 +767,8 @@ export class Web3WithdrawService {
   }
 
   private normalizeFailureReason(error: unknown): string {
-    const message = error instanceof Error ? error.message : String(error || 'unknown error');
+    const message =
+      error instanceof Error ? error.message : String(error || 'unknown error');
 
     return message.slice(0, 500);
   }

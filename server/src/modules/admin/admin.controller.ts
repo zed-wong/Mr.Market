@@ -21,7 +21,6 @@ import {
 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { MetricsService } from '../market-making/metrics/metrics.service';
-import { AdminAuditInterceptor } from './system/admin-audit.interceptor';
 import {
   GrowdataArbitragePairDto,
   GrowdataExchangeDto,
@@ -41,6 +40,7 @@ import {
   UpdateStrategyDefinitionDto,
 } from './strategy/admin-strategy.dto';
 import { AdminStrategyService } from './strategy/adminStrategy.service';
+import { AdminAuditInterceptor } from './system/admin-audit.interceptor';
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard)

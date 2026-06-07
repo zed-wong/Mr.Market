@@ -6,6 +6,7 @@ import { CampaignJoin } from 'src/common/entities/campaign/campaign-join.entity'
 import { Contribution } from 'src/common/entities/campaign/contribution.entity';
 import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.entity';
 import { SpotdataTradingPair } from 'src/common/entities/data/spot-data.entity';
+import { LedgerEntry } from 'src/common/entities/ledger/ledger-entry.entity';
 import { MarketMakingOrderBalance } from 'src/common/entities/ledger/market-making-order-balance.entity';
 import { ExchangeOrderMapping } from 'src/common/entities/market-making/exchange-order-mapping.entity';
 import { Performance } from 'src/common/entities/market-making/performance.entity';
@@ -23,8 +24,8 @@ import {
 import { CampaignModule } from '../campaign/campaign.module';
 import { GrowdataModule } from '../data/grow-data/grow-data.module';
 import { SpotdataModule } from '../data/spot-data/spot-data.module';
-import { ExchangeInitModule } from '../infrastructure/exchange-init/exchange-init.module';
 import { CustomConfigModule } from '../infrastructure/custom-config/custom-config.module';
+import { ExchangeInitModule } from '../infrastructure/exchange-init/exchange-init.module';
 import { HealthModule } from '../infrastructure/health/health.module';
 import { ExchangeApiKeyModule } from '../market-making/exchange-api-key/exchange-api-key.module';
 import { ExecutionModule } from '../market-making/execution/execution.module';
@@ -38,6 +39,8 @@ import { UserOrdersModule } from '../market-making/user-orders/user-orders.modul
 import { MixinClientModule } from '../mixin/client/mixin-client.module';
 import { Web3Module } from '../web3/web3.module';
 import { AdminController } from './admin.controller';
+import { AdminAnalyticsController } from './analytics/admin-analytics.controller';
+import { AdminAnalyticsService } from './analytics/admin-analytics.service';
 import { AdminDashboardController } from './dashboard/admin-dashboard.controller';
 import { AdminDashboardService } from './dashboard/admin-dashboard.service';
 import { AdminExchangesModule } from './exchanges/exchanges.module';
@@ -54,12 +57,12 @@ import { AdminPositionsController } from './positions/admin-positions.controller
 import { AdminPositionsService } from './positions/admin-positions.service';
 import { AdminSpotService } from './spot/admin-spot.service';
 import { AdminStrategyService } from './strategy/adminStrategy.service';
-import { AdminSystemHealthController } from './system/admin-system-health.controller';
-import { AdminSystemHealthService } from './system/admin-system-health.service';
-import { AdminSystemConfigController } from './system/admin-system-config.controller';
-import { AdminSystemConfigService } from './system/admin-system-config.service';
 import { AdminAuditModule } from './system/admin-audit.module';
 import { AdminSystemAuditController } from './system/admin-system-audit.controller';
+import { AdminSystemConfigController } from './system/admin-system-config.controller';
+import { AdminSystemConfigService } from './system/admin-system-config.service';
+import { AdminSystemHealthController } from './system/admin-system-health.controller';
+import { AdminSystemHealthService } from './system/admin-system-health.service';
 
 @Module({
   imports: [
@@ -90,6 +93,7 @@ import { AdminSystemAuditController } from './system/admin-system-audit.controll
       TrackedOrderEntity,
       MarketMakingOrder,
       SimplyGrowOrder,
+      LedgerEntry,
       MarketMakingOrderBalance,
       APIKeysConfig,
       MixinUser,
@@ -104,6 +108,7 @@ import { AdminSystemAuditController } from './system/admin-system-audit.controll
   ],
   controllers: [
     AdminController,
+    AdminAnalyticsController,
     AdminDashboardController,
     AdminOrdersController,
     AdminUserOrdersController,
@@ -116,6 +121,7 @@ import { AdminSystemAuditController } from './system/admin-system-audit.controll
   ],
   providers: [
     AdminStrategyService,
+    AdminAnalyticsService,
     AdminDashboardService,
     AdminOrdersService,
     AdminUserOrdersService,
@@ -129,6 +135,7 @@ import { AdminSystemAuditController } from './system/admin-system-audit.controll
   ],
   exports: [
     AdminStrategyService,
+    AdminAnalyticsService,
     AdminDashboardService,
     AdminOrdersService,
     AdminUserOrdersService,

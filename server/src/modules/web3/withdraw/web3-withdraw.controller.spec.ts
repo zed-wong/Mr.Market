@@ -24,7 +24,9 @@ describe('Web3WithdrawController', () => {
   });
 
   it('binds request creation to the authenticated web3 user and wallet', async () => {
-    service.createWithdrawalRequest.mockResolvedValueOnce({ withdrawalId: 'withdrawal-1' });
+    service.createWithdrawalRequest.mockResolvedValueOnce({
+      withdrawalId: 'withdrawal-1',
+    });
     const body = { orderId: 'order-1' };
 
     await controller.createWithdrawalRequest(body, {
@@ -42,14 +44,20 @@ describe('Web3WithdrawController', () => {
   });
 
   it('binds verify to the authenticated owner', async () => {
-    service.verifyWithdrawalTransaction.mockResolvedValueOnce({ withdrawalId: 'withdrawal-1' });
-
-    await controller.verifyWithdrawalTransaction('withdrawal-1', { txHash: 'tx' }, {
-      user: {
-        userId: 'user-1',
-        address: '0x1111111111111111111111111111111111111111',
-      },
+    service.verifyWithdrawalTransaction.mockResolvedValueOnce({
+      withdrawalId: 'withdrawal-1',
     });
+
+    await controller.verifyWithdrawalTransaction(
+      'withdrawal-1',
+      { txHash: 'tx' },
+      {
+        user: {
+          userId: 'user-1',
+          address: '0x1111111111111111111111111111111111111111',
+        },
+      },
+    );
 
     expect(service.verifyWithdrawalTransaction).toHaveBeenCalledWith(
       'user-1',
@@ -59,7 +67,9 @@ describe('Web3WithdrawController', () => {
   });
 
   it('binds status lookup to the authenticated owner', async () => {
-    service.getWithdrawal.mockResolvedValueOnce({ withdrawalId: 'withdrawal-1' });
+    service.getWithdrawal.mockResolvedValueOnce({
+      withdrawalId: 'withdrawal-1',
+    });
 
     await controller.getWithdrawal('withdrawal-1', {
       user: {
@@ -68,7 +78,10 @@ describe('Web3WithdrawController', () => {
       },
     });
 
-    expect(service.getWithdrawal).toHaveBeenCalledWith('user-1', 'withdrawal-1');
+    expect(service.getWithdrawal).toHaveBeenCalledWith(
+      'user-1',
+      'withdrawal-1',
+    );
   });
 
   it('rejects request creation when the authenticated web3 user is absent', async () => {

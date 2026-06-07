@@ -350,12 +350,7 @@ describe('ExchangeOrderTrackerService', () => {
         side: 'buy',
         price: '100',
         qty: '1',
-        status:
-          index < 7
-            ? 'open'
-            : index < 10
-              ? 'partially_filled'
-              : 'failed',
+        status: index < 7 ? 'open' : index < 10 ? 'partially_filled' : 'failed',
         createdAt: '2026-02-11T00:00:00.000Z',
         updatedAt: '2026-02-11T00:00:00.000Z',
       });
@@ -437,7 +432,9 @@ describe('ExchangeOrderTrackerService', () => {
       updatedAt: '2026-02-11T00:00:02.000Z',
     });
 
-    expect(service.removeTrackedOrder('binance', 'summary-update-2')).toBe(true);
+    expect(service.removeTrackedOrder('binance', 'summary-update-2')).toBe(
+      true,
+    );
     expect(service.removeTrackedOrder('binance', 'missing-order')).toBe(false);
 
     expect(service.getTrackedOrderSummary(10)).toMatchObject({

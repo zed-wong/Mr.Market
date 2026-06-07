@@ -7,6 +7,7 @@
 
   $: total = instances.length;
   $: running = instances.filter((i) => i.status === "running").length;
+  $: needsAttention = instances.filter((i) => ["failed", "stale"].includes(i.status)).length;
   $: stopped = instances.filter((i) => i.status === "stopped").length;
   $: latestActivity = instances.reduce<string | null>((latest, i) => {
     if (!latest) return i.updatedAt;
@@ -35,6 +36,10 @@
       <div class="flex flex-col">
         <span class="text-2xl font-bold text-success">{running}</span>
         <span class="text-xs text-base-content/50 mt-0.5">{$_("admin_strategy_status_running")}</span>
+      </div>
+      <div class="flex flex-col">
+        <span class="text-2xl font-bold {needsAttention > 0 ? 'text-warning' : 'text-base-content'}">{needsAttention}</span>
+        <span class="text-xs text-base-content/50 mt-0.5">{$_("admin_strategy_needs_attention")}</span>
       </div>
       <div class="flex flex-col">
         <span class="text-2xl font-bold text-base-content">{stopped}</span>

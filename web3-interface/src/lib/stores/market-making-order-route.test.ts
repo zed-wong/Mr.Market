@@ -29,8 +29,10 @@ describe('market-making campaign detail to order route', () => {
     expect(source).toContain('loadCreateOptions');
     expect(source).toContain('listMarketMakingStrategies');
     expect(source).toContain('listMarketMakingOptions');
-    expect(source).toContain('createMarketMakingOrder');
-    expect(source).toContain('/app/market-making/order/${encodeURIComponent(response.orderId)}');
+    expect(source).toContain('createFundingRequest');
+    expect(source).toContain('verifyFundingRequest');
+    expect(source).toContain('routeFundsWithWallet');
+    expect(source).toContain('/app/market-making/order/${encodeURIComponent(orderId)}');
     expect(source).not.toContain('order-create-campaign-not-found');
     expect(source).not.toContain('requestedCampaignId');
     expect(source).not.toContain('Choose a valid market-making campaign before creating an order.');
@@ -42,7 +44,8 @@ describe('market-making campaign detail to order route', () => {
 
     expect(source).toContain('signInWithEthereum');
     expect(source).toContain('hasAuthenticatedOrderScope');
-    expect(source).toContain('signWalletMessage(approvalMessage)');
+    expect(source).toContain('approveRouterTokenWithWallet');
+    expect(source).toContain('routeFundsWithWallet(routerCall)');
     expect(source).toContain("const PURE_MARKET_MAKING_KEY = 'pure_market_making'");
     expect(source).toContain("submitState = 'signing'");
     expect(source).toContain('isSubmitting = true');

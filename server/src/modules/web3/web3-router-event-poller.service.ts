@@ -1,18 +1,21 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
+import { ethers } from 'ethers';
 import { Web3FundingRequest } from 'src/common/entities/web3/web3-funding-request.entity';
 import { Web3Withdrawal } from 'src/common/entities/web3/web3-withdrawal.entity';
 import { Repository } from 'typeorm';
-import { ethers } from 'ethers';
 
 import { MR_MARKET_ROUTER_ABI } from './contracts/mr-market-router.abi';
-import { FundsRoutedEvent, Web3FundingService } from './funding/web3-funding.service';
+import {
+  FundsRoutedEvent,
+  Web3FundingService,
+} from './funding/web3-funding.service';
+import { Web3Service } from './web3.service';
 import {
   Web3WithdrawService,
   WithdrawalRequestedEvent,
 } from './withdraw/web3-withdraw.service';
-import { Web3Service } from './web3.service';
 
 @Injectable()
 export class Web3RouterEventPollerService {
@@ -68,6 +71,7 @@ export class Web3RouterEventPollerService {
     });
 
     let processed = 0;
+
     for (const request of requests) {
       if (this.isExpired(request.expiresAt)) {
         continue;
@@ -86,6 +90,7 @@ export class Web3RouterEventPollerService {
     });
 
     let processed = 0;
+
     for (const request of requests) {
       if (this.isExpired(request.expiresAt)) {
         continue;
@@ -114,6 +119,7 @@ export class Web3RouterEventPollerService {
 
     for (const log of logs) {
       const parsed = this.routerInterface.parseLog(log);
+
       await this.web3FundingService.recordFundsRoutedEvent({
         chainId: request.chainId,
         requestId: parsed.args.requestId,
@@ -152,6 +158,7 @@ export class Web3RouterEventPollerService {
 
     for (const log of logs) {
       const parsed = this.routerInterface.parseLog(log);
+
       await this.web3WithdrawService.recordWithdrawalRequestedEvent({
         chainId: request.chainId,
         requestId: parsed.args.requestId,
@@ -172,7 +179,10 @@ export class Web3RouterEventPollerService {
     return 0;
   }
 
-  private getFromBlock(startBlockNumber: number | undefined, latestBlock: number) {
+  private getFromBlock(
+    startBlockNumber: number | undefined,
+    latestBlock: number,
+  ) {
     return Math.max(
       0,
       startBlockNumber ??

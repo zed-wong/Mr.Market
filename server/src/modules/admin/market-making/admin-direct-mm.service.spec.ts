@@ -1,5 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BalanceStateCacheService } from 'src/modules/market-making/balance-state/balance-state-cache.service';
+import { OrderScopedBalanceQueryService } from 'src/modules/market-making/balance-state/order-scoped-balance-query.service';
+import { DualAccountPlannerService } from 'src/modules/market-making/strategy/dual-account/dual-account-planner.service';
+import { QuotePlannerService } from 'src/modules/market-making/strategy/quote/quote-planner.service';
 
 import { AdminDirectMarketMakingService } from './admin-direct-mm.service';
 
@@ -24,7 +28,15 @@ describe('AdminDirectMarketMakingService', () => {
     resolvedAt: '2026-04-01T00:00:00.000Z',
   });
 
-  const buildService = () => {
+  const buildService = (options?: {
+    balanceStateCacheService?: any;
+    balanceLedgerService?: any;
+    dualAccountPlannerService?: any;
+    strategyInstanceRepository?: any;
+    strategyOrderIntentRepository?: any;
+    strategyExecutionHistoryRepository?: any;
+    trackedOrderRepository?: any;
+  }) => {
     const marketMakingRepository = {
       create: jest.fn((payload) => payload),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
@@ -38,6 +50,7 @@ describe('AdminDirectMarketMakingService', () => {
     const strategyDefinitionRepository = {
       findOne: jest.fn(),
       find: jest.fn(),
+      save: jest.fn(async (payload) => payload),
     };
     const campaignJoinRepository = {
       create: jest.fn((payload) => payload),
@@ -45,6 +58,21 @@ describe('AdminDirectMarketMakingService', () => {
       update: jest.fn().mockResolvedValue({ affected: 1 }),
       find: jest.fn().mockResolvedValue([]),
       findOne: jest.fn().mockResolvedValue(null),
+    };
+    const strategyOrderIntentRepository =
+      options?.strategyOrderIntentRepository || {
+        find: jest.fn().mockResolvedValue([]),
+      };
+    const strategyInstanceRepository = options?.strategyInstanceRepository || {
+      findOne: jest.fn().mockResolvedValue(null),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
+    };
+    const strategyExecutionHistoryRepository =
+      options?.strategyExecutionHistoryRepository || {
+        find: jest.fn().mockResolvedValue([]),
+      };
+    const trackedOrderRepository = options?.trackedOrderRepository || {
+      find: jest.fn().mockResolvedValue([]),
     };
     const userOrdersService = {
       createMarketMaking: jest.fn(async (payload) => payload),
@@ -192,7 +220,7 @@ describe('AdminDirectMarketMakingService', () => {
     const configService = {
       get: jest.fn().mockReturnValue(undefined),
     };
-    const balanceLedgerService = {
+    const balanceLedgerService = options?.balanceLedgerService || {
       hasDepositCredit: jest.fn().mockResolvedValue(false),
       creditDeposit: jest.fn().mockResolvedValue({ applied: true }),
       getExistingBalance: jest.fn().mockResolvedValue(null),
@@ -207,7 +235,7 @@ describe('AdminDirectMarketMakingService', () => {
     const orderBalanceRepository = {
       find: jest.fn().mockResolvedValue([]),
     };
-    const balanceStateCacheService = {
+    const balanceStateCacheService = options?.balanceStateCacheService || {
       getBalance: jest.fn().mockReturnValue(undefined),
       applyBalanceSnapshot: jest.fn(),
       isFresh: jest.fn().mockReturnValue(false),
@@ -224,6 +252,38 @@ describe('AdminDirectMarketMakingService', () => {
         watchBalance: true,
         tier: 'full',
       }),
+    };
+    const readyReadiness = {
+      canStart: true,
+      mode: 'balanced',
+      bestFirstAction: {
+        makerAccountLabel: 'api-key-1',
+        takerAccountLabel: 'api-key-2',
+        side: 'buy',
+        baseAsset: 'BTC',
+        quoteAsset: 'USDT',
+        quantity: '0.5',
+        price: '100',
+        notional: '50',
+      },
+      maximumCycleQty: '0.5',
+      recommendedCycleQty: '0.5',
+      minimumCapitalByAccountAsset: [],
+      recommendedCapitalByAccountAsset: [],
+      missingBalances: [],
+      estimatedCycles: { count: '2', basis: 'current_available_balances' },
+      estimatedVolume: {
+        baseAsset: 'BTC',
+        quoteAsset: 'USDT',
+        baseAmount: '1',
+        quoteAmount: '100',
+      },
+      blockingReasons: [],
+    };
+    const dualAccountPlannerService = options?.dualAccountPlannerService || {
+      evaluateEfficientDualAccountReadiness: jest
+        .fn()
+        .mockResolvedValue(readyReadiness),
     };
 
     const service = new AdminDirectMarketMakingService(
@@ -251,6 +311,11 @@ describe('AdminDirectMarketMakingService', () => {
       balanceStateCacheService as any,
       balanceStateRefreshService as any,
       userStreamCapabilityService as any,
+      dualAccountPlannerService as any,
+      strategyInstanceRepository as any,
+      strategyOrderIntentRepository as any,
+      strategyExecutionHistoryRepository as any,
+      trackedOrderRepository as any,
     );
 
     return {
@@ -280,7 +345,141 @@ describe('AdminDirectMarketMakingService', () => {
       balanceStateCacheService,
       balanceStateRefreshService,
       userStreamCapabilityService,
+      dualAccountPlannerService,
+      readyReadiness,
+      strategyInstanceRepository,
+      strategyOrderIntentRepository,
+      strategyExecutionHistoryRepository,
+      trackedOrderRepository,
     };
+  };
+
+  const buildServiceWithRealEfficientReadiness = (options?: {
+    makerBalance?: Record<string, Record<string, number>>;
+    takerBalance?: Record<string, Record<string, number>>;
+  }) => {
+    const balanceStateCacheService = new BalanceStateCacheService();
+    const freshnessTimestamp = new Date().toISOString();
+    const balanceLedgerService = {
+      hasDepositCredit: jest.fn().mockResolvedValue(false),
+      creditDeposit: jest.fn().mockResolvedValue({ applied: true }),
+      getExistingBalance: jest.fn().mockResolvedValue(null),
+      unlockFunds: jest.fn().mockResolvedValue({ applied: true }),
+    };
+    const exchangeConnector = {
+      getCachedTradingRules: jest.fn().mockReturnValue({
+        amountMin: 0.001,
+        costMin: 10,
+        makerFee: 0.001,
+        takerFee: 0.001,
+      }),
+      loadTradingRules: jest.fn(),
+      fetchOrderBook: jest.fn(),
+      fetchBalance: jest.fn(),
+      placeLimitOrder: jest.fn(),
+      cancelOrder: jest.fn(),
+      quantizeOrder: jest.fn(
+        (_exchangeName: string, _pair: string, qty: string, price: string) => ({
+          qty,
+          price,
+        }),
+      ),
+    };
+    const marketDataProvider = {
+      getTrackedOrderBookFreshness: jest.fn(() => ({ fresh: true })),
+      getTrackedBestBidAsk: jest.fn(() => ({
+        bestBid: '99',
+        bestAsk: '101',
+      })),
+    };
+    const intentStore = {
+      createLimitOrderIntent: jest.fn(),
+    };
+    const orderScopedBalanceQueryService = new OrderScopedBalanceQueryService(
+      balanceLedgerService as any,
+      balanceStateCacheService,
+    );
+    const quotePlanner = new QuotePlannerService(exchangeConnector as any);
+    const dualAccountPlannerService = new DualAccountPlannerService(
+      exchangeConnector as any,
+      orderScopedBalanceQueryService,
+      marketDataProvider as any,
+      undefined,
+      quotePlanner,
+      intentStore as any,
+    );
+
+    balanceStateCacheService.applyBalanceSnapshot(
+      'binance',
+      'api-key-1',
+      options?.makerBalance || {
+        free: { BTC: 0, USDT: 1000 },
+        used: { BTC: 0, USDT: 0 },
+        total: { BTC: 0, USDT: 1000 },
+      },
+      freshnessTimestamp,
+      'ws',
+    );
+    balanceStateCacheService.applyBalanceSnapshot(
+      'binance',
+      'api-key-2',
+      options?.takerBalance || {
+        free: { BTC: 1, USDT: 0 },
+        used: { BTC: 0, USDT: 0 },
+        total: { BTC: 1, USDT: 0 },
+      },
+      freshnessTimestamp,
+      'ws',
+    );
+
+    return {
+      ...buildService({
+        balanceStateCacheService,
+        balanceLedgerService,
+        dualAccountPlannerService,
+      }),
+      balanceStateCacheService,
+      balanceLedgerService,
+      exchangeConnector,
+      marketDataProvider,
+      intentStore,
+      orderScopedBalanceQueryService,
+      dualAccountPlannerService,
+    };
+  };
+
+  const configureEfficientDefinition = ({
+    strategyDefinitionRepository,
+    strategyConfigResolver,
+  }: {
+    strategyDefinitionRepository: { findOne: jest.Mock };
+    strategyConfigResolver: {
+      getDefinitionControllerType: jest.Mock;
+      resolveForOrderSnapshot: jest.Mock;
+    };
+  }) => {
+    strategyDefinitionRepository.findOne.mockResolvedValue({
+      id: 'strategy-efficient',
+      key: 'efficient-dual-account-volume',
+      name: 'Efficient Dual Account Volume',
+      enabled: true,
+      controllerType: 'efficientDualAccountVolume',
+      capabilities: dualAccountLaunchConfig,
+      configSchema: {},
+    });
+    strategyConfigResolver.getDefinitionControllerType.mockReturnValue(
+      'efficientDualAccountVolume',
+    );
+    strategyConfigResolver.resolveForOrderSnapshot.mockResolvedValue({
+      controllerType: 'efficientDualAccountVolume',
+      definitionKey: 'efficient-dual-account-volume',
+      definitionName: 'Efficient Dual Account Volume',
+      resolvedConfig: {
+        symbol: 'BTC/USDT',
+        maxOrderAmount: '0.5',
+        interval: 30,
+      },
+    });
   };
 
   it('surfaces HuFi campaign join failure details to admin clients', async () => {
@@ -311,8 +510,7 @@ describe('AdminDirectMarketMakingService', () => {
       }),
     ).rejects.toMatchObject({
       response: {
-        message:
-          'Invalid campaign details or already joined: campaign ended',
+        message: 'Invalid campaign details or already joined: campaign ended',
       },
     });
   });
@@ -782,7 +980,9 @@ describe('AdminDirectMarketMakingService', () => {
     await expect(service.directStop('order-1')).rejects.toThrow(
       'reservation down',
     );
-    expect(userOrdersService.updateMarketMakingOrderState).not.toHaveBeenCalled();
+    expect(
+      userOrdersService.updateMarketMakingOrderState,
+    ).not.toHaveBeenCalled();
   });
 
   it('releases terminal tracked order reservations through reservation service during stop', async () => {
@@ -846,6 +1046,85 @@ describe('AdminDirectMarketMakingService', () => {
     await expect(service.directStop('missing')).rejects.toBeInstanceOf(
       NotFoundException,
     );
+  });
+
+  it('resumes a paused direct order using persisted edited strategy parameters', async () => {
+    const {
+      service,
+      marketMakingRepository,
+      marketMakingRuntimeService,
+      userOrdersService,
+      balanceLedgerService,
+      exchange,
+    } = buildService();
+
+    const editedSnapshot = buildStrategySnapshot({
+      exchangeName: 'binance',
+      pair: 'BTC/USDT',
+      symbol: 'BTC/USDT',
+      userId: 'admin-user',
+      clientId: 'order-1',
+      marketMakingOrderId: 'order-1',
+      accountLabel: 'api-key-1',
+      bidSpread: 0.004,
+      askSpread: 0.005,
+      orderAmount: 15,
+      orderRefreshTime: 2500,
+      numberOfLayers: 3,
+      priceSourceType: 'last_trade',
+      amountChangePerLayer: 0,
+      amountChangeType: 'fixed',
+      ceilingPrice: 0,
+      floorPrice: 0,
+      balanceA: '1',
+      balanceB: '1000',
+    });
+
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'order-1',
+      userId: 'admin-user',
+      source: 'admin_direct',
+      state: 'paused',
+      pair: 'BTC/USDT',
+      exchangeName: 'binance',
+      apiKeyId: 'api-key-1',
+      strategyDefinitionId: 'strategy-1',
+      strategySnapshot: editedSnapshot,
+      balanceA: '1',
+      balanceB: '1000',
+    });
+
+    await expect(service.directResume('order-1')).resolves.toEqual({
+      orderId: 'order-1',
+      state: 'running',
+      warnings: expect.any(Array),
+    });
+    expect(marketMakingRuntimeService.startOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        state: 'paused',
+        strategySnapshot: expect.objectContaining({
+          resolvedConfig: expect.objectContaining({
+            bidSpread: 0.004,
+            askSpread: 0.005,
+            orderAmount: 15,
+            orderRefreshTime: 2500,
+            numberOfLayers: 3,
+            priceSourceType: 'last_trade',
+            clientId: 'order-1',
+            marketMakingOrderId: 'order-1',
+          }),
+        }),
+      }),
+    );
+    expect(userOrdersService.updateMarketMakingOrderState).toHaveBeenCalledWith(
+      'order-1',
+      'running',
+    );
+    expect(balanceLedgerService.creditDeposit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ refType: 'generic_balance_adjustment' }),
+    );
+    expect(exchange.fetchBalance).toHaveBeenCalledTimes(1);
+    expect(exchange.fetchTicker).toHaveBeenCalledTimes(1);
   });
 
   it('removes a stopped direct order', async () => {
@@ -1001,7 +1280,7 @@ describe('AdminDirectMarketMakingService', () => {
     );
   });
 
-  it('starts a dual-account direct order and stores maker and taker metadata', async () => {
+  it('starts classic dual-account direct orders when the legacy definition is selected', async () => {
     const {
       service,
       strategyDefinitionRepository,
@@ -1034,33 +1313,25 @@ describe('AdminDirectMarketMakingService', () => {
       },
     });
 
-    const result = await service.directStart(dualAccountStartDto, 'admin-user');
-
-    expect(result).toEqual({
+    await expect(
+      service.directStart(dualAccountStartDto, 'admin-user'),
+    ).resolves.toEqual({
       orderId: expect.any(String),
       state: 'running',
       warnings: [],
     });
     expect(userOrdersService.createMarketMaking).toHaveBeenCalledWith(
       expect.objectContaining({
-        apiKeyId: 'api-key-1',
         strategySnapshot: expect.objectContaining({
           controllerType: 'dualAccountVolume',
-          resolvedConfig: expect.objectContaining({
-            makerAccountLabel: 'api-key-1',
-            takerAccountLabel: 'api-key-2',
-            makerApiKeyId: 'api-key-1',
-            takerApiKeyId: 'api-key-2',
-          }),
         }),
       }),
     );
   });
 
-  it('starts a best-capacity dual-account direct order and stores maker and taker metadata', async () => {
+  it('starts best-capacity dual-account direct orders when the legacy definition is selected', async () => {
     const {
       service,
-      marketMakingRuntimeService,
       strategyDefinitionRepository,
       strategyConfigResolver,
       userOrdersService,
@@ -1091,7 +1362,75 @@ describe('AdminDirectMarketMakingService', () => {
       },
     });
 
-    const result = await service.directStart(dualAccountStartDto, 'admin-user');
+    await expect(
+      service.directStart(dualAccountStartDto, 'admin-user'),
+    ).resolves.toEqual({
+      orderId: expect.any(String),
+      state: 'running',
+      warnings: [],
+    });
+    expect(userOrdersService.createMarketMaking).toHaveBeenCalledWith(
+      expect.objectContaining({
+        strategySnapshot: expect.objectContaining({
+          controllerType: 'dualAccountBestCapacityVolume',
+        }),
+      }),
+    );
+  });
+
+  it('starts an efficient unified dual-account direct order with normalized contract defaults', async () => {
+    const {
+      service,
+      marketMakingRuntimeService,
+      strategyDefinitionRepository,
+      strategyConfigResolver,
+      userOrdersService,
+    } = buildService();
+
+    strategyDefinitionRepository.findOne.mockResolvedValue({
+      id: 'strategy-efficient',
+      key: 'efficient-dual-account-volume',
+      name: 'Efficient Dual Account Volume',
+      enabled: true,
+      controllerType: 'efficientDualAccountVolume',
+      capabilities: dualAccountLaunchConfig,
+      configSchema: {},
+    });
+    strategyConfigResolver.getDefinitionControllerType.mockReturnValue(
+      'efficientDualAccountVolume',
+    );
+    strategyConfigResolver.resolveForOrderSnapshot.mockResolvedValue({
+      controllerType: 'efficientDualAccountVolume',
+      definitionKey: 'efficient-dual-account-volume',
+      definitionName: 'Efficient Dual Account Volume',
+      resolvedConfig: {
+        symbol: 'BTC/USDT',
+        maxOrderAmount: '0.5',
+        interval: 30,
+        tradeAmountVariance: 0.2,
+        priceOffsetVariance: 0.05,
+        cycleMode: 'static',
+        dynamicRoleSwitching: false,
+        balanceA: '1',
+        balanceB: '1000',
+      },
+    });
+
+    const result = await service.directStart(
+      {
+        ...dualAccountStartDto,
+        strategyDefinitionId: 'strategy-efficient',
+        configOverrides: {
+          maxOrderAmount: 0.5,
+          interval: 30,
+          tradeAmountVariance: 0.2,
+          priceOffsetVariance: 0.05,
+          cycleMode: 'static',
+          dynamicRoleSwitching: false,
+        },
+      },
+      'admin-user',
+    );
 
     expect(result).toEqual({
       orderId: expect.any(String),
@@ -1100,17 +1439,21 @@ describe('AdminDirectMarketMakingService', () => {
     });
     expect(userOrdersService.createMarketMaking).toHaveBeenCalledWith(
       expect.objectContaining({
-        apiKeyId: 'api-key-1',
         strategySnapshot: expect.objectContaining({
-          controllerType: 'dualAccountBestCapacityVolume',
+          controllerType: 'efficientDualAccountVolume',
+          definitionKey: 'efficient-dual-account-volume',
           resolvedConfig: expect.objectContaining({
+            exchangeName: 'binance',
             symbol: 'BTC/USDT',
             pair: 'BTC/USDT',
-            exchangeName: 'binance',
             makerAccountLabel: 'api-key-1',
             takerAccountLabel: 'api-key-2',
-            makerApiKeyId: 'api-key-1',
-            takerApiKeyId: 'api-key-2',
+            mode: 'balanced',
+            cycleMode: 'alternating',
+            dynamicRoleSwitching: true,
+            strategyContract: 'efficientDualAccountVolume',
+            tradeAmountVariance: 0.2,
+            priceOffsetVariance: 0.05,
           }),
         }),
       }),
@@ -1118,11 +1461,1046 @@ describe('AdminDirectMarketMakingService', () => {
     expect(marketMakingRuntimeService.startOrder).toHaveBeenCalledWith(
       expect.objectContaining({
         strategySnapshot: expect.objectContaining({
+          controllerType: 'efficientDualAccountVolume',
+        }),
+      }),
+    );
+  });
+
+  it('starts new efficient orders without planner readiness blocking creation', async () => {
+    const fixture = buildServiceWithRealEfficientReadiness();
+    const {
+      service,
+      balanceLedgerService,
+      userOrdersService,
+      marketMakingRuntimeService,
+    } = fixture;
+
+    configureEfficientDefinition(fixture);
+
+    await expect(
+      service.directStart(
+        {
+          ...dualAccountStartDto,
+          strategyDefinitionId: 'strategy-efficient',
+        },
+        'admin-user',
+      ),
+    ).resolves.toEqual({
+      orderId: expect.any(String),
+      state: 'running',
+      warnings: [],
+    });
+
+    expect(balanceLedgerService.getExistingBalance).not.toHaveBeenCalled();
+    expect(userOrdersService.createMarketMaking).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: 'admin_direct',
+        strategySnapshot: expect.objectContaining({
           resolvedConfig: expect.objectContaining({
-            symbol: 'BTC/USDT',
-            exchangeName: 'binance',
+            marketMakingOrderId: expect.any(String),
+            makerAccountLabel: 'api-key-1',
+            takerAccountLabel: 'api-key-2',
           }),
         }),
+      }),
+    );
+    expect(balanceLedgerService.creditDeposit).toHaveBeenCalled();
+    expect(marketMakingRuntimeService.startOrder).toHaveBeenCalled();
+  });
+
+  it('includes planner-backed readiness in efficient direct status without live exchange balance fetch', async () => {
+    const {
+      service,
+      marketMakingRepository,
+      exchange,
+      dualAccountPlannerService,
+      readyReadiness,
+    } = buildService();
+
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'order-efficient',
+      exchangeName: 'binance',
+      pair: 'BTC/USDT',
+      state: 'stopped',
+      source: 'admin_direct',
+      createdAt: '2026-04-01T00:00:00.000Z',
+      apiKeyId: 'api-key-1',
+      strategySnapshot: buildStrategySnapshot(
+        {
+          exchangeName: 'binance',
+          symbol: 'BTC/USDT',
+          pair: 'BTC/USDT',
+          userId: 'admin-user',
+          clientId: 'order-efficient',
+          marketMakingOrderId: 'order-efficient',
+          makerAccountLabel: 'api-key-1',
+          takerAccountLabel: 'api-key-2',
+          makerApiKeyId: 'api-key-1',
+          takerApiKeyId: 'api-key-2',
+          maxOrderAmount: '0.5',
+          mode: 'balanced',
+          strategyContract: 'efficientDualAccountVolume',
+        },
+        'efficientDualAccountVolume',
+      ),
+    });
+
+    const result = await service.getDirectOrderStatus('order-efficient');
+
+    expect(result.readiness).toEqual(readyReadiness);
+    expect(
+      dualAccountPlannerService.evaluateEfficientDualAccountReadiness,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        marketMakingOrderId: 'order-efficient',
+        makerAccountLabel: 'api-key-1',
+        takerAccountLabel: 'api-key-2',
+      }),
+    );
+    expect(exchange.fetchBalance).not.toHaveBeenCalled();
+  });
+
+  it('keeps persisted efficient status readiness bound to order-scoped ledger balances', async () => {
+    const fixture = buildServiceWithRealEfficientReadiness({
+      makerBalance: {
+        free: { BTC: 0, USDT: 0 },
+        used: { BTC: 0, USDT: 0 },
+        total: { BTC: 0, USDT: 0 },
+      },
+      takerBalance: {
+        free: { BTC: 0, USDT: 0 },
+        used: { BTC: 0, USDT: 0 },
+        total: { BTC: 0, USDT: 0 },
+      },
+    });
+    const { service, marketMakingRepository, balanceLedgerService, exchange } =
+      fixture;
+
+    balanceLedgerService.getExistingBalance.mockImplementation(
+      async (_orderId: string, assetId: string) => {
+        const amount = assetId === 'BTC' ? '1' : '1000';
+
+        return {
+          available: amount,
+          total: amount,
+        };
+      },
+    );
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'order-efficient',
+      exchangeName: 'binance',
+      pair: 'BTC/USDT',
+      state: 'stopped',
+      source: 'admin_direct',
+      createdAt: '2026-04-01T00:00:00.000Z',
+      userId: 'admin-user',
+      apiKeyId: 'api-key-1',
+      strategySnapshot: buildStrategySnapshot(
+        {
+          exchangeName: 'binance',
+          symbol: 'BTC/USDT',
+          pair: 'BTC/USDT',
+          userId: 'admin-user',
+          clientId: 'order-efficient',
+          marketMakingOrderId: 'order-efficient',
+          makerAccountLabel: 'api-key-1',
+          takerAccountLabel: 'api-key-2',
+          makerApiKeyId: 'api-key-1',
+          takerApiKeyId: 'api-key-2',
+          maxOrderAmount: '0.5',
+          mode: 'balanced',
+          strategyContract: 'efficientDualAccountVolume',
+        },
+        'efficientDualAccountVolume',
+      ),
+    });
+
+    const result = await service.getDirectOrderStatus('order-efficient');
+
+    expect(result.readiness).toEqual(
+      expect.objectContaining({
+        canStart: true,
+        bestFirstAction: expect.objectContaining({
+          makerAccountLabel: expect.any(String),
+          takerAccountLabel: expect.any(String),
+        }),
+      }),
+    );
+    expect(balanceLedgerService.getExistingBalance).toHaveBeenCalledWith(
+      'order-efficient',
+      'BTC',
+    );
+    expect(balanceLedgerService.getExistingBalance).toHaveBeenCalledWith(
+      'order-efficient',
+      'USDT',
+    );
+    expect(exchange.fetchBalance).not.toHaveBeenCalled();
+  });
+
+  it('aggregates deterministic runtime cycle status from intents, tracked orders, and active params', async () => {
+    const {
+      service,
+      marketMakingRepository,
+      strategyService,
+      exchangeOrderTrackerService,
+    } = buildService();
+
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'order-cycle',
+      exchangeName: 'binance',
+      pair: 'BTC/USDT',
+      state: 'running',
+      source: 'admin_direct',
+      createdAt: '2026-04-01T00:00:00.000Z',
+      userId: 'admin-user',
+      apiKeyId: 'api-key-1',
+      strategySnapshot: buildStrategySnapshot(
+        {
+          exchangeName: 'binance',
+          symbol: 'BTC/USDT',
+          pair: 'BTC/USDT',
+          userId: 'admin-user',
+          clientId: 'order-cycle',
+          marketMakingOrderId: 'order-cycle',
+          makerAccountLabel: 'api-key-1',
+          takerAccountLabel: 'api-key-2',
+          makerApiKeyId: 'api-key-1',
+          takerApiKeyId: 'api-key-2',
+          mode: 'balanced',
+          strategyContract: 'efficientDualAccountVolume',
+          activeCycle: {
+            cycleId: 'cycle-runtime-1',
+            tickId: '2026-04-01T00:00:01.000Z',
+            orderId: 'order-cycle',
+            makerSide: 'buy',
+            makerAccountLabel: 'api-key-1',
+            takerAccountLabel: 'api-key-2',
+            price: '100',
+            requestedQty: '0.5',
+            makerFilledQty: '0.25',
+            takerFilledQty: '0.1',
+          },
+        },
+        'efficientDualAccountVolume',
+      ),
+    });
+    strategyService.getLatestIntentsForStrategy.mockReturnValue([
+      {
+        intentId: 'maker-intent',
+        strategyKey: 'strategy-cycle',
+        accountLabel: 'api-key-1',
+        side: 'buy',
+        price: '100',
+        qty: '0.5',
+        status: 'DONE',
+        metadata: {
+          cycleId: 'cycle-runtime-1',
+          cycleRole: 'maker',
+          role: 'maker',
+          accountLabel: 'api-key-1',
+          side: 'buy',
+          plannedQty: '0.5',
+          plannedPrice: '100',
+          filledQty: '0',
+          notional: '50',
+          status: 'planned',
+          failureReason: null,
+          linkedIntentId: 'maker-intent',
+          linkedTrackedOrderId: null,
+        },
+      },
+      {
+        intentId: 'maker-intent:inline-taker',
+        strategyKey: 'strategy-cycle',
+        accountLabel: 'api-key-2',
+        side: 'sell',
+        price: '100',
+        qty: '0.5',
+        status: 'FAILED',
+        errorReason: 'Immediate dual-account taker did not fill any quantity',
+        metadata: {
+          cycleId: 'cycle-runtime-1',
+          cycleRole: 'taker',
+          role: 'taker',
+          accountLabel: 'api-key-2',
+          side: 'sell',
+          plannedQty: '0.5',
+          plannedPrice: '100',
+          filledQty: '0',
+          notional: '50',
+          status: 'failed',
+          failureReason:
+            'Immediate dual-account taker did not fill any quantity',
+          linkedIntentId: 'maker-intent:inline-taker',
+          linkedTrackedOrderId: null,
+        },
+      },
+    ]);
+    exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([
+      {
+        orderId: 'order-cycle',
+        strategyKey: 'strategy-cycle',
+        exchange: 'binance',
+        accountLabel: 'api-key-1',
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'maker-order',
+        role: 'maker',
+        side: 'buy',
+        price: '100',
+        qty: '0.5',
+        cumulativeFilledQty: '0.25',
+        status: 'partially_filled',
+        createdAt: '2026-04-01T00:00:01.000Z',
+        updatedAt: '2026-04-01T00:00:02.000Z',
+      },
+      {
+        orderId: 'order-cycle',
+        strategyKey: 'strategy-cycle',
+        exchange: 'binance',
+        accountLabel: 'api-key-2',
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'taker-order',
+        role: 'taker',
+        side: 'sell',
+        price: '100',
+        qty: '0.5',
+        cumulativeFilledQty: '0.1',
+        status: 'failed',
+        createdAt: '2026-04-01T00:00:01.000Z',
+        updatedAt: '2026-04-01T00:00:03.000Z',
+      },
+    ]);
+
+    const result = await service.getDirectOrderStatus('order-cycle');
+
+    expect(result.cycles).toEqual([
+      expect.objectContaining({
+        cycleId: 'cycle-runtime-1',
+        aggregateStatus: 'failed',
+        failureReason: 'Immediate dual-account taker did not fill any quantity',
+        legs: expect.arrayContaining([
+          expect.objectContaining({
+            cycleRole: 'maker',
+            accountLabel: 'api-key-1',
+            side: 'buy',
+            plannedQty: '0.5',
+            plannedPrice: '100',
+            filledQty: '0.25',
+            notional: '50',
+            status: 'partially_filled',
+            failureReason: null,
+            linkedIntentId: 'maker-intent',
+            linkedTrackedOrderId: 'maker-order',
+          }),
+          expect.objectContaining({
+            cycleRole: 'taker',
+            accountLabel: 'api-key-2',
+            side: 'sell',
+            plannedQty: '0.5',
+            plannedPrice: '100',
+            filledQty: '0.1',
+            notional: '50',
+            status: 'failed',
+            failureReason:
+              'Immediate dual-account taker did not fill any quantity',
+            linkedIntentId: 'maker-intent:inline-taker',
+            linkedTrackedOrderId: 'taker-order',
+          }),
+        ]),
+      }),
+    ]);
+  });
+
+  it('orders unpadded runtime cycle counters numerically in direct status', async () => {
+    const { service, marketMakingRepository, strategyService } = buildService();
+
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'order-cycle-ordering',
+      exchangeName: 'binance',
+      pair: 'BTC/USDT',
+      state: 'running',
+      source: 'admin_direct',
+      createdAt: '2026-04-01T00:00:00.000Z',
+      userId: 'admin-user',
+      apiKeyId: 'api-key-1',
+      strategySnapshot: buildStrategySnapshot(
+        {
+          exchangeName: 'binance',
+          symbol: 'BTC/USDT',
+          pair: 'BTC/USDT',
+          userId: 'admin-user',
+          clientId: 'order-cycle-ordering',
+          marketMakingOrderId: 'order-cycle-ordering',
+          makerAccountLabel: 'api-key-1',
+          takerAccountLabel: 'api-key-2',
+          makerApiKeyId: 'api-key-1',
+          takerApiKeyId: 'api-key-2',
+          mode: 'balanced',
+          strategyContract: 'efficientDualAccountVolume',
+        },
+        'efficientDualAccountVolume',
+      ),
+    });
+    strategyService.getLatestIntentsForStrategy.mockReturnValue([
+      {
+        intentId: 'cycle-10-maker',
+        strategyKey: 'strategy-cycle',
+        accountLabel: 'api-key-1',
+        side: 'buy',
+        price: '100',
+        qty: '0.5',
+        status: 'DONE',
+        metadata: {
+          cycleId:
+            'efficient-dual-account-volume:cycle:10:2026-06-04T00:10:00.000Z',
+          cycleRole: 'maker',
+          accountLabel: 'api-key-1',
+          side: 'buy',
+          plannedQty: '0.5',
+          plannedPrice: '100',
+          status: 'filled',
+        },
+      },
+      {
+        intentId: 'cycle-9-maker',
+        strategyKey: 'strategy-cycle',
+        accountLabel: 'api-key-1',
+        side: 'sell',
+        price: '100',
+        qty: '0.5',
+        status: 'DONE',
+        metadata: {
+          cycleId:
+            'efficient-dual-account-volume:cycle:9:2026-06-04T00:09:00.000Z',
+          cycleRole: 'maker',
+          accountLabel: 'api-key-1',
+          side: 'sell',
+          plannedQty: '0.5',
+          plannedPrice: '100',
+          status: 'filled',
+        },
+      },
+    ]);
+
+    const result = await service.getDirectOrderStatus('order-cycle-ordering');
+
+    expect(result.cycles.map((cycle) => cycle.cycleId)).toEqual([
+      'efficient-dual-account-volume:cycle:9:2026-06-04T00:09:00.000Z',
+      'efficient-dual-account-volume:cycle:10:2026-06-04T00:10:00.000Z',
+    ]);
+  });
+
+  it('aggregates runtime cycle status from durable intent history and tracked orders after cache loss', async () => {
+    const strategyOrderIntentRepository = {
+      find: jest.fn().mockResolvedValue([
+        {
+          intentId: 'durable-maker-intent',
+          runtimeInstanceKey: 'runtime-cycle',
+          strategyKey: 'durable-strategy-cycle',
+          userId: 'admin-user',
+          clientId: 'order-durable-cycle',
+          type: 'CREATE_LIMIT_ORDER',
+          exchange: 'binance',
+          accountLabel: 'api-key-1',
+          pair: 'BTC/USDT',
+          side: 'buy',
+          price: '100',
+          qty: '0.5',
+          mixinOrderId: 'durable-maker-order',
+          postOnly: true,
+          timeInForce: 'GTC',
+          metadata: {
+            cycleId: 'cycle-durable-1',
+            cycleRole: 'maker',
+            role: 'maker',
+            accountLabel: 'api-key-1',
+            side: 'buy',
+            plannedQty: '0.5',
+            plannedPrice: '100',
+            filledQty: '0',
+            notional: '50',
+            status: 'planned',
+            linkedIntentId: 'durable-maker-intent',
+          },
+          status: 'DONE',
+          createdAt: '2026-04-01T00:00:01.000Z',
+          updatedAt: '2026-04-01T00:00:02.000Z',
+        },
+        {
+          intentId: 'durable-maker-intent:inline-taker',
+          runtimeInstanceKey: 'runtime-cycle',
+          strategyKey: 'durable-strategy-cycle',
+          userId: 'admin-user',
+          clientId: 'order-durable-cycle',
+          type: 'CREATE_LIMIT_ORDER',
+          exchange: 'binance',
+          accountLabel: 'api-key-2',
+          pair: 'BTC/USDT',
+          side: 'sell',
+          price: '100',
+          qty: '0.5',
+          mixinOrderId: 'durable-taker-order',
+          postOnly: false,
+          timeInForce: 'IOC',
+          metadata: {
+            cycleId: 'cycle-durable-1',
+            cycleRole: 'taker',
+            role: 'taker',
+            accountLabel: 'api-key-2',
+            side: 'sell',
+            plannedQty: '0.5',
+            plannedPrice: '100',
+            filledQty: '0',
+            notional: '50',
+            status: 'failed',
+            linkedIntentId: 'durable-maker-intent:inline-taker',
+          },
+          status: 'FAILED',
+          createdAt: '2026-04-01T00:00:02.000Z',
+          updatedAt: '2026-04-01T00:00:03.000Z',
+        },
+      ]),
+    };
+    const strategyExecutionHistoryRepository = {
+      find: jest.fn().mockResolvedValue([
+        {
+          id: 'execution-taker-failure',
+          userId: 'admin-user',
+          clientId: 'order-durable-cycle',
+          exchange: 'binance',
+          pair: 'BTC/USDT',
+          side: 'sell',
+          amount: '0.5',
+          price: '100',
+          strategyType: 'efficientDualAccountVolume',
+          runtimeInstanceKey: 'runtime-cycle',
+          orderId: 'order-durable-cycle',
+          status: 'failed',
+          metadata: {
+            cycleId: 'cycle-durable-1',
+            cycleRole: 'taker',
+            accountLabel: 'api-key-2',
+            side: 'sell',
+            plannedQty: '0.5',
+            plannedPrice: '100',
+            filledQty: '0.1',
+            notional: '50',
+            status: 'failed',
+            failureReason: 'Immediate durable taker failed after restart',
+            linkedIntentId: 'durable-maker-intent:inline-taker',
+            linkedTrackedOrderId: 'durable-taker-order',
+          },
+          executedAt: '2026-04-01T00:00:03.000Z',
+        },
+      ]),
+    };
+    const trackedOrderRepository = {
+      find: jest.fn().mockResolvedValue([
+        {
+          trackingKey: 'durable-maker-order',
+          orderId: 'order-durable-cycle',
+          strategyKey: 'durable-strategy-cycle',
+          exchange: 'binance',
+          accountLabel: 'api-key-1',
+          pair: 'BTC/USDT',
+          exchangeOrderId: 'durable-maker-order',
+          clientOrderId: 'durable-maker-intent',
+          role: 'maker',
+          side: 'buy',
+          price: '100',
+          qty: '0.5',
+          cumulativeFilledQty: '0.25',
+          status: 'partially_filled',
+          createdAt: '2026-04-01T00:00:01.000Z',
+          updatedAt: '2026-04-01T00:00:04.000Z',
+        },
+        {
+          trackingKey: 'durable-taker-order',
+          orderId: 'order-durable-cycle',
+          strategyKey: 'durable-strategy-cycle',
+          exchange: 'binance',
+          accountLabel: 'api-key-2',
+          pair: 'BTC/USDT',
+          exchangeOrderId: 'durable-taker-order',
+          clientOrderId: 'durable-maker-intent:inline-taker',
+          role: 'taker',
+          side: 'sell',
+          price: '100',
+          qty: '0.5',
+          cumulativeFilledQty: '0.1',
+          status: 'failed',
+          createdAt: '2026-04-01T00:00:02.000Z',
+          updatedAt: '2026-04-01T00:00:04.000Z',
+        },
+      ]),
+    };
+    const {
+      service,
+      marketMakingRepository,
+      strategyService,
+      exchangeOrderTrackerService,
+    } = buildService({
+      strategyOrderIntentRepository,
+      strategyExecutionHistoryRepository,
+      trackedOrderRepository,
+    });
+
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'order-durable-cycle',
+      exchangeName: 'binance',
+      pair: 'BTC/USDT',
+      state: 'running',
+      source: 'admin_direct',
+      createdAt: '2026-04-01T00:00:00.000Z',
+      userId: 'admin-user',
+      apiKeyId: 'api-key-1',
+      strategySnapshot: buildStrategySnapshot(
+        {
+          exchangeName: 'binance',
+          symbol: 'BTC/USDT',
+          pair: 'BTC/USDT',
+          userId: 'admin-user',
+          clientId: 'order-durable-cycle',
+          marketMakingOrderId: 'order-durable-cycle',
+          makerAccountLabel: 'api-key-1',
+          takerAccountLabel: 'api-key-2',
+          makerApiKeyId: 'api-key-1',
+          takerApiKeyId: 'api-key-2',
+          mode: 'balanced',
+          strategyContract: 'efficientDualAccountVolume',
+        },
+        'efficientDualAccountVolume',
+      ),
+    });
+    strategyService.getLatestIntentsForStrategy.mockReturnValue([]);
+    exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([]);
+    exchangeOrderTrackerService.getOpenOrders.mockReturnValue([]);
+
+    const result = await service.getDirectOrderStatus('order-durable-cycle');
+
+    expect(strategyOrderIntentRepository.find).toHaveBeenCalled();
+    expect(strategyExecutionHistoryRepository.find).toHaveBeenCalled();
+    expect(trackedOrderRepository.find).toHaveBeenCalled();
+    expect(result.intents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ intentId: 'durable-maker-intent' }),
+        expect.objectContaining({
+          intentId: 'durable-maker-intent:inline-taker',
+        }),
+      ]),
+    );
+    expect(result.cycles).toEqual([
+      expect.objectContaining({
+        cycleId: 'cycle-durable-1',
+        aggregateStatus: 'failed',
+        failureReason: 'Immediate durable taker failed after restart',
+        legs: expect.arrayContaining([
+          expect.objectContaining({
+            cycleRole: 'maker',
+            accountLabel: 'api-key-1',
+            side: 'buy',
+            plannedQty: '0.5',
+            filledQty: '0.25',
+            status: 'partially_filled',
+            linkedIntentId: 'durable-maker-intent',
+            linkedTrackedOrderId: 'durable-maker-order',
+          }),
+          expect.objectContaining({
+            cycleRole: 'taker',
+            accountLabel: 'api-key-2',
+            side: 'sell',
+            plannedQty: '0.5',
+            filledQty: '0.1',
+            status: 'failed',
+            failureReason: 'Immediate durable taker failed after restart',
+            linkedIntentId: 'durable-maker-intent:inline-taker',
+            linkedTrackedOrderId: 'durable-taker-order',
+          }),
+        ]),
+      }),
+    ]);
+  });
+
+  it('uses durable intent errorReason as the cycle failure reason when metadata has no failure reason', async () => {
+    const durableIntentOnlyFailureReason =
+      'Durable intent-only taker failure survived restart';
+    const strategyOrderIntentRepository = {
+      find: jest.fn().mockResolvedValue([
+        {
+          intentId: 'durable-intent-only-maker',
+          runtimeInstanceKey: 'runtime-intent-only-cycle',
+          strategyKey: 'durable-intent-only-strategy-cycle',
+          userId: 'admin-user',
+          clientId: 'order-durable-intent-only-cycle',
+          type: 'CREATE_LIMIT_ORDER',
+          exchange: 'binance',
+          accountLabel: 'api-key-1',
+          pair: 'BTC/USDT',
+          side: 'buy',
+          price: '100',
+          qty: '0.5',
+          mixinOrderId: 'durable-intent-only-maker-order',
+          postOnly: true,
+          timeInForce: 'GTC',
+          metadata: {
+            cycleId: 'cycle-durable-intent-only-1',
+            cycleRole: 'maker',
+            role: 'maker',
+            accountLabel: 'api-key-1',
+            side: 'buy',
+            plannedQty: '0.5',
+            plannedPrice: '100',
+            filledQty: '0',
+            notional: '50',
+            status: 'done',
+            linkedIntentId: 'durable-intent-only-maker',
+          },
+          status: 'DONE',
+          createdAt: '2026-04-01T00:00:01.000Z',
+          updatedAt: '2026-04-01T00:00:02.000Z',
+        },
+        {
+          intentId: 'durable-intent-only-maker:inline-taker',
+          runtimeInstanceKey: 'runtime-intent-only-cycle',
+          strategyKey: 'durable-intent-only-strategy-cycle',
+          userId: 'admin-user',
+          clientId: 'order-durable-intent-only-cycle',
+          type: 'CREATE_LIMIT_ORDER',
+          exchange: 'binance',
+          accountLabel: 'api-key-2',
+          pair: 'BTC/USDT',
+          side: 'sell',
+          price: '100',
+          qty: '0.5',
+          mixinOrderId: 'durable-intent-only-taker-order',
+          postOnly: false,
+          timeInForce: 'IOC',
+          metadata: {
+            cycleId: 'cycle-durable-intent-only-1',
+            cycleRole: 'taker',
+            role: 'taker',
+            accountLabel: 'api-key-2',
+            side: 'sell',
+            plannedQty: '0.5',
+            plannedPrice: '100',
+            filledQty: '0',
+            notional: '50',
+            status: 'failed',
+            linkedIntentId: 'durable-intent-only-maker:inline-taker',
+          },
+          status: 'FAILED',
+          errorReason: durableIntentOnlyFailureReason,
+          createdAt: '2026-04-01T00:00:02.000Z',
+          updatedAt: '2026-04-01T00:00:03.000Z',
+        },
+      ]),
+    };
+    const strategyExecutionHistoryRepository = {
+      find: jest.fn().mockResolvedValue([]),
+    };
+    const trackedOrderRepository = {
+      find: jest.fn().mockResolvedValue([]),
+    };
+    const {
+      service,
+      marketMakingRepository,
+      strategyService,
+      exchangeOrderTrackerService,
+    } = buildService({
+      strategyOrderIntentRepository,
+      strategyExecutionHistoryRepository,
+      trackedOrderRepository,
+    });
+
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'order-durable-intent-only-cycle',
+      exchangeName: 'binance',
+      pair: 'BTC/USDT',
+      state: 'running',
+      source: 'admin_direct',
+      createdAt: '2026-04-01T00:00:00.000Z',
+      userId: 'admin-user',
+      apiKeyId: 'api-key-1',
+      strategySnapshot: buildStrategySnapshot(
+        {
+          exchangeName: 'binance',
+          symbol: 'BTC/USDT',
+          pair: 'BTC/USDT',
+          userId: 'admin-user',
+          clientId: 'order-durable-intent-only-cycle',
+          marketMakingOrderId: 'order-durable-intent-only-cycle',
+          makerAccountLabel: 'api-key-1',
+          takerAccountLabel: 'api-key-2',
+          makerApiKeyId: 'api-key-1',
+          takerApiKeyId: 'api-key-2',
+          mode: 'balanced',
+          strategyContract: 'efficientDualAccountVolume',
+        },
+        'efficientDualAccountVolume',
+      ),
+    });
+    strategyService.getLatestIntentsForStrategy.mockReturnValue([]);
+    exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([]);
+    exchangeOrderTrackerService.getOpenOrders.mockReturnValue([]);
+
+    const result = await service.getDirectOrderStatus(
+      'order-durable-intent-only-cycle',
+    );
+
+    expect(strategyOrderIntentRepository.find).toHaveBeenCalled();
+    expect(strategyExecutionHistoryRepository.find).toHaveBeenCalled();
+    expect(trackedOrderRepository.find).toHaveBeenCalled();
+    expect(result.cycles).toEqual([
+      expect.objectContaining({
+        cycleId: 'cycle-durable-intent-only-1',
+        aggregateStatus: 'failed',
+        failureReason: durableIntentOnlyFailureReason,
+        legs: expect.arrayContaining([
+          expect.objectContaining({
+            cycleRole: 'maker',
+            accountLabel: 'api-key-1',
+            side: 'buy',
+            failureReason: null,
+            linkedIntentId: 'durable-intent-only-maker',
+          }),
+          expect.objectContaining({
+            cycleRole: 'taker',
+            accountLabel: 'api-key-2',
+            side: 'sell',
+            status: 'failed',
+            failureReason: durableIntentOnlyFailureReason,
+            linkedIntentId: 'durable-intent-only-maker:inline-taker',
+            linkedTrackedOrderId: 'durable-intent-only-taker-order',
+          }),
+        ]),
+      }),
+    ]);
+  });
+
+  it('resolves legacy dual-account definitions for new direct-start orders', async () => {
+    const { service, strategyDefinitionRepository, strategyConfigResolver } =
+      buildService();
+
+    strategyDefinitionRepository.findOne.mockResolvedValue({
+      id: 'strategy-legacy',
+      enabled: true,
+      controllerType: 'dualAccountBestCapacityVolume',
+      capabilities: dualAccountLaunchConfig,
+      configSchema: {},
+    });
+    strategyConfigResolver.getDefinitionControllerType.mockReturnValue(
+      'dualAccountBestCapacityVolume',
+    );
+    strategyConfigResolver.resolveForOrderSnapshot.mockResolvedValue({
+      controllerType: 'dualAccountBestCapacityVolume',
+      resolvedConfig: {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseTradeAmount: 5,
+        baseIntervalTime: 10,
+        numTrades: 20,
+        baseIncrementPercentage: 0.2,
+        pricePushRate: 0,
+        balanceA: '1',
+        balanceB: '1000',
+      },
+    });
+
+    await expect(
+      service.directStart(
+        {
+          ...dualAccountStartDto,
+          strategyDefinitionId: 'strategy-legacy',
+        },
+        'admin-user',
+      ),
+    ).resolves.toEqual({
+      orderId: expect.any(String),
+      state: 'running',
+      warnings: [],
+    });
+
+    expect(strategyConfigResolver.resolveForOrderSnapshot).toHaveBeenCalled();
+  });
+
+  it('lists legacy dual-account variants in direct strategy definitions', async () => {
+    const { service, strategyDefinitionRepository } = buildService();
+
+    strategyDefinitionRepository.find.mockResolvedValue([
+      {
+        id: 'strategy-pmm',
+        name: 'Pure Market Making',
+        enabled: true,
+        visibility: 'public',
+        controllerType: 'pureMarketMaking',
+        capabilities: singleAccountLaunchConfig,
+      },
+      {
+        id: 'strategy-classic',
+        name: 'Dual Account Volume',
+        enabled: true,
+        visibility: 'admin',
+        controllerType: 'dualAccountVolume',
+        capabilities: dualAccountLaunchConfig,
+      },
+      {
+        id: 'strategy-best',
+        name: 'Dual Account Best Capacity Volume',
+        enabled: true,
+        visibility: 'admin',
+        controllerType: 'dualAccountBestCapacityVolume',
+        capabilities: dualAccountLaunchConfig,
+      },
+      {
+        id: 'strategy-efficient',
+        name: 'Efficient Dual Account Volume',
+        enabled: true,
+        visibility: 'admin',
+        controllerType: 'efficientDualAccountVolume',
+        capabilities: dualAccountLaunchConfig,
+      },
+    ]);
+
+    await expect(service.listDirectStrategyDefinitions()).resolves.toEqual([
+      expect.objectContaining({
+        id: 'strategy-pmm',
+        controllerType: 'pureMarketMaking',
+      }),
+      expect.objectContaining({
+        id: 'strategy-classic',
+        controllerType: 'dualAccountVolume',
+      }),
+      expect.objectContaining({
+        id: 'strategy-best',
+        controllerType: 'dualAccountBestCapacityVolume',
+      }),
+      expect.objectContaining({
+        id: 'strategy-efficient',
+        controllerType: 'efficientDualAccountVolume',
+      }),
+    ]);
+  });
+
+  it('backfills the efficient dual-account strategy when an existing DB only has legacy direct definitions', async () => {
+    const { service, strategyDefinitionRepository } = buildService();
+
+    strategyDefinitionRepository.find.mockResolvedValue([
+      {
+        id: 'strategy-pmm',
+        key: 'pure_market_making',
+        name: 'Pure Market Making',
+        enabled: true,
+        visibility: 'public',
+        controllerType: 'pureMarketMaking',
+        capabilities: singleAccountLaunchConfig,
+      },
+      {
+        id: 'strategy-classic',
+        key: 'dual_account_volume',
+        name: 'Dual Account Volume',
+        enabled: true,
+        visibility: 'admin',
+        controllerType: 'dualAccountVolume',
+        capabilities: dualAccountLaunchConfig,
+      },
+    ]);
+    strategyDefinitionRepository.save.mockImplementation(async (payload) => ({
+      ...payload,
+      id: 'strategy-efficient-backfilled',
+      createdAt: '2026-06-04T00:00:00.000Z',
+      updatedAt: '2026-06-04T00:00:00.000Z',
+    }));
+
+    const definitions = await service.listDirectStrategyDefinitions();
+
+    expect(strategyDefinitionRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: 'efficient_dual_account_volume',
+        name: 'Efficient Dual Account Volume',
+        controllerType: 'efficientDualAccountVolume',
+        enabled: true,
+        visibility: 'admin',
+        capabilities: dualAccountLaunchConfig,
+      }),
+    );
+    expect(definitions.map((definition) => definition.controllerType)).toEqual(
+      expect.arrayContaining([
+        'pureMarketMaking',
+        'dualAccountVolume',
+        'efficientDualAccountVolume',
+      ]),
+    );
+    expect(
+      definitions.find(
+        (definition) =>
+          definition.controllerType === 'efficientDualAccountVolume',
+      ),
+    ).toEqual(
+      expect.objectContaining({
+        id: 'strategy-efficient-backfilled',
+        directOrderCompatible: true,
+        directExecutionMode: 'dual_account',
+      }),
+    );
+  });
+
+  it('backfills pure market making when a local DB only has the efficient direct strategy', async () => {
+    const { service, strategyDefinitionRepository } = buildService();
+
+    strategyDefinitionRepository.find.mockResolvedValue([
+      {
+        id: 'strategy-efficient',
+        key: 'efficient_dual_account_volume',
+        name: 'Efficient Dual Account Volume',
+        enabled: true,
+        visibility: 'admin',
+        controllerType: 'efficientDualAccountVolume',
+        capabilities: dualAccountLaunchConfig,
+      },
+      {
+        id: 'strategy-classic',
+        key: 'dual_account_volume',
+        name: 'Dual Account Volume',
+        enabled: true,
+        visibility: 'admin',
+        controllerType: 'dualAccountVolume',
+        capabilities: dualAccountLaunchConfig,
+      },
+    ]);
+    strategyDefinitionRepository.save.mockImplementation(async (payload) => ({
+      ...payload,
+      id: 'strategy-pure-backfilled',
+      createdAt: '2026-06-04T00:00:00.000Z',
+      updatedAt: '2026-06-04T00:00:00.000Z',
+    }));
+
+    const definitions = await service.listDirectStrategyDefinitions();
+
+    expect(strategyDefinitionRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: 'pure_market_making',
+        name: 'Pure Market Making',
+        controllerType: 'pureMarketMaking',
+        enabled: true,
+        visibility: 'public',
+        capabilities: singleAccountLaunchConfig,
+      }),
+    );
+    expect(definitions.map((definition) => definition.controllerType)).toEqual([
+      'pureMarketMaking',
+      'efficientDualAccountVolume',
+      'dualAccountVolume',
+    ]);
+    expect(
+      definitions.find(
+        (definition) => definition.controllerType === 'pureMarketMaking',
+      ),
+    ).toEqual(
+      expect.objectContaining({
+        id: 'strategy-pure-backfilled',
+        directOrderCompatible: true,
+        directExecutionMode: 'single_account',
       }),
     );
   });
@@ -1134,12 +2512,12 @@ describe('AdminDirectMarketMakingService', () => {
     strategyDefinitionRepository.findOne.mockResolvedValue({
       id: 'strategy-2',
       enabled: true,
-      controllerType: 'dualAccountVolume',
+      controllerType: 'efficientDualAccountVolume',
       capabilities: dualAccountLaunchConfig,
       configSchema: {},
     });
     strategyConfigResolver.getDefinitionControllerType.mockReturnValue(
-      'dualAccountVolume',
+      'efficientDualAccountVolume',
     );
 
     await expect(
@@ -1176,12 +2554,12 @@ describe('AdminDirectMarketMakingService', () => {
     strategyDefinitionRepository.findOne.mockResolvedValue({
       id: 'strategy-2',
       enabled: true,
-      controllerType: 'dualAccountVolume',
+      controllerType: 'efficientDualAccountVolume',
       capabilities: dualAccountLaunchConfig,
       configSchema: {},
     });
     strategyConfigResolver.getDefinitionControllerType.mockReturnValue(
-      'dualAccountVolume',
+      'efficientDualAccountVolume',
     );
     exchangeApiKeyService.readAPIKey.mockResolvedValue({
       exchange: 'binance',

@@ -32,6 +32,8 @@
         AdminCampaign,
         DirectOrderStatus,
         DirectOrderSummary,
+        DirectStartPayload,
+        EfficientDualAccountVolumeMode,
         DirectWalletStatus,
     } from "$lib/types/hufi/admin-direct-market-making";
     import type { GrowInfo } from "$lib/types/hufi/grow";
@@ -39,13 +41,16 @@
 
     import {
         buildGenericSchemaConfigOverrides,
+        filterDirectCreateStrategies,
         formatOrderAmountForDisplay,
         getDirectOrderActionAvailability,
         getErrorMessage,
         getRecoveryHint,
+        isEfficientDualAccountControllerType,
         isDualDirectOrderControllerType,
         isSchemaDrivenDirectOrderControllerType,
         normalizeConfigOverrides,
+        normalizeEfficientDualAccountMode,
         resolveMinOrderAmount,
         type StrategySchema,
         type ExchangeMarketMetadata,
@@ -285,6 +290,7 @@
     let postOnlySide = "buy";
     let dynamicRoleSwitching = false;
     let targetQuoteVolume = "";
+    let efficientMode: EfficientDualAccountVolumeMode = "balanced";
     let configRows: OverrideRow[] = [{ key: "", value: "" }];
     let genericConfig: Record<string, unknown> = {};
     let genericConfigStrategyDefinitionId = "";
@@ -360,12 +366,25 @@
         selectedPairConfig?.amount_significant_figures,
     );
     $: selectedStrategy =
-        strategies.find(
+        directCreateStrategies.find(
             (strategy) => strategy.id === startStrategyDefinitionId,
         ) || null;
     $: selectedControllerType = selectedStrategy?.controllerType || "";
+    $: directCreateStrategies = filterDirectCreateStrategies(strategies);
+    $: if (
+        showStartForm &&
+        directCreateStrategies.length > 0 &&
+        (!startStrategyDefinitionId ||
+            !directCreateStrategies.some(
+                (strategy) => strategy.id === startStrategyDefinitionId,
+            ))
+    ) {
+        startStrategyDefinitionId = directCreateStrategies[0].id;
+    }
     $: selectedStrategySchema =
         (selectedStrategy?.configSchema as StrategySchema) || {};
+    $: isEfficientDualAccountStrategy =
+        isEfficientDualAccountControllerType(selectedControllerType);
     $: isDualAccountStrategy =
         selectedStrategy?.directExecutionMode === "dual_account" ||
         isDualDirectOrderControllerType(selectedControllerType);
@@ -407,8 +426,12 @@
     ) {
         genericConfigStrategyDefinitionId = startStrategyDefinitionId;
         genericConfig = { ...(selectedStrategy?.defaultConfig || {}) };
+        if (isEfficientDualAccountStrategy) {
+            efficientMode = normalizeEfficientDualAccountMode(
+                selectedStrategy?.defaultConfig?.mode,
+            );
+        }
     }
-
     function getToken(): string {
         if (!browser) return "";
         return localStorage.getItem("admin-access-token") || "";
@@ -513,6 +536,7 @@
         postOnlySide = "buy";
         dynamicRoleSwitching = false;
         targetQuoteVolume = "";
+        efficientMode = "balanced";
     }
 
     function applyOrderStatusToStartForm(
@@ -539,6 +563,7 @@
         postOnlySide = status.orderConfig.postOnlySide || "buy";
         dynamicRoleSwitching = status.orderConfig.dynamicRoleSwitching ?? false;
         targetQuoteVolume = status.orderConfig.targetQuoteVolume || "";
+        efficientMode = normalizeEfficientDualAccountMode(status.orderConfig.mode);
         configRows = [{ key: "", value: "" }];
         genericConfig = {
             ...(strategies.find(
@@ -548,6 +573,76 @@
         genericConfigStrategyDefinitionId = startStrategyDefinitionId;
         showStartForm = true;
         prefillingFromOrderId = order.orderId;
+    }
+
+    function buildDirectConfigOverrides(): Record<string, unknown> {
+        const baseConfigOverrides = normalizeConfigOverrides(
+            selectedControllerType,
+            configRows,
+            orderAmount,
+            orderSpread,
+            {
+                intervalTime,
+                numTrades,
+                pricePushRate,
+                postOnlySide,
+                dynamicRoleSwitching,
+                targetQuoteVolume,
+                cadenceVariance: "",
+                tradeAmountVariance: "",
+                priceOffsetVariance: "",
+                mode: efficientMode,
+            },
+        );
+
+        return isSchemaDrivenStrategy
+            ? buildGenericSchemaConfigOverrides(
+                  selectedStrategySchema,
+                  genericConfig,
+              )
+            : {
+                  ...baseConfigOverrides,
+                  ...(isPureMarketMakingStrategy
+                      ? buildGenericSchemaConfigOverrides(
+                            selectedStrategySchema,
+                            genericConfig,
+                            ADAPTIVE_PMM_SCHEMA_EXCLUDED_FIELDS,
+                        )
+                      : {}),
+              };
+    }
+
+    function buildStartPayload(): DirectStartPayload | null {
+        if (
+            !startExchangeName ||
+            !startPair ||
+            !startStrategyDefinitionId
+        ) {
+            return null;
+        }
+
+        const configOverrides = buildDirectConfigOverrides();
+
+        return isDualAccountStrategy
+            ? selectedMakerApiKey && selectedTakerApiKey
+                ? {
+                      exchangeName: startExchangeName,
+                      pair: startPair,
+                      strategyDefinitionId: startStrategyDefinitionId,
+                      makerApiKeyId: selectedMakerApiKey.key_id,
+                      takerApiKeyId: selectedTakerApiKey.key_id,
+                      configOverrides,
+                  }
+                : null
+            : selectedApiKey
+              ? {
+                    exchangeName: startExchangeName,
+                    pair: startPair,
+                    strategyDefinitionId: startStrategyDefinitionId,
+                    apiKeyId: selectedApiKey.key_id,
+                    configOverrides,
+                }
+              : null;
     }
 
     async function handleStartOrder() {
@@ -621,54 +716,10 @@
         }, 2000);
 
         try {
-            const baseConfigOverrides = normalizeConfigOverrides(
-                selectedControllerType,
-                configRows,
-                orderAmount,
-                orderSpread,
-                {
-                    intervalTime,
-                    numTrades,
-                    pricePushRate,
-                    postOnlySide,
-                    dynamicRoleSwitching,
-                    targetQuoteVolume,
-                    cadenceVariance: "",
-                    tradeAmountVariance: "",
-                    priceOffsetVariance: "",
-                },
-            );
-            const configOverrides = isSchemaDrivenStrategy
-                ? buildGenericSchemaConfigOverrides(
-                      selectedStrategySchema,
-                      genericConfig,
-                  )
-                : {
-                      ...baseConfigOverrides,
-                      ...(isPureMarketMakingStrategy
-                          ? buildGenericSchemaConfigOverrides(
-                                selectedStrategySchema,
-                                genericConfig,
-                                ADAPTIVE_PMM_SCHEMA_EXCLUDED_FIELDS,
-                            )
-                          : {}),
-                  };
-            const payload = isDualAccountStrategy
-                ? {
-                      exchangeName: startExchangeName,
-                      pair: startPair,
-                      strategyDefinitionId: startStrategyDefinitionId,
-                      makerApiKeyId: selectedMakerApiKey!.key_id,
-                      takerApiKeyId: selectedTakerApiKey!.key_id,
-                      configOverrides,
-                  }
-                : {
-                      exchangeName: startExchangeName,
-                      pair: startPair,
-                      strategyDefinitionId: startStrategyDefinitionId,
-                      apiKeyId: selectedApiKey!.key_id,
-                      configOverrides,
-                  };
+            const payload = buildStartPayload();
+            if (!payload) {
+                throw new Error($_("admin_direct_mm_error_missing_fields"));
+            }
             const result = await startDirectOrder(payload, token);
             const successExchange = startExchangeName;
             const successPair = startPair;
@@ -1155,7 +1206,7 @@
     {filteredPairs}
     {filteredApiKeys}
     blockedApiKeyViews={blockedStartApiKeyViews}
-    {strategies}
+    strategies={directCreateStrategies}
     {prefillingFromOrderId}
     {selectedStrategySchema}
     bind:genericConfig
@@ -1177,6 +1228,7 @@
     bind:postOnlySide
     bind:dynamicRoleSwitching
     bind:targetQuoteVolume
+    bind:efficientMode
     onSubmit={handleStartOrder}
     onClose={resetStartForm}
 />

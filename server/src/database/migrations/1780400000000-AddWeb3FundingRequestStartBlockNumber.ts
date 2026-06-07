@@ -10,7 +10,9 @@ export class AddWeb3FundingRequestStartBlockNumber1780400000000
       return;
     }
 
-    if (await queryRunner.hasColumn('web3_funding_request', 'startBlockNumber')) {
+    if (
+      await queryRunner.hasColumn('web3_funding_request', 'startBlockNumber')
+    ) {
       return;
     }
 
@@ -24,7 +26,9 @@ export class AddWeb3FundingRequestStartBlockNumber1780400000000
       return;
     }
 
-    if (!(await queryRunner.hasColumn('web3_funding_request', 'startBlockNumber'))) {
+    if (
+      !(await queryRunner.hasColumn('web3_funding_request', 'startBlockNumber'))
+    ) {
       return;
     }
 

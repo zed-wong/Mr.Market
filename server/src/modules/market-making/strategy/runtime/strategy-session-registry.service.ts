@@ -1,5 +1,4 @@
 import { Injectable, Optional } from '@nestjs/common';
-
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
@@ -25,7 +24,10 @@ import { ExecutorRegistry } from '../execution/executor-registry';
 import { StrategyWatcherManagerService } from './strategy-watcher-manager.service';
 
 export interface StrategySessionRegistryCallbacks {
-  runSession: (session: ExchangePairExecutorSession, ts: string) => Promise<void>;
+  runSession: (
+    session: ExchangePairExecutorSession,
+    ts: string,
+  ) => Promise<void>;
   handleSessionFill: (
     session: StrategyRuntimeSession,
     fill: ExchangePairFill,
@@ -43,7 +45,9 @@ export interface StrategySessionRegistryCallbacks {
 
 @Injectable()
 export class StrategySessionRegistryService {
-  private readonly logger = new CustomLogger(StrategySessionRegistryService.name);
+  private readonly logger = new CustomLogger(
+    StrategySessionRegistryService.name,
+  );
   readonly sessions = new Map<string, StrategyRuntimeSession>();
   readonly pendingActivationStrategies = new Map<string, StrategyInstance>();
   private readonly connectorHealthByExchange = new Map<
@@ -65,14 +69,18 @@ export class StrategySessionRegistryService {
     return this.connectorHealthByExchange.get(exchange) || 'CONNECTED';
   }
 
-  setConnectorHealthStatus(exchange: string, status: ConnectorHealthStatus): void {
+  setConnectorHealthStatus(
+    exchange: string,
+    status: ConnectorHealthStatus,
+  ): void {
     const normalizedExchange = this.readString(exchange);
 
     if (!normalizedExchange) {
       return;
     }
 
-    const previousStatus = this.connectorHealthByExchange.get(normalizedExchange);
+    const previousStatus =
+      this.connectorHealthByExchange.get(normalizedExchange);
 
     if (previousStatus === status) {
       return;
@@ -234,7 +242,8 @@ export class StrategySessionRegistryService {
     }
 
     return this.resolveRequiredAccountLabels(strategyType, params).every(
-      (accountLabel) => this.exchangeInitService.isReady(target.exchange, accountLabel),
+      (accountLabel) =>
+        this.exchangeInitService.isReady(target.exchange, accountLabel),
     );
   }
 
@@ -326,7 +335,9 @@ export class StrategySessionRegistryService {
     );
   }
 
-  async detachSessionFromExecutor(session: StrategyRuntimeSession): Promise<void> {
+  async detachSessionFromExecutor(
+    session: StrategyRuntimeSession,
+  ): Promise<void> {
     if (!this.executorRegistry) {
       return;
     }
@@ -399,7 +410,8 @@ export class StrategySessionRegistryService {
     if (
       strategyType === 'volume' ||
       strategyType === 'dualAccountVolume' ||
-      strategyType === 'dualAccountBestCapacityVolume'
+      strategyType === 'dualAccountBestCapacityVolume' ||
+      strategyType === 'efficientDualAccountVolume'
     ) {
       const exchange = String(
         (params as unknown as VolumeStrategyParams).exchangeName || '',

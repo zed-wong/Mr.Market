@@ -2,15 +2,34 @@ import { describe, expect, it } from 'vitest';
 
 import {
   aggregateBalancesByAsset,
+  buildDirectReadinessRefreshKey,
   buildDirectOrderDiagnosis,
+  EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE,
+  describeDirectRuntimeBottleneck,
+  describeDirectRuntimeNextAction,
+  describeReadinessBlockingReason,
+  describeReadinessMissingBalance,
+  describeSafeDirectStartFailure,
+  filterDirectCreateStrategies,
+  formatDirectRuntimeRemainingEstimate,
   buildGenericSchemaConfigOverrides,
   formatOrderAmountForDisplay,
+  formatReadinessAmount,
   getDirectOrderActionAvailability,
+  getDirectReadinessSubmitStatus,
+  getDirectRuntimeLifecycleView,
+  getEfficientDualAccountModeOptions,
+  getLatestDirectRuntimeCycle,
+  getReadinessCapitalRows,
+  isDirectReadinessForCurrentSelection,
   isBestCapacityDirectOrderControllerType,
   isDualAccountOrder,
   isDualDirectOrderControllerType,
+  isEfficientDualAccountStrategy,
   isSchemaDrivenDirectOrderControllerType,
   normalizeConfigOverrides,
+  normalizeDirectRuntimeCycles,
+  normalizeEfficientDualAccountMode,
   readPositiveOrderAmount,
   resolveInventorySkewAllocation,
   resolveMinOrderAmount,
@@ -298,6 +317,19 @@ describe('getDirectOrderActionAvailability', () => {
     });
   });
 
+  it('allows readiness-gated resume but not stop or remove for paused orders', () => {
+    expect(
+      getDirectOrderActionAvailability({
+        state: 'paused',
+        runtimeState: 'paused',
+      }),
+    ).toEqual({
+      canStop: false,
+      canResume: true,
+      canRemove: false,
+    });
+  });
+
   it('allows remove but not resume for persisted failed orders', () => {
     expect(
       getDirectOrderActionAvailability({
@@ -430,6 +462,64 @@ describe('normalizeConfigOverrides', () => {
       maxOrderAmount: 5,
     });
   });
+
+  it('serializes efficient dual-account volume config with balanced mode by default', () => {
+    expect(
+      normalizeConfigOverrides(
+        EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE,
+        [
+          { key: 'cycleMode', value: 'static' },
+          { key: 'dynamicRoleSwitching', value: 'false' },
+        ],
+        '5',
+        '0.4',
+        {
+          intervalTime: '30',
+          numTrades: '100',
+          pricePushRate: '0',
+          postOnlySide: 'buy',
+          dynamicRoleSwitching: false,
+          targetQuoteVolume: '50000',
+          cadenceVariance: '',
+          tradeAmountVariance: '0.15',
+          priceOffsetVariance: '0.2',
+        },
+      ),
+    ).toEqual({
+      maxOrderAmount: 5,
+      mode: 'balanced',
+      interval: 30,
+      dailyVolumeTarget: 50000,
+      tradeAmountVariance: 0.15,
+      priceOffsetVariance: 0.2,
+    });
+  });
+
+  it('serializes explicit efficient dual-account modes into payload config', () => {
+    expect(
+      normalizeConfigOverrides(
+        EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE,
+        [],
+        '2',
+        '',
+        {
+          intervalTime: '',
+          numTrades: '',
+          pricePushRate: '',
+          postOnlySide: '',
+          dynamicRoleSwitching: false,
+          targetQuoteVolume: '',
+          cadenceVariance: '',
+          tradeAmountVariance: '',
+          priceOffsetVariance: '',
+          mode: 'fastest_volume',
+        },
+      ),
+    ).toEqual({
+      maxOrderAmount: 2,
+      mode: 'fastest_volume',
+    });
+  });
 });
 
 describe('direct controller helpers', () => {
@@ -438,6 +528,7 @@ describe('direct controller helpers', () => {
     expect(
       isDualDirectOrderControllerType('dualAccountBestCapacityVolume'),
     ).toBe(true);
+    expect(isDualDirectOrderControllerType(EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE)).toBe(true);
     expect(isDualDirectOrderControllerType('pureMarketMaking')).toBe(false);
   });
 
@@ -447,6 +538,11 @@ describe('direct controller helpers', () => {
         'dualAccountBestCapacityVolume',
       ),
     ).toBe(true);
+    expect(
+      isBestCapacityDirectOrderControllerType(
+        EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE,
+      ),
+    ).toBe(true);
     expect(isBestCapacityDirectOrderControllerType('dualAccountVolume')).toBe(
       false,
     );
@@ -454,9 +550,610 @@ describe('direct controller helpers', () => {
 
   it('detects controller types that should use schema-driven direct forms', () => {
     expect(isSchemaDrivenDirectOrderControllerType('arbitrage')).toBe(true);
+    expect(
+      isSchemaDrivenDirectOrderControllerType(
+        EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE,
+      ),
+    ).toBe(false);
     expect(isSchemaDrivenDirectOrderControllerType('pureMarketMaking')).toBe(
       false,
     );
+  });
+
+  it('filters new-order strategies to direct-compatible PMM and dual-account variants', () => {
+    const strategies = [
+      { id: 'legacy-classic', key: 'dual-account-volume', name: 'dual account volume', controllerType: 'dualAccountVolume' },
+      { id: 'legacy-best', key: 'dual-account-best-capacity-volume', name: 'dual account volume best capacity', controllerType: 'dualAccountBestCapacityVolume' },
+      { id: 'pmm', key: 'pure-market-making', name: 'Pure Market Making', controllerType: 'pureMarketMaking' },
+      { id: 'efficient', key: 'efficient-dual-account-volume', name: 'Efficient Dual Account Volume', controllerType: EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE },
+    ];
+
+    expect(filterDirectCreateStrategies(strategies).map((strategy) => strategy.id)).toEqual([
+      'legacy-classic',
+      'legacy-best',
+      'pmm',
+      'efficient',
+    ]);
+  });
+
+  it('keeps the create selector non-empty for a backfilled efficient strategy API fixture', () => {
+    const strategies = [
+      { id: 'pmm', key: 'pure_market_making', name: 'Pure Market Making', controllerType: 'pureMarketMaking' },
+      { id: 'legacy-classic', key: 'dual_account_volume', name: 'Dual Account Volume', controllerType: 'dualAccountVolume' },
+      { id: 'legacy-best', key: 'dual_account_best_capacity_volume', name: 'Dual Account Best Capacity Volume', controllerType: 'dualAccountBestCapacityVolume' },
+      { id: 'efficient-backfilled', key: 'efficient_dual_account_volume', name: 'Efficient Dual Account Volume', controllerType: EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE },
+    ];
+
+    const selectableStrategies = filterDirectCreateStrategies(strategies);
+
+    expect(selectableStrategies.map((strategy) => strategy.id)).toEqual([
+      'pmm',
+      'legacy-classic',
+      'legacy-best',
+      'efficient-backfilled',
+    ]);
+    expect(selectableStrategies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'pmm',
+          name: 'Pure Market Making',
+          controllerType: 'pureMarketMaking',
+        }),
+        expect.objectContaining({
+          id: 'legacy-classic',
+          name: 'Dual Account Volume',
+          controllerType: 'dualAccountVolume',
+        }),
+        expect.objectContaining({
+          id: 'legacy-best',
+          name: 'Dual Account Best Capacity Volume',
+          controllerType: 'dualAccountBestCapacityVolume',
+        }),
+        expect.objectContaining({
+          id: 'efficient-backfilled',
+          name: 'Efficient Dual Account Volume',
+          controllerType: EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE,
+        }),
+      ]),
+    );
+  });
+
+  it('recognizes efficient strategies and exposes human mode copy', () => {
+    expect(
+      isEfficientDualAccountStrategy({
+        id: 'efficient',
+        key: 'efficient-dual-account-volume',
+        controllerType: EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE,
+      }),
+    ).toBe(true);
+    expect(normalizeEfficientDualAccountMode(undefined)).toBe('balanced');
+    expect(normalizeEfficientDualAccountMode('unsupported')).toBe('balanced');
+    expect(getEfficientDualAccountModeOptions().map((option) => option.value)).toEqual([
+      'cheapest_capital',
+      'balanced',
+      'fastest_volume',
+    ]);
+    expect(
+      getEfficientDualAccountModeOptions().find((option) => option.value === 'balanced')?.description,
+    ).toContain('Balances');
+  });
+
+  it('blocks start while readiness is missing, loading, failed, stale, or blocked', () => {
+    expect(
+      getDirectReadinessSubmitStatus({
+        requiredInputsComplete: false,
+        loading: false,
+        failed: false,
+        displayedSignature: '',
+        currentSignature: '',
+        canStart: true,
+      }),
+    ).toBe('missing');
+    expect(
+      getDirectReadinessSubmitStatus({
+        requiredInputsComplete: true,
+        loading: true,
+        failed: false,
+        displayedSignature: 'a',
+        currentSignature: 'a',
+        canStart: true,
+      }),
+    ).toBe('loading');
+    expect(
+      getDirectReadinessSubmitStatus({
+        requiredInputsComplete: true,
+        loading: false,
+        failed: true,
+        displayedSignature: 'a',
+        currentSignature: 'a',
+        canStart: true,
+      }),
+    ).toBe('failed');
+    expect(
+      getDirectReadinessSubmitStatus({
+        requiredInputsComplete: true,
+        loading: false,
+        failed: false,
+        displayedSignature: 'old',
+        currentSignature: 'new',
+        canStart: true,
+      }),
+    ).toBe('stale');
+    expect(
+      getDirectReadinessSubmitStatus({
+        requiredInputsComplete: true,
+        loading: false,
+        failed: false,
+        displayedSignature: 'a',
+        currentSignature: 'a',
+        canStart: false,
+      }),
+    ).toBe('blocked');
+    expect(
+      getDirectReadinessSubmitStatus({
+        requiredInputsComplete: true,
+        loading: false,
+        failed: false,
+        displayedSignature: 'a',
+        currentSignature: 'a',
+        canStart: true,
+      }),
+    ).toBe('ready');
+  });
+
+  it('treats mode changes as stale until a matching readiness response arrives', () => {
+    const balancedSignature = JSON.stringify({
+      exchangeName: 'binance',
+      pair: 'BTC/USDT',
+      strategyDefinitionId: 'def-efficient',
+      makerApiKeyId: 'maker-key',
+      takerApiKeyId: 'taker-key',
+      configOverrides: {
+        mode: 'balanced',
+        maxOrderAmount: 0.01,
+      },
+    });
+    const fastestVolumeSignature = JSON.stringify({
+      exchangeName: 'binance',
+      pair: 'BTC/USDT',
+      strategyDefinitionId: 'def-efficient',
+      makerApiKeyId: 'maker-key',
+      takerApiKeyId: 'taker-key',
+      configOverrides: {
+        mode: 'fastest_volume',
+        maxOrderAmount: 0.01,
+      },
+    });
+    const balancedReadiness = {
+      canStart: true,
+      mode: 'balanced' as const,
+      bestFirstAction: null,
+      maximumCycleQty: '0.01',
+      recommendedCycleQty: '0.01',
+      minimumCapitalByAccountAsset: [],
+      recommendedCapitalByAccountAsset: [],
+      missingBalances: [],
+      estimatedCycles: {
+        count: '1',
+        basis: 'current_available_balances',
+      },
+      estimatedVolume: {
+        baseAsset: 'BTC',
+        quoteAsset: 'USDT',
+        baseAmount: '0.01',
+        quoteAmount: '500',
+      },
+      blockingReasons: [],
+    };
+
+    expect(
+      isDirectReadinessForCurrentSelection({
+        readiness: balancedReadiness,
+        displayedSignature: balancedSignature,
+        currentSignature: fastestVolumeSignature,
+        selectedMode: 'fastest_volume',
+      }),
+    ).toBe(false);
+    expect(
+      getDirectReadinessSubmitStatus({
+        requiredInputsComplete: true,
+        loading: false,
+        failed: false,
+        displayedSignature: balancedSignature,
+        currentSignature: fastestVolumeSignature,
+        canStart: balancedReadiness.canStart,
+      }),
+    ).toBe('stale');
+    expect(
+      isDirectReadinessForCurrentSelection({
+        readiness: balancedReadiness,
+        displayedSignature: fastestVolumeSignature,
+        currentSignature: fastestVolumeSignature,
+        selectedMode: 'fastest_volume',
+      }),
+    ).toBe(false);
+    expect(
+      isDirectReadinessForCurrentSelection({
+        readiness: {
+          ...balancedReadiness,
+          mode: 'fastest_volume',
+        },
+        displayedSignature: fastestVolumeSignature,
+        currentSignature: fastestVolumeSignature,
+        selectedMode: 'fastest_volume',
+      }),
+    ).toBe(true);
+  });
+
+  it('tracks mode and cycle-size changes as direct readiness refresh inputs', () => {
+    const baseRefreshKeyInput = {
+      showStartForm: true,
+      isEfficientDualAccountStrategy: true,
+      exchangeName: 'binance',
+      pair: 'BTC/USDT',
+      strategyDefinitionId: 'def-efficient',
+      makerApiKeyId: 'maker-key',
+      takerApiKeyId: 'taker-key',
+      controllerType: EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE,
+      orderAmount: '0.01',
+      orderSpread: '',
+      intervalTime: '30',
+      numTrades: '100',
+      pricePushRate: '0',
+      postOnlySide: 'buy',
+      dynamicRoleSwitching: false,
+      targetQuoteVolume: '',
+      efficientMode: 'balanced' as const,
+      configRows: [{ key: '', value: '' }],
+      genericConfig: {},
+    };
+
+    const balancedKey = buildDirectReadinessRefreshKey(baseRefreshKeyInput);
+
+    expect(
+      buildDirectReadinessRefreshKey({
+        ...baseRefreshKeyInput,
+        efficientMode: 'fastest_volume',
+      }),
+    ).not.toBe(balancedKey);
+    expect(
+      buildDirectReadinessRefreshKey({
+        ...baseRefreshKeyInput,
+        orderAmount: '0.02',
+      }),
+    ).not.toBe(balancedKey);
+  });
+
+  it('preserves backend readiness numeric strings and units for display rows', () => {
+    expect(formatReadinessAmount('0.12345678', 'BTC')).toBe('0.12345678 BTC');
+    expect(
+      getReadinessCapitalRows(
+        [
+          {
+            accountLabel: 'maker-main',
+            asset: 'USDT',
+            amount: '100.00000001',
+          },
+          {
+            accountLabel: 'taker-alt',
+            asset: 'BTC',
+            amount: '0.00250000',
+          },
+        ],
+        'recommended',
+      ),
+    ).toEqual([
+      {
+        accountLabel: 'maker-main',
+        asset: 'USDT',
+        value: '100.00000001',
+        label: '100.00000001 USDT',
+        testId: 'readiness-recommended-maker-main-USDT',
+      },
+      {
+        accountLabel: 'taker-alt',
+        asset: 'BTC',
+        value: '0.00250000',
+        label: '0.00250000 BTC',
+        testId: 'readiness-recommended-taker-alt-BTC',
+      },
+    ]);
+  });
+
+  it('translates readiness blockers and missing balances into actionable copy', () => {
+    expect(
+      describeReadinessMissingBalance({
+        accountLabel: 'maker-main',
+        asset: 'USDT',
+        availableAmount: '4.00000001',
+        minimumUsefulAmount: '15.00000000',
+        missingAmount: '10.99999999',
+      }),
+    ).toContain('maker-main needs 10.99999999 USDT');
+    expect(
+      describeReadinessMissingBalance({
+        accountLabel: 'maker-main',
+        asset: 'USDT',
+        availableAmount: '4.00000001',
+        minimumUsefulAmount: '15.00000000',
+        missingAmount: '10.99999999',
+      }),
+    ).toContain('Deposit the missing asset amount or lower the cycle limit');
+    expect(
+      describeReadinessBlockingReason({
+        code: 'below_exchange_minimums',
+        message: 'raw notional < costMin',
+        accountLabel: 'taker-alt',
+        asset: 'BTC',
+      }),
+    ).toBe(
+      'taker-alt: Current balances cannot satisfy exchange minimums plus the safety buffer. (BTC)',
+    );
+    expect(
+      describeReadinessBlockingReason({
+        code: 'raw notional < costMin',
+        message: 'raw notional < costMin',
+      }),
+    ).not.toContain('raw notional');
+  });
+
+  it('builds safe stale-start rejection copy from refreshed readiness without raw backend internals', () => {
+    const unsafeBackendError = new Error(
+      'candidate maker raw notional < costMin minimumNotional=10',
+    );
+
+    const refreshedReadiness = {
+      canStart: false,
+      mode: 'balanced' as const,
+      bestFirstAction: null,
+      maximumCycleQty: '0',
+      recommendedCycleQty: '0',
+      minimumCapitalByAccountAsset: [],
+      recommendedCapitalByAccountAsset: [],
+      missingBalances: [],
+      estimatedCycles: {
+        count: '0',
+        basis: 'current_available_balances',
+      },
+      estimatedVolume: {
+        baseAsset: 'BTC',
+        quoteAsset: 'USDT',
+        baseAmount: '0',
+        quoteAmount: '0',
+      },
+      blockingReasons: [
+        {
+          code: 'below_exchange_minimums',
+          message: 'raw notional < costMin',
+          accountLabel: 'maker-main',
+          asset: 'USDT',
+        },
+      ],
+    };
+
+    expect(
+      describeSafeDirectStartFailure(refreshedReadiness, unsafeBackendError),
+    ).toBe(
+      'maker-main: Current balances cannot satisfy exchange minimums plus the safety buffer. (USDT)',
+    );
+    expect(
+      describeSafeDirectStartFailure(null, unsafeBackendError),
+    ).toBe(
+      'Start was rejected after planner revalidation. Refresh readiness and resolve account, asset, or market-rule blockers before retrying.',
+    );
+    expect(
+      describeSafeDirectStartFailure(null, unsafeBackendError),
+    ).not.toMatch(/raw notional|costMin|candidate|minimumNotional/);
+  });
+});
+
+describe('Efficient Dual Account runtime cycle helpers', () => {
+  const readiness = {
+    canStart: false,
+    mode: 'balanced' as const,
+    bestFirstAction: {
+      makerAccountLabel: 'maker-main',
+      takerAccountLabel: 'taker-alt',
+      side: 'buy' as const,
+      baseAsset: 'BTC',
+      quoteAsset: 'USDT',
+      quantity: '0.5',
+      price: '30000',
+      notional: '15000',
+    },
+    maximumCycleQty: '0.8',
+    recommendedCycleQty: '0.5',
+    minimumCapitalByAccountAsset: [],
+    recommendedCapitalByAccountAsset: [],
+    missingBalances: [
+      {
+        accountLabel: 'taker-alt',
+        asset: 'BTC',
+        availableAmount: '0.1',
+        minimumUsefulAmount: '0.5',
+        missingAmount: '0.4',
+      },
+    ],
+    estimatedCycles: {
+      count: '3',
+      basis: 'current_available_balances',
+    },
+    estimatedVolume: {
+      baseAsset: 'BTC',
+      quoteAsset: 'USDT',
+      baseAmount: '1.5',
+      quoteAmount: '45000',
+    },
+    blockingReasons: [
+      {
+        code: 'below_exchange_minimums',
+        message: 'raw notional < costMin',
+        accountLabel: 'taker-alt',
+        asset: 'BTC',
+      },
+    ],
+  };
+
+  it('normalizes grouped maker and inline taker cycle legs without losing failure reasons', () => {
+    const cycles = normalizeDirectRuntimeCycles([
+      {
+        cycleId: 'cycle-2',
+        aggregateStatus: 'failed',
+        failureReason: 'taker IOC rejected',
+        legs: [
+          {
+            cycleRole: 'taker',
+            accountLabel: 'taker-alt',
+            side: 'sell',
+            plannedQty: '0.5',
+            plannedPrice: '30000',
+            filledQty: '0',
+            notional: '15000',
+            status: 'failed',
+            failureReason: 'taker IOC rejected',
+            linkedIntentId: 'intent-taker',
+            linkedTrackedOrderId: null,
+          },
+          {
+            cycleRole: 'maker',
+            accountLabel: 'maker-main',
+            side: 'buy',
+            plannedQty: '0.5',
+            plannedPrice: '30000',
+            filledQty: '0.5',
+            notional: '15000',
+            status: 'filled',
+            failureReason: null,
+            linkedIntentId: 'intent-maker',
+            linkedTrackedOrderId: 'tracked-maker',
+          },
+        ],
+      },
+      {
+        cycleId: 'cycle-1',
+        aggregateStatus: 'completed',
+        legs: [],
+      },
+    ]);
+
+    expect(cycles.map((cycle) => cycle.cycleId)).toEqual(['cycle-1', 'cycle-2']);
+    expect(getLatestDirectRuntimeCycle(cycles)?.cycleId).toBe('cycle-2');
+    expect(cycles[1].legs.map((leg) => leg.cycleRole)).toEqual(['maker', 'taker']);
+    expect(cycles[1].legs[1]).toMatchObject({
+      cycleRole: 'taker',
+      accountLabel: 'taker-alt',
+      side: 'sell',
+      failureReason: 'taker IOC rejected',
+      linkedIntentId: 'intent-taker',
+    });
+  });
+
+  it('orders unpadded numeric cycle counters before selecting the latest cycle', () => {
+    const cycles = normalizeDirectRuntimeCycles([
+      {
+        cycleId: 'efficient-dual-account-volume:cycle:10:2026-06-04T00:10:00.000Z',
+        aggregateStatus: 'completed',
+        legs: [],
+      },
+      {
+        cycleId: 'efficient-dual-account-volume:cycle:2:2026-06-04T00:02:00.000Z',
+        aggregateStatus: 'completed',
+        legs: [],
+      },
+      {
+        cycleId: 'efficient-dual-account-volume:cycle:9:2026-06-04T00:09:00.000Z',
+        aggregateStatus: 'partial',
+        legs: [],
+      },
+    ]);
+
+    expect(cycles.map((cycle) => cycle.cycleId)).toEqual([
+      'efficient-dual-account-volume:cycle:2:2026-06-04T00:02:00.000Z',
+      'efficient-dual-account-volume:cycle:9:2026-06-04T00:09:00.000Z',
+      'efficient-dual-account-volume:cycle:10:2026-06-04T00:10:00.000Z',
+    ]);
+    expect(getLatestDirectRuntimeCycle(cycles)?.cycleId).toBe(
+      'efficient-dual-account-volume:cycle:10:2026-06-04T00:10:00.000Z',
+    );
+  });
+
+  it('uses timestamp then backend order fallback for non-parseable cycle counters', () => {
+    const timestampedCycles = normalizeDirectRuntimeCycles([
+      {
+        cycleId: 'runtime-cycle-alpha-2026-06-04T00:10:00.000Z',
+        aggregateStatus: 'completed',
+        legs: [],
+      },
+      {
+        cycleId: 'runtime-cycle-beta-2026-06-04T00:09:00.000Z',
+        aggregateStatus: 'completed',
+        legs: [],
+      },
+    ]);
+    const backendOrderedCycles = normalizeDirectRuntimeCycles([
+      {
+        cycleId: 'runtime-cycle-alpha',
+        aggregateStatus: 'completed',
+        legs: [],
+      },
+      {
+        cycleId: 'runtime-cycle-beta',
+        aggregateStatus: 'completed',
+        legs: [],
+      },
+    ]);
+
+    expect(timestampedCycles.map((cycle) => cycle.cycleId)).toEqual([
+      'runtime-cycle-beta-2026-06-04T00:09:00.000Z',
+      'runtime-cycle-alpha-2026-06-04T00:10:00.000Z',
+    ]);
+    expect(backendOrderedCycles.map((cycle) => cycle.cycleId)).toEqual([
+      'runtime-cycle-alpha',
+      'runtime-cycle-beta',
+    ]);
+  });
+
+  it('describes runtime next action, bottleneck, remaining estimates, and lifecycle state', () => {
+    expect(describeDirectRuntimeNextAction(readiness)).toContain(
+      'Maker maker-main should buy 0.5 BTC against taker taker-alt',
+    );
+    expect(describeDirectRuntimeBottleneck(readiness)).toContain(
+      'taker-alt BTC is the current bottleneck: 0.4 BTC missing',
+    );
+    expect(formatDirectRuntimeRemainingEstimate(readiness)).toBe(
+      '3 cycles, 45000 USDT / 1.5 BTC estimated volume.',
+    );
+
+    expect(
+      getDirectRuntimeLifecycleView({
+        state: 'paused',
+        runtimeState: 'paused',
+        readiness,
+      }),
+    ).toMatchObject({
+      label: 'Paused',
+      tone: 'info',
+      canResumeNow: true,
+      readinessGated: false,
+    });
+
+    expect(
+      getDirectRuntimeLifecycleView({
+        state: 'stopped',
+        runtimeState: 'stopped',
+        readiness: {
+          ...readiness,
+          canStart: true,
+          missingBalances: [],
+          blockingReasons: [],
+        },
+      }),
+    ).toMatchObject({
+      label: 'Operator stopped',
+      tone: 'info',
+      canResumeNow: true,
+      readinessGated: false,
+    });
   });
 });
 

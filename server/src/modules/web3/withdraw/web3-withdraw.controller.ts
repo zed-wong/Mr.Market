@@ -31,7 +31,9 @@ export class Web3WithdrawController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Prepare an authenticated Router withdrawal request' })
+  @ApiOperation({
+    summary: 'Prepare an authenticated Router withdrawal request',
+  })
   async createWithdrawalRequest(
     @Body() body: Record<string, unknown>,
     @Req() request: AuthenticatedRequest,
@@ -49,7 +51,9 @@ export class Web3WithdrawController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Get authenticated Router withdrawal request status' })
+  @ApiOperation({
+    summary: 'Get authenticated Router withdrawal request status',
+  })
   async getWithdrawal(
     @Param('withdrawalId') withdrawalId: string,
     @Req() request: AuthenticatedRequest,
@@ -65,7 +69,8 @@ export class Web3WithdrawController {
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Verify a Router withdrawal request transaction and process payout',
+    summary:
+      'Verify a Router withdrawal request transaction and process payout',
   })
   async verifyWithdrawalTransaction(
     @Param('withdrawalId') withdrawalId: string,

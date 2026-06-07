@@ -51,6 +51,9 @@ export type DualAccountVolumeStrategyParams = CexVolumeStrategyParams & {
   maxOrderAmount?: number;
   interval?: number;
   dailyVolumeTarget?: number;
+  mode?: EfficientDualAccountVolumeMode;
+  strategyContract?: 'efficientDualAccountVolume';
+  safetyBuffer?: DualAccountSafetyBufferConfig;
   makerAccountLabel: string;
   takerAccountLabel: string;
   tradeAmountVariance?: number;
@@ -81,6 +84,17 @@ export type DualAccountVolumeStrategyParams = CexVolumeStrategyParams & {
 
 export type DualAccountBestCapacityVolumeStrategyParams =
   DualAccountVolumeStrategyParams;
+
+export type EfficientDualAccountVolumeMode =
+  | 'cheapest_capital'
+  | 'balanced'
+  | 'fastest_volume';
+
+export type DualAccountSafetyBufferConfig = {
+  kind: 'default_formula';
+  exchangeCostMinMultiplier: number;
+  feeCostMultiplier: number;
+};
 
 export type DualAccountBehaviorProfile = {
   tradeAmountMultiplier?: number;
@@ -124,7 +138,13 @@ export type DualAccountBestCapacityCandidate = {
   makerBalances: DualAccountPairBalances;
   takerBalances: DualAccountPairBalances;
   capacity: BigNumber;
+  quoteVolume: BigNumber;
   futureOppositeCapacity: BigNumber;
+  nextCycleQuoteCapacity: BigNumber;
+  estimatedFeeQuote: BigNumber;
+  estimatedSpreadCostQuote: BigNumber;
+  rebalanceRiskQuote: BigNumber;
+  dustRiskQuote: BigNumber;
   imbalanceRatio: BigNumber;
   candidateRank: number;
   roleAssignment: 'configured' | 'swapped';

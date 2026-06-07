@@ -17,11 +17,13 @@ import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
 
 import { TrackedOrderShutdownService } from '../../trackers/tracked-order-shutdown.service';
+import { ExecutorAction } from '../config/executor-action.types';
 import {
   ArbitrageStrategyDto,
   DexAdapterId,
   ExecuteDualAccountBestCapacityVolumeStrategyDto,
   ExecuteDualAccountVolumeStrategyDto,
+  ExecuteEfficientDualAccountVolumeStrategyDto,
   PureMarketMakingStrategyDto,
   VolumeExecutionVenue,
 } from '../config/strategy.dto';
@@ -29,6 +31,7 @@ import {
   StrategyRuntimeSession,
   type StrategyType,
 } from '../config/strategy-controller.types';
+import { normalizeExecutionCategory } from '../config/strategy-execution-category';
 import { StrategyOrderIntent } from '../config/strategy-intent.types';
 import type {
   ConnectorHealthStatus,
@@ -40,8 +43,6 @@ import { VolumeStrategyController } from '../controllers/volume-strategy.control
 import { StrategyMarketDataProviderService } from '../data/strategy-market-data-provider.service';
 import * as dualAccountConfig from '../dual-account/dual-account-config';
 import { StrategyIntentStoreService } from '../execution/strategy-intent-store.service';
-import { ExecutorAction } from '../config/executor-action.types';
-import { normalizeExecutionCategory } from '../config/strategy-execution-category';
 import { AdaptivePmmStateService } from '../pmm/adaptive-pmm-state.service';
 import { QuotePlannerService } from '../quote/quote-planner.service';
 import { StrategyStartupRecoveryService } from '../recovery/strategy-startup-recovery.service';
@@ -195,9 +196,12 @@ export class StrategyInstanceLifecycleService {
     userId: string,
     clientId: string,
   ): Promise<void> {
-    this.strategySessionRegistry.pendingActivationStrategies.delete(strategyKey);
+    this.strategySessionRegistry.pendingActivationStrategies.delete(
+      strategyKey,
+    );
 
-    const activeSession = this.strategySessionRegistry.sessions.get(strategyKey);
+    const activeSession =
+      this.strategySessionRegistry.sessions.get(strategyKey);
 
     await this.removeSession(strategyKey, activeSession);
     await this.trackedOrderShutdownService?.cancelTrackedOrdersForStrategy(
@@ -435,7 +439,13 @@ export class StrategyInstanceLifecycleService {
           });
     const cadenceMs = Math.max(1000, Number(baseIntervalTime || 10) * 1000);
 
-    await this.upsertStrategyInstance(strategyKey, userId, clientId, 'volume', params);
+    await this.upsertStrategyInstance(
+      strategyKey,
+      userId,
+      clientId,
+      'volume',
+      params,
+    );
     await this.upsertSession(
       strategyKey,
       'volume',
@@ -451,13 +461,15 @@ export class StrategyInstanceLifecycleService {
     params: ExecuteDualAccountVolumeStrategyDto,
     callbacks: StrategySessionRegistryCallbacks,
   ): Promise<void> {
-    const normalizedParams = dualAccountConfig.normalizeDualAccountStrategyParams(params);
+    const normalizedParams =
+      dualAccountConfig.normalizeDualAccountStrategyParams(params);
     const strategyKey = createStrategyKey({
       type: 'dualAccountVolume',
       user_id: params.userId,
       client_id: params.clientId,
     });
-    const cadenceMs = dualAccountConfig.resolveNextDualAccountCadenceMs(normalizedParams);
+    const cadenceMs =
+      dualAccountConfig.resolveNextDualAccountCadenceMs(normalizedParams);
 
     await this.upsertStrategyInstance(
       strategyKey,
@@ -479,7 +491,11 @@ export class StrategyInstanceLifecycleService {
         params.marketMakingOrderId || params.clientId,
       );
     } catch (error) {
-      await this.rollbackFailedStrategyStart(strategyKey, params.userId, params.clientId);
+      await this.rollbackFailedStrategyStart(
+        strategyKey,
+        params.userId,
+        params.clientId,
+      );
       throw error;
     }
   }
@@ -495,7 +511,8 @@ export class StrategyInstanceLifecycleService {
       user_id: params.userId,
       client_id: params.clientId,
     });
-    const cadenceMs = dualAccountConfig.resolveNextDualAccountCadenceMs(normalizedParams);
+    const cadenceMs =
+      dualAccountConfig.resolveNextDualAccountCadenceMs(normalizedParams);
 
     await this.upsertStrategyInstance(
       strategyKey,
@@ -517,7 +534,56 @@ export class StrategyInstanceLifecycleService {
         params.marketMakingOrderId || params.clientId,
       );
     } catch (error) {
-      await this.rollbackFailedStrategyStart(strategyKey, params.userId, params.clientId);
+      await this.rollbackFailedStrategyStart(
+        strategyKey,
+        params.userId,
+        params.clientId,
+      );
+      throw error;
+    }
+  }
+
+  async executeEfficientDualAccountVolumeStrategy(
+    params: ExecuteEfficientDualAccountVolumeStrategyDto,
+    callbacks: StrategySessionRegistryCallbacks,
+  ): Promise<void> {
+    const normalizedParams =
+      dualAccountConfig.normalizeEfficientDualAccountVolumeStrategyParams(
+        params,
+      );
+    const strategyKey = createStrategyKey({
+      type: 'efficientDualAccountVolume',
+      user_id: params.userId,
+      client_id: params.clientId,
+    });
+    const cadenceMs =
+      dualAccountConfig.resolveNextDualAccountCadenceMs(normalizedParams);
+
+    await this.upsertStrategyInstance(
+      strategyKey,
+      params.userId,
+      params.clientId,
+      'efficientDualAccountVolume',
+      normalizedParams,
+      params.marketMakingOrderId || params.clientId,
+    );
+    try {
+      await this.upsertSession(
+        strategyKey,
+        'efficientDualAccountVolume',
+        params.userId,
+        params.clientId,
+        cadenceMs,
+        normalizedParams,
+        callbacks,
+        params.marketMakingOrderId || params.clientId,
+      );
+    } catch (error) {
+      await this.rollbackFailedStrategyStart(
+        strategyKey,
+        params.userId,
+        params.clientId,
+      );
       throw error;
     }
   }
@@ -556,7 +622,10 @@ export class StrategyInstanceLifecycleService {
     strategy: StrategyInstance,
     nextRunAtMs: number,
     logger: CustomLogger,
-    getCadenceMs: (parameters: Record<string, any>, strategyType: string) => number,
+    getCadenceMs: (
+      parameters: Record<string, any>,
+      strategyType: string,
+    ) => number,
     upsertSession: (
       strategyKey: string,
       strategyType: StrategyType,
@@ -587,9 +656,9 @@ export class StrategyInstanceLifecycleService {
           },
         );
         logger.warn(
-          `Blocked startup for ${strategy.strategyKey}: ${recoveryResult.blockedReasons.join(
-            '; ',
-          )}`,
+          `Blocked startup for ${
+            strategy.strategyKey
+          }: ${recoveryResult.blockedReasons.join('; ')}`,
         );
 
         return;
@@ -626,7 +695,8 @@ export class StrategyInstanceLifecycleService {
     if (
       strategyType === 'volume' ||
       strategyType === 'dualAccountVolume' ||
-      strategyType === 'dualAccountBestCapacityVolume'
+      strategyType === 'dualAccountBestCapacityVolume' ||
+      strategyType === 'efficientDualAccountVolume'
     ) {
       const venue = String(parameters.executionVenue || '').toLowerCase();
       const category = String(parameters.executionCategory || '').toLowerCase();
@@ -703,9 +773,12 @@ export class StrategyInstanceLifecycleService {
         { strategyKey },
         { status: 'stopped', updatedAt: getRFC3339Timestamp() },
       );
-      this.strategySessionRegistry.pendingActivationStrategies.delete(strategyKey);
+      this.strategySessionRegistry.pendingActivationStrategies.delete(
+        strategyKey,
+      );
 
-      const activeSession = this.strategySessionRegistry.sessions.get(strategyKey);
+      const activeSession =
+        this.strategySessionRegistry.sessions.get(strategyKey);
 
       await this.trackedOrderShutdownService?.cancelTrackedOrdersForStrategy(
         strategyKey,
@@ -737,7 +810,9 @@ export class StrategyInstanceLifecycleService {
       };
 
       await publishIntents(strategyKey, [stopIntent]);
-      this.strategyIntentStoreService?.clearLatestIntentsForStrategy(strategyKey);
+      this.strategyIntentStoreService?.clearLatestIntentsForStrategy(
+        strategyKey,
+      );
     } finally {
       this.stoppingStrategyKeys.delete(strategyKey);
     }
@@ -804,7 +879,8 @@ export class StrategyInstanceLifecycleService {
         if (
           session.strategyType === 'pureMarketMaking' ||
           session.strategyType === 'dualAccountVolume' ||
-          session.strategyType === 'dualAccountBestCapacityVolume'
+          session.strategyType === 'dualAccountBestCapacityVolume' ||
+          session.strategyType === 'efficientDualAccountVolume'
         ) {
           await this.trackedOrderShutdownService?.cancelTrackedOrdersForStrategy(
             session.strategyKey,

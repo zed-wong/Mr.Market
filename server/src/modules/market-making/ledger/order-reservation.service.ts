@@ -113,6 +113,7 @@ export class OrderReservationService {
     }
 
     const calculatedAmount = new BigNumber(reservation.amount);
+
     if (
       normalizedCommand.reason === 'exchange_order_filled' &&
       calculatedAmount.isFinite() &&

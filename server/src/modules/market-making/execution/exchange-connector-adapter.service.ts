@@ -84,6 +84,7 @@ export class ExchangeConnectorAdapterService {
           exchangeName,
           accountLabel,
         );
+
         const params = {
           ...(clientOrderId ? { clientOrderId } : {}),
           ...(options?.postOnly ? { postOnly: true } : {}),
@@ -301,6 +302,7 @@ export class ExchangeConnectorAdapterService {
         }
 
         const market = exchange?.markets?.[pair] || {};
+
         const rules = {
           amountMin: this.toFiniteNumber(market?.limits?.amount?.min),
           amountMax: this.toFiniteNumber(market?.limits?.amount?.max),

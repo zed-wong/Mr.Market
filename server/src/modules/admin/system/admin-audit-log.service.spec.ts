@@ -15,15 +15,19 @@ describe('AdminAuditLogService', () => {
       create: jest.fn((value) => value),
       save: jest.fn(async (value) => {
         records.push(value);
+
         return value;
       }),
       findAndCount: jest.fn(async (options) => {
         const limit = options.take ?? 50;
         const skip = options.skip ?? 0;
+
         return [
           records
             .slice()
-            .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+            .sort((left, right) =>
+              right.createdAt.localeCompare(left.createdAt),
+            )
             .slice(skip, skip + limit),
           records.length,
         ];
@@ -49,7 +53,8 @@ describe('AdminAuditLogService', () => {
         password: 'hunter2',
         apiKey: 'abc123',
         nested: {
-          authorization: 'Bearer **********************************************',
+          authorization:
+            'Bearer **********************************************',
         },
       },
       requestContext: {
@@ -109,12 +114,12 @@ describe('AdminAuditLogService', () => {
   it('rejects invalid filters without leaking internals', async () => {
     const { service } = buildService();
 
-    await expect(service.getAudit({ status: 'deleted' })).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
-    await expect(service.getAudit({ from: 'not-a-date' })).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(
+      service.getAudit({ status: 'deleted' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.getAudit({ from: 'not-a-date' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
     await expect(
       service.getAudit({ actor: 'x'.repeat(121) }),
     ).rejects.toBeInstanceOf(BadRequestException);

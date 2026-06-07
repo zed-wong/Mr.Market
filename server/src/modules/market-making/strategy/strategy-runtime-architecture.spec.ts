@@ -4,9 +4,9 @@ import BigNumber from 'bignumber.js';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import { buildSubmittedClientOrderId } from 'src/common/helpers/client-order-id';
 
+import { OrderScopedBalanceQueryService } from '../balance-state/order-scoped-balance-query.service';
 import { ExchangeOrderMappingService } from '../execution/exchange-order-mapping.service';
 import { FillRoutingService } from '../execution/fill-routing.service';
-import { OrderScopedBalanceQueryService } from '../balance-state/order-scoped-balance-query.service';
 import { ExchangeOrderTrackerService } from '../trackers/exchange-order-tracker.service';
 import { UserStreamTrackerService } from '../trackers/user-stream-tracker.service';
 import { PureMarketMakingStrategyDto } from './config/strategy.dto';
@@ -308,12 +308,10 @@ const createFixture = () => {
     fetchOrder: jest.fn(),
     loadTradingRules: jest.fn().mockResolvedValue({}),
     quantizeOrder: jest.fn(
-      (
-        _exchange: string,
-        _pair: string,
-        qty: string,
-        price: string,
-      ) => ({ qty, price }),
+      (_exchange: string, _pair: string, qty: string, price: string) => ({
+        qty,
+        price,
+      }),
     ),
   };
   const strategyIntentStoreService = new StrategyIntentStoreService(
@@ -391,6 +389,7 @@ const createFixture = () => {
     exchangeInitService as any,
     executorRegistry,
   );
+
   (pureMarketMakingStrategyController as any).strategySessionRegistryService =
     strategySessionRegistryService;
   const strategyInstanceLifecycleService = new StrategyInstanceLifecycleService(

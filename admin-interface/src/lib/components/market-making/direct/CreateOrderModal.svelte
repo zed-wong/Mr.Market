@@ -8,7 +8,12 @@
     import type { DirectApiKeyUseView } from "$lib/helpers/market-making/direct/api-key-filter";
     import type { AdminSingleKey } from "$lib/types/hufi/admin";
     import type { MarketMakingStrategy } from "$lib/helpers/mrm/grow";
+    import type {
+        EfficientDualAccountVolumeMode,
+    } from "$lib/types/hufi/admin-direct-market-making";
     import {
+        getEfficientDualAccountModeOptions,
+        isEfficientDualAccountControllerType,
         isBestCapacityDirectOrderControllerType,
         isDualAccountOrder,
         isSchemaDrivenDirectOrderControllerType,
@@ -48,6 +53,7 @@
     export let postOnlySide = "";
     export let dynamicRoleSwitching = true;
     export let targetQuoteVolume = "";
+    export let efficientMode: EfficientDualAccountVolumeMode = "balanced";
 
     export let onSubmit: () => void;
     export let onClose: () => void;
@@ -86,6 +92,8 @@
     $: isBestCapacityStrategy = isBestCapacityDirectOrderControllerType(
         selectedControllerType,
     );
+    $: isEfficientDualAccountStrategy =
+        isEfficientDualAccountControllerType(selectedControllerType);
     $: isSchemaDrivenStrategy = isSchemaDrivenDirectOrderControllerType(
         selectedControllerType,
     );
@@ -138,6 +146,7 @@
         dualAccountSelectionMissing ||
         dualAccountUnavailable ||
         dualSameAccount;
+    $: efficientModeOptions = getEfficientDualAccountModeOptions();
 
     $: searchedPairs = pairSearch
         ? filteredPairs.filter((p) =>
@@ -288,6 +297,37 @@
                         {/each}
                     </select>
                 </div>
+
+                {#if isEfficientDualAccountStrategy}
+                    <div class="bg-base-200/40 rounded-xl p-4">
+                        <span
+                            class="text-xs font-semibold text-base-content/50 tracking-wider block mb-3"
+                            >Efficient volume mode</span
+                        >
+                        <div class="grid grid-cols-1 gap-2">
+                            {#each efficientModeOptions as option}
+                                <label
+                                    class="flex items-start gap-3 rounded-lg border border-base-300 bg-base-100 p-3 cursor-pointer hover:border-primary"
+                                >
+                                    <input
+                                        type="radio"
+                                        class="radio radio-primary radio-sm mt-0.5"
+                                        bind:group={efficientMode}
+                                        value={option.value}
+                                    />
+                                    <span class="min-w-0">
+                                        <span class="block text-sm font-semibold text-base-content">
+                                            {option.label}
+                                        </span>
+                                        <span class="block text-xs text-base-content/60 mt-1">
+                                            {option.description}
+                                        </span>
+                                    </span>
+                                </label>
+                            {/each}
+                        </div>
+                    </div>
+                {/if}
 
                 <!-- Exchange -->
                 <div class="bg-base-200/40 rounded-xl p-4">

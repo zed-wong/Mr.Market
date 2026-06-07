@@ -59,7 +59,11 @@ export class ExchangeOrderMappingService {
     }
 
     return await this.exchangeOrderMappingRepository.save(
-      this.exchangeOrderMappingRepository.create(params),
+      this.exchangeOrderMappingRepository.create({
+        orderId: params.orderId,
+        exchangeOrderId: params.exchangeOrderId,
+        clientOrderId: params.clientOrderId,
+      }),
     );
   }
 

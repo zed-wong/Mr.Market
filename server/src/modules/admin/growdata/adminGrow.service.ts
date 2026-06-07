@@ -247,11 +247,21 @@ export class AdminGrowService {
     } as GrowdataMarketMakingPair);
     const pair = await this.applyExchangeMarketMetadata(pairWithChainInfo);
 
-    return this.growdataRepository.addMarketMakingPair(pair);
+    const savedPair = await this.growdataRepository.addMarketMakingPair(pair);
+    await this.growDataService.refreshGrowDataCache(
+      'admin_market_making_pair_add',
+    );
+
+    return savedPair;
   }
 
   async removeMarketMakingPair(id: string) {
-    return this.growdataRepository.removeMarketMakingPair(id);
+    const removedPair = await this.growdataRepository.removeMarketMakingPair(id);
+    await this.growDataService.refreshGrowDataCache(
+      'admin_market_making_pair_remove',
+    );
+
+    return removedPair;
   }
 
   async removeAllMarketMakingPairs() {
@@ -260,6 +270,10 @@ export class AdminGrowService {
     for (const pair of pairs) {
       await this.growDataService.removeMarketMakingPair(pair.id);
     }
+
+    await this.growDataService.refreshGrowDataCache(
+      'admin_market_making_pair_remove_all',
+    );
   }
 
   async updateMarketMakingPair(
@@ -276,7 +290,14 @@ export class AdminGrowService {
         pairWithChainInfo,
       );
 
-      return this.growdataRepository.addMarketMakingPair(updatedPair);
+      const savedPair = await this.growdataRepository.addMarketMakingPair(
+        updatedPair,
+      );
+      await this.growDataService.refreshGrowDataCache(
+        'admin_market_making_pair_update',
+      );
+
+      return savedPair;
     }
   }
 

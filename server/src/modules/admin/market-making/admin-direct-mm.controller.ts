@@ -10,9 +10,9 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { PerformanceService } from 'src/modules/market-making/performance/performance.service';
 import { JwtAuthGuard } from 'src/modules/auth/jwt-auth.guard';
 import { CampaignService } from 'src/modules/campaign/campaign.service';
+import { PerformanceService } from 'src/modules/market-making/performance/performance.service';
 
 import { AdminAuditInterceptor } from '../system/admin-audit.interceptor';
 import {
@@ -114,7 +114,10 @@ export class AdminDirectMarketMakingController {
     @Param('chainId') chainId: string,
     @Param('address') address: string,
   ) {
-    return this.campaignService.getCampaignLeaderboard(Number(chainId), address);
+    return this.campaignService.getCampaignLeaderboard(
+      Number(chainId),
+      address,
+    );
   }
 
   @Post('campaign-join')

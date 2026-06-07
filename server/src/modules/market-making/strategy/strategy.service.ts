@@ -20,16 +20,14 @@ import { Repository } from 'typeorm';
 import { ClockTickCoordinatorService } from '../tick/clock-tick-coordinator.service';
 import { MarketMakingRuntimeTimingService } from '../tick/runtime-timing.service';
 import { TickComponent } from '../tick/tick-component.interface';
-import {
-  ExchangeOrderTrackerService,
-  TrackedOrder,
-} from '../trackers/exchange-order-tracker.service';
+import { ExchangeOrderTrackerService } from '../trackers/exchange-order-tracker.service';
 import { ExecutorAction } from './config/executor-action.types';
 import {
   ArbitrageStrategyDto,
   DexAdapterId,
   ExecuteDualAccountBestCapacityVolumeStrategyDto,
   ExecuteDualAccountVolumeStrategyDto,
+  ExecuteEfficientDualAccountVolumeStrategyDto,
   PureMarketMakingStrategyDto,
   VolumeExecutionVenue,
 } from './config/strategy.dto';
@@ -156,24 +154,30 @@ export class StrategyService
 
   private getPureMarketMakingStrategyController(): PureMarketMakingStrategyController {
     if (!this.pureMarketMakingStrategyController) {
-      throw new Error('pure market-making strategy controller is not available');
+      throw new Error(
+        'pure market-making strategy controller is not available',
+      );
     }
 
     if (this.quoteExecutorManagerService) {
-      (this.pureMarketMakingStrategyController as any).quoteExecutorManagerService =
-        this.quoteExecutorManagerService;
+      (
+        this.pureMarketMakingStrategyController as any
+      ).quoteExecutorManagerService = this.quoteExecutorManagerService;
     }
     if (this.exchangeOrderTrackerService) {
-      (this.pureMarketMakingStrategyController as any).exchangeOrderTrackerService =
-        this.exchangeOrderTrackerService;
+      (
+        this.pureMarketMakingStrategyController as any
+      ).exchangeOrderTrackerService = this.exchangeOrderTrackerService;
     }
     if (this.pmmMarkoutEvaluatorService) {
-      (this.pureMarketMakingStrategyController as any).pmmMarkoutEvaluatorService =
-        this.pmmMarkoutEvaluatorService;
+      (
+        this.pureMarketMakingStrategyController as any
+      ).pmmMarkoutEvaluatorService = this.pmmMarkoutEvaluatorService;
     }
     if (this.runtimeObservationService) {
-      (this.pureMarketMakingStrategyController as any).runtimeObservationService =
-        this.runtimeObservationService;
+      (
+        this.pureMarketMakingStrategyController as any
+      ).runtimeObservationService = this.runtimeObservationService;
     }
 
     return this.pureMarketMakingStrategyController;
@@ -183,10 +187,7 @@ export class StrategyService
     this.clockTickCoordinatorService?.register('strategy-service', this, 20);
     this.detachExchangeReadyListener = this.exchangeInitService.onExchangeReady(
       (exchangeName, accountLabel) =>
-        this.activatePendingStrategiesForExchange(
-          exchangeName,
-          accountLabel,
-        ),
+        this.activatePendingStrategiesForExchange(exchangeName, accountLabel),
     );
   }
 
@@ -308,7 +309,9 @@ export class StrategyService
   }
 
   async getRunningStrategies(): Promise<StrategyInstance[]> {
-    return await this.strategyInstanceLifecycle.getRunningStrategies(this.logger);
+    return await this.strategyInstanceLifecycle.getRunningStrategies(
+      this.logger,
+    );
   }
 
   async getAllStrategies(): Promise<StrategyInstance[]> {
@@ -460,6 +463,15 @@ export class StrategyService
     );
   }
 
+  async executeEfficientDualAccountVolumeStrategy(
+    params: ExecuteEfficientDualAccountVolumeStrategyDto,
+  ): Promise<void> {
+    await this.strategyInstanceLifecycle.executeEfficientDualAccountVolumeStrategy(
+      params,
+      this.getSessionRegistryCallbacks(),
+    );
+  }
+
   async stopStrategyForUser(
     userId: string,
     clientId: string,
@@ -519,11 +531,12 @@ export class StrategyService
       throw new Error('arbitrage strategy controller is not available');
     }
 
-    const actions = await this.arbitrageStrategyController.buildArbitrageActions(
-      strategyKey,
-      strategyParamsDto,
-      getRFC3339Timestamp(),
-    );
+    const actions =
+      await this.arbitrageStrategyController.buildArbitrageActions(
+        strategyKey,
+        strategyParamsDto,
+        getRFC3339Timestamp(),
+      );
 
     if (actions.length > 0) {
       await this.publishIntents(strategyKey, actions);
@@ -685,7 +698,6 @@ export class StrategyService
     }
   }
 
-
   private async publishIntents(
     strategyKey: string,
     intents: ExecutorAction[],
@@ -725,7 +737,6 @@ export class StrategyService
       this.getSessionRegistryCallbacks(),
     );
   }
-
 
   private async removeSession(
     strategyKey: string,

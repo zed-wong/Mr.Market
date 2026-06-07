@@ -29,7 +29,10 @@ describe('SafeJsonExceptionFilter', () => {
       '/admin/orders?limit=bad&password=secret-value',
     );
 
-    filter.catch(new BadRequestException('limit must be a positive integer.'), host);
+    filter.catch(
+      new BadRequestException('limit must be a positive integer.'),
+      host,
+    );
 
     expect(response.status).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST);
     expect(response.json).toHaveBeenCalledWith(
@@ -78,6 +81,7 @@ describe('SafeJsonExceptionFilter', () => {
       );
 
       const body = JSON.stringify(response.json.mock.calls[0][0]);
+
       expect(body).not.toContain('?query=');
       expect(body).not.toContain('DO_NOT_ECHO_QUERY_LEAK');
       expect(body).not.toContain('secret-value');
@@ -111,7 +115,9 @@ describe('SafeJsonExceptionFilter', () => {
 
   it('masks 5xx HttpException messages behind a generic JSON error', () => {
     const filter = new SafeJsonExceptionFilter();
-    const { host, response } = createHost('/admin/system/audit?query=token=secret');
+    const { host, response } = createHost(
+      '/admin/system/audit?query=token=secret',
+    );
 
     filter.catch(
       new HttpException(
@@ -136,6 +142,7 @@ describe('SafeJsonExceptionFilter', () => {
       }),
     );
     const body = JSON.stringify(response.json.mock.calls[0][0]);
+
     expect(body).not.toContain('/tmp/private/path');
     expect(body).not.toContain('token=secret');
     expect(body).not.toContain('Database failure details');

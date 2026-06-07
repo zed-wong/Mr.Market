@@ -592,7 +592,10 @@ export class VolumeStrategyController implements StrategyController {
     active: StrategyRuntimeSession | undefined,
     expected: StrategyRuntimeSession,
   ): active is StrategyRuntimeSession {
-    return this.getStrategySessionRegistry().isSameActiveSession(active, expected);
+    return this.getStrategySessionRegistry().isSameActiveSession(
+      active,
+      expected,
+    );
   }
 
   private async persistStrategyParams(

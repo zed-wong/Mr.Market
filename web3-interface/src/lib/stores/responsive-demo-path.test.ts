@@ -122,7 +122,7 @@ describe('responsive browser demo path contract', () => {
       'order-confirm-button',
       'order-pause-action',
       'order-resume-action',
-      'simulate-deposit-button',
+      'deposit-create-order-link',
       'withdraw-submit-button',
     ]) {
       expect(routeSources).toContain(testId);

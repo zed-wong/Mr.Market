@@ -124,6 +124,7 @@ describe('OrderReservationService', () => {
 
   it('releases only currently locked funds for terminal tracker cleanup', async () => {
     const service = new OrderReservationService(balanceLedgerService as any);
+
     balanceLedgerService.getExistingBalance.mockResolvedValue({
       locked: '25',
     });
@@ -161,6 +162,7 @@ describe('OrderReservationService', () => {
 
   it('skips terminal tracker cleanup when no locked funds remain', async () => {
     const service = new OrderReservationService(balanceLedgerService as any);
+
     balanceLedgerService.getExistingBalance.mockResolvedValue({
       locked: '0',
     });
@@ -188,6 +190,7 @@ describe('OrderReservationService', () => {
 
   it('does not release filled terminal orders when cumulative fill is missing', async () => {
     const service = new OrderReservationService(balanceLedgerService as any);
+
     balanceLedgerService.getExistingBalance.mockResolvedValue({
       locked: '150',
     });
@@ -216,6 +219,7 @@ describe('OrderReservationService', () => {
 
   it('uses the order asset locked balance when terminal tracker quantity is unusable', async () => {
     const service = new OrderReservationService(balanceLedgerService as any);
+
     balanceLedgerService.getExistingBalance.mockResolvedValue({
       locked: '0.02',
     });

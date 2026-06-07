@@ -333,6 +333,7 @@ export class UserOrdersService {
           configOverrides,
         }),
       );
+
     this.applyOrderRuntimeFields(strategySnapshot.resolvedConfig, {
       orderId,
       userId,

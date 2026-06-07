@@ -979,6 +979,144 @@ export class ExecuteDualAccountBestCapacityVolumeStrategyDto {
   marketMakingOrderId?: string;
 }
 
+export class ExecuteEfficientDualAccountVolumeStrategyDto {
+  @ApiProperty({ description: 'Name of the exchange used for both accounts' })
+  @IsString()
+  exchangeName: string;
+
+  @ApiProperty({ description: 'Trading pair to execute', example: 'BTC/USDT' })
+  @IsString()
+  symbol: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Fallback trading pair alias used by persisted admin-direct rows',
+    example: 'BTC/USDT',
+  })
+  @IsOptional()
+  @IsString()
+  pair?: string;
+
+  @ApiProperty({
+    description:
+      'Maximum base amount to trade per cycle; live capacity may reduce the executed amount',
+    example: 0.5,
+  })
+  @IsNumber()
+  @IsPositive()
+  maxOrderAmount: number;
+
+  @ApiPropertyOptional({
+    description: 'Unified planner mode',
+    example: 'balanced',
+    enum: ['cheapest_capital', 'balanced', 'fastest_volume'],
+  })
+  @IsOptional()
+  @IsIn(['cheapest_capital', 'balanced', 'fastest_volume'])
+  mode?: 'cheapest_capital' | 'balanced' | 'fastest_volume';
+
+  @ApiPropertyOptional({
+    description:
+      'Optional target quote volume cap for the session; the strategy stops once reached',
+    example: 10000,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  dailyVolumeTarget?: number;
+
+  @ApiPropertyOptional({
+    description: 'Optional cadence between cycles in seconds',
+    example: 30,
+  })
+  @IsOptional()
+  @IsInt()
+  @IsPositive()
+  interval?: number;
+
+  @ApiProperty({ description: 'Maker exchange account label' })
+  @IsString()
+  makerAccountLabel: string;
+
+  @ApiProperty({ description: 'Taker exchange account label' })
+  @IsString()
+  takerAccountLabel: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Cycle role mode. Unified direct orders default to alternating.',
+    example: 'alternating',
+  })
+  @IsOptional()
+  @IsIn(['alternating', 'static'])
+  cycleMode?: 'alternating' | 'static';
+
+  @ApiPropertyOptional({
+    description:
+      'Allow maker/taker account roles to switch dynamically each cycle based on available balances. Unified direct orders default to true.',
+    example: true,
+  })
+  @IsOptional()
+  @IsBoolean()
+  dynamicRoleSwitching?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Maker protection mode',
+    example: 'alive_only',
+  })
+  @IsOptional()
+  @IsIn(['alive_only', 'strict_top'])
+  makerProtectionMode?: 'alive_only' | 'strict_top';
+
+  @ApiPropertyOptional({
+    description:
+      'Trade-size variance percentage applied around selected cycle size',
+    example: 0.15,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  tradeAmountVariance?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Price-offset variance percentage applied around selected maker price',
+    example: 0.2,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  priceOffsetVariance?: number;
+
+  @ApiProperty({ description: 'User ID' })
+  @IsString()
+  userId: string;
+
+  @ApiProperty({ description: 'Client ID' })
+  @IsString()
+  clientId: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Owning market-making order id for admin-direct runtime binding',
+  })
+  @IsOptional()
+  @IsString()
+  marketMakingOrderId?: string;
+
+  safetyBuffer?: {
+    kind?: 'default_formula';
+    exchangeCostMinMultiplier?: number;
+    feeCostMultiplier?: number;
+  };
+
+  targetQuoteVolume?: number;
+  maxNotional?: number;
+  cooldownSeconds?: number;
+}
+
 export class StopVolumeStrategyDto {
   @ApiProperty({ description: 'User ID' })
   userId: string;

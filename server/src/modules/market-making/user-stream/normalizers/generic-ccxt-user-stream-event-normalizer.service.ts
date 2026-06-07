@@ -145,4 +145,5 @@ export class GenericCcxtUserStreamEventNormalizerService
       receivedAt,
     };
   }
+
 }

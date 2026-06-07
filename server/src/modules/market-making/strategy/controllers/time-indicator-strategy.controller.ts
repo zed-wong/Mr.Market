@@ -23,7 +23,9 @@ import {
 @Injectable()
 export class TimeIndicatorStrategyController implements StrategyController {
   readonly strategyType = 'timeIndicator' as const;
-  private readonly logger = new CustomLogger(TimeIndicatorStrategyController.name);
+  private readonly logger = new CustomLogger(
+    TimeIndicatorStrategyController.name,
+  );
 
   constructor(
     private readonly exchangeInitService: ExchangeInitService,
@@ -246,7 +248,8 @@ export class TimeIndicatorStrategyController implements StrategyController {
     }
 
     const market = ex.markets[symbol];
-    const amountPrec = (x: number) => parseFloat(ex.amountToPrecision(symbol, x));
+    const amountPrec = (x: number) =>
+      parseFloat(ex.amountToPrecision(symbol, x));
     const pricePrec = (x: number) => parseFloat(ex.priceToPrecision(symbol, x));
 
     let amountBase = amountPrec(amountBaseRaw);
@@ -336,7 +339,9 @@ export class TimeIndicatorStrategyController implements StrategyController {
     }
   }
 
-  private parseBaseQuote(symbol: string): { base: string; quote: string } | null {
+  private parseBaseQuote(
+    symbol: string,
+  ): { base: string; quote: string } | null {
     if (symbol.includes('/')) {
       const [base, quote] = symbol.split('/');
 

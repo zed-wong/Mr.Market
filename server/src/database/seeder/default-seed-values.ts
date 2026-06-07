@@ -14,6 +14,7 @@ import { TOP_EXCHANGES as EXCHANGES } from './data/exchanges';
 import arbitrageSeedDefinition from './data/strategies/arbitrage.json';
 import dualAccountBestCapacityVolumeSeedDefinition from './data/strategies/dual-account-best-capacity-volume.json';
 import dualAccountVolumeSeedDefinition from './data/strategies/dual-account-volume.json';
+import efficientDualAccountVolumeSeedDefinition from './data/strategies/efficient-dual-account-volume.json';
 import pureMarketMakingSeedDefinition from './data/strategies/pure-market-making.json';
 import timeIndicatorSeedDefinition from './data/strategies/time-indicator.json';
 import volumeSeedDefinition from './data/strategies/volume.json';
@@ -32,6 +33,8 @@ const dualAccountVolumeSeed =
   dualAccountVolumeSeedDefinition as SeededStrategyDefinitionConfig;
 const dualAccountBestCapacityVolumeSeed =
   dualAccountBestCapacityVolumeSeedDefinition as SeededStrategyDefinitionConfig;
+const efficientDualAccountVolumeSeed =
+  efficientDualAccountVolumeSeedDefinition as SeededStrategyDefinitionConfig;
 const timeIndicatorSeed =
   timeIndicatorSeedDefinition as SeededStrategyDefinitionConfig;
 
@@ -90,6 +93,19 @@ export const defaultStrategyDefinitions: Partial<StrategyDefinition>[] = [
     configSchema: volumeSeed.configSchema,
     defaultConfig: volumeSeed.defaultConfig,
     capabilities: volumeSeed.capabilities,
+    enabled: true,
+    visibility: StrategyDefinitionVisibility.ADMIN,
+    createdBy: 'seed',
+  },
+  {
+    key: 'efficient_dual_account_volume',
+    name: 'Efficient Dual Account Volume',
+    description:
+      'Generate capital-efficient paired maker/taker volume using one unified dual-account contract',
+    controllerType: 'efficientDualAccountVolume',
+    configSchema: efficientDualAccountVolumeSeed.configSchema,
+    defaultConfig: efficientDualAccountVolumeSeed.defaultConfig,
+    capabilities: efficientDualAccountVolumeSeed.capabilities,
     enabled: true,
     visibility: StrategyDefinitionVisibility.ADMIN,
     createdBy: 'seed',

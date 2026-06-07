@@ -4,6 +4,7 @@ export interface StrategyKey {
     | 'pureMarketMaking'
     | 'dualAccountVolume'
     | 'dualAccountBestCapacityVolume'
+    | 'efficientDualAccountVolume'
     | 'volume'
     | 'timeIndicator'
     | 'alpaca-arbitrage'
