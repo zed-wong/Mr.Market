@@ -1,5 +1,9 @@
 # Execution Flow Changelog
 
+## 2026-06-07
+
+- Clarify the yellowpaper strategy source of truth: `StrategyDefinition` is the strategy class/product family, `StrategyTemplate` is the complete reusable parameter set, and `strategySnapshot` is resolved from definition, template, and runtime fields without per-order config overrides.
+
 ## 2026-06-03
 
 - Add the capital-efficient dual-account volume plan as an additive strategy contract: keep `dualAccountVolume` and `dualAccountBestCapacityVolume` separate, and make `efficientDualAccountVolume` the new recommended product path that scores all account-role directions, rotates inventory to minimize capital, exposes readiness/missing-balance diagnostics, and renders maker/taker cycle state clearly.

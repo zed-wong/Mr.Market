@@ -321,30 +321,22 @@ OrderBalance(orderId, asset)
 
 ### 3.3 策略定义与配置快照
 
-Mr.Market 的策略系统把“策略产品”和“策略代码”分开。
-
-- **策略产品**：可以被用户选择、展示、配置和下单的策略模板；
-- **策略代码**：真正生成报价、下单、撤单和风控动作的服务端 Controller。
-
-数据库只保存策略产品和配置，不保存可执行策略代码。
-
 #### 设计判断
 
 | 对象 | 作用 | 是否可变 |
 |------|------|----------|
-| `StrategyDefinition` | 策略模板。定义名称、key、配置 schema、默认参数、可见性、能力声明和 `controllerType` | 可由后台管理 |
-| `strategySnapshot` | 订单级策略快照。保存某个订单实际使用的已解析配置 | 创建后不可变 |
-| `Strategy Controller` | 服务端内置策略逻辑。根据快照配置和市场状态生成 intent | 只能通过代码发布 |
-
-Mr.Market 没有把策略系统设计成“无限组合”的规则引擎，因为策略逻辑一旦允许任意拼装，调度、风控、reservation、intent 和状态机都会失去清晰边界。因此，真正可执行的策略逻辑收敛在服务端内置的 `Strategy Controller` 中；如果要支持新的策略大类，就新增或修改 Controller，而不是通过配置绕出新逻辑。但策略参数本身是开放的，同一个 Controller 可以对应无限多组参数。`StrategyDefinition` 定义哪些参数可配置、类型和默认值是什么；`strategySnapshot` 则在订单创建或启动时固化当时的配置版本。这样后台可以继续更新策略定义，但已存在订单不会被静默改写。旧订单是否升级到新定义，应该是显式选择，而不是系统默认行为。
+| `StrategyDefinition` | 策略大类 / 产品族。定义 controller type、schema、能力声明、启动入口和可见性。它不代表某一套可复用参数预设。 | 可由后台管理 |
+| `StrategyTemplate` | 某个策略定义下的完整可复用参数预设。定义运营人员 / 用户创建订单时选择的具名参数集。 | 可由后台管理 |
+| `strategySnapshot` | 订单级冻结运行时策略配置，由 definition + template + runtime fields 解析生成。运行时使用它，而不是实时读取 definitions/templates。 | 创建后不可变 |
 
 #### 创建流程
 
 创建做市订单时，系统按以下流程生成订单级策略快照：
 
 ```text
-StrategyDefinition.defaultConfig
-  + 用户传入的 configOverrides
+StrategyDefinition
+  + StrategyTemplate
+  + runtime order fields
   → configSchema 校验
   → decimal 字段规范化
   → MarketMakingOrder.strategySnapshot
@@ -360,7 +352,7 @@ StrategyDefinition.defaultConfig
 | `resolvedConfig` | 订单实际使用的配置 |
 | `resolvedAt` | 快照生成时间 |
 
-订单进入运行时后，只能读取 `strategySnapshot.resolvedConfig`。后续修改 `StrategyDefinition` 不得改变已创建订单。
+订单进入运行时后，只能读取 `strategySnapshot.resolvedConfig`。后续修改 `StrategyDefinition` 或 `StrategyTemplate` 不得改变已创建订单。
 
 #### 可调范围
 
