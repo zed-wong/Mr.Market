@@ -33,7 +33,6 @@ import { StrategyControllerRegistry } from './controllers/strategy-controller.re
 import { TimeIndicatorStrategyController } from './controllers/time-indicator-strategy.controller';
 import { VolumeStrategyController } from './controllers/volume-strategy.controller';
 import { StrategyMarketDataProviderService } from './data/strategy-market-data-provider.service';
-import { AlpacaStratService } from './dex/alpacastrat.service';
 import { DexModule } from './dex/dex.module';
 import { StrategyConfigResolverService } from './dex/strategy-config-resolver.service';
 import { DualAccountPlannerService } from './dual-account/dual-account-planner.service';
@@ -82,7 +81,6 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
   ],
   providers: [
     StrategyService,
-    AlpacaStratService,
     StrategyIntentExecutionService,
     StrategyIntentWorkerService,
     StrategyIntentStoreService,
