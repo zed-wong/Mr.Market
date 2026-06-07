@@ -8,10 +8,7 @@ jest.mock(
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ConfigService } from '@nestjs/config';
-import {
-  buildSubmittedClientOrderId,
-  encodeClientOrderIdForExchange,
-} from 'src/common/helpers/client-order-id';
+import { buildSubmittedClientOrderId } from 'src/common/helpers/client-order-id';
 
 import { StrategyOrderIntent } from '../config/strategy-intent.types';
 import { DexVolumeStrategyService } from '../dex/dex-volume.strategy.service';
@@ -132,7 +129,6 @@ describe('StrategyIntentExecutionService', () => {
     updateIntentStatus: jest.fn().mockResolvedValue(undefined),
     attachMixinOrderId: jest.fn().mockResolvedValue(undefined),
     getMixinOrderId: jest.fn().mockResolvedValue(undefined),
-    upsertIntent: jest.fn().mockResolvedValue(undefined),
   };
 
   const durabilityService = {
@@ -304,7 +300,6 @@ describe('StrategyIntentExecutionService', () => {
             toTrackedOrderKey(exchange, accountLabel, exchangeOrderId),
           ),
       );
-    intentStoreService.upsertIntent.mockClear();
     exchangeOrderMappingService.countMappingsForOrder
       .mockReset()
       .mockResolvedValue(0);
@@ -389,16 +384,12 @@ describe('StrategyIntentExecutionService', () => {
     );
     expect(exchangeOrderMappingService.reserveMapping).toHaveBeenCalledWith({
       orderId: 'c1',
-      exchangeName: 'binance',
       clientOrderId: buildSubmittedClientOrderId('c1', 0),
-      exchangeClientOrderId: undefined,
     });
     expect(exchangeOrderMappingService.createMapping).toHaveBeenCalledWith({
       orderId: 'c1',
-      exchangeName: 'binance',
       exchangeOrderId: 'order-1',
       clientOrderId: buildSubmittedClientOrderId('c1', 0),
-      exchangeClientOrderId: undefined,
     });
     expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -744,13 +735,11 @@ describe('StrategyIntentExecutionService', () => {
         status: 'closed',
         filled: '1',
       });
-    const executionHistoryRepository = createExecutionHistoryRepository();
     const service = createService(
       true,
       createConfigService(true, {
         'strategy.dual_account_inline_taker_max_delay_ms': 0,
       }),
-      executionHistoryRepository,
     );
 
     await service.consumeIntents([
@@ -815,67 +804,6 @@ describe('StrategyIntentExecutionService', () => {
         accountLabel: 'taker',
         role: 'taker',
         exchangeOrderId: 'taker-order-1',
-      }),
-    );
-    expect(intentStoreService.upsertIntent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        intentId: 'dual-maker:inline-taker',
-        accountLabel: 'taker',
-        side: 'sell',
-        timeInForce: 'IOC',
-        metadata: expect.objectContaining({
-          cycleId: 'cycle-1',
-          cycleRole: 'taker',
-          role: 'taker',
-          accountLabel: 'taker',
-          side: 'sell',
-          plannedQty: '1',
-          plannedPrice: '100',
-          filledQty: '0',
-          notional: '100',
-          status: 'planned',
-          failureReason: null,
-          linkedIntentId: 'dual-maker:inline-taker',
-          linkedTrackedOrderId: null,
-          makerIntentId: 'dual-maker',
-          makerOrderId: 'maker-order-1',
-        }),
-      }),
-    );
-    expect(executionHistoryRepository.save).toHaveBeenCalledWith(
-      expect.objectContaining({
-        metadata: expect.objectContaining({
-          cycleId: 'cycle-1',
-          cycleRole: 'maker',
-          accountLabel: 'maker',
-          side: 'buy',
-          plannedQty: '1',
-          plannedPrice: '100',
-          filledQty: '0',
-          notional: '100',
-          status: 'open',
-          failureReason: null,
-          linkedIntentId: 'dual-maker',
-          linkedTrackedOrderId: 'maker-order-1',
-        }),
-      }),
-    );
-    expect(executionHistoryRepository.save).toHaveBeenCalledWith(
-      expect.objectContaining({
-        metadata: expect.objectContaining({
-          cycleId: 'cycle-1',
-          cycleRole: 'taker',
-          accountLabel: 'taker',
-          side: 'sell',
-          plannedQty: '1',
-          plannedPrice: '100',
-          filledQty: '1',
-          notional: '100',
-          status: 'closed',
-          failureReason: null,
-          linkedIntentId: 'dual-maker:inline-taker',
-          linkedTrackedOrderId: 'taker-order-1',
-        }),
       }),
     );
   });
@@ -1491,51 +1419,6 @@ describe('StrategyIntentExecutionService', () => {
     );
   });
 
-  it('keeps hyperliquid local tracking on the submitted clientOrderId while adapter handles cloid encoding', async () => {
-    const service = createService(true);
-    const submittedClientOrderId = buildSubmittedClientOrderId(
-      'mm-order-hyperliquid',
-      0,
-    );
-
-    await service.consumeIntents([
-      {
-        ...baseIntent,
-        exchange: 'hyperliquid',
-        intentId: 'intent-hyperliquid',
-        metadata: { orderId: 'mm-order-hyperliquid' },
-      },
-    ]);
-
-    expect(exchangeConnectorAdapterService.placeLimitOrder).toHaveBeenCalledWith(
-      'hyperliquid',
-      'BTC/USDT',
-      'buy',
-      '1',
-      '100',
-      submittedClientOrderId,
-      { postOnly: false, timeInForce: undefined },
-      undefined,
-    );
-    expect(exchangeOrderMappingService.createMapping).toHaveBeenCalledWith({
-      orderId: 'mm-order-hyperliquid',
-      exchangeName: 'hyperliquid',
-      exchangeOrderId: 'order-1',
-      clientOrderId: submittedClientOrderId,
-      exchangeClientOrderId: encodeClientOrderIdForExchange(
-        'hyperliquid',
-        submittedClientOrderId,
-      ),
-    });
-    expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
-      expect.objectContaining({
-        exchange: 'hyperliquid',
-        exchangeOrderId: 'order-1',
-        clientOrderId: submittedClientOrderId,
-      }),
-    );
-  });
-
   it('skips exchange side effects when durability marks an intent as already processed', async () => {
     durabilityService.isProcessed.mockResolvedValueOnce(true);
     const service = createService(true);
@@ -1648,9 +1531,7 @@ describe('StrategyIntentExecutionService', () => {
     expect(exchangeOrderMappingService.createMapping).not.toHaveBeenCalled();
     expect(exchangeOrderMappingService.reserveMapping).toHaveBeenCalledWith({
       orderId: 'mm-order-repeat',
-      exchangeName: 'binance',
       clientOrderId: buildSubmittedClientOrderId('mm-order-repeat', 0),
-      exchangeClientOrderId: undefined,
     });
 
     jest.clearAllMocks();

@@ -11,11 +11,6 @@ import {
 import type { Cache } from 'cache-manager';
 import * as ccxt from 'ccxt';
 import { APIKeysConfig } from 'src/common/entities/admin/api-keys.entity';
-import {
-  buildHyperliquidSpotOptions,
-  isHyperliquidExchange,
-  isHyperliquidSpotMarket,
-} from 'src/common/helpers/hyperliquid-spot';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
 
@@ -23,7 +18,6 @@ type ExchangeAccountConfig = {
   label: string;
   apiKey?: string;
   secret?: string;
-  privateKey?: string;
   password?: string;
   uid?: string;
   walletAddress?: string;
@@ -95,11 +89,11 @@ export class ExchangeInitService {
     );
   }
 
-  private applySpotOnlyExchangeOverrides(
+  private applySandboxExchangeOverrides(
     exchangeName: string,
     exchange: ccxt.Exchange,
   ): void {
-    if (!isHyperliquidExchange(exchangeName) && exchangeName !== 'binance') {
+    if (exchangeName !== 'binance') {
       return;
     }
 
@@ -125,38 +119,6 @@ export class ExchangeInitService {
         defaultType: 'spot',
       },
     };
-  }
-
-  private buildExchangeConstructorOptions(
-    exchangeName: string,
-    account: ExchangeAccountConfig,
-  ): Record<string, unknown> {
-    const walletAddress = account.walletAddress;
-    const options: Record<string, unknown> = {
-      apiKey: account.apiKey,
-      secret: account.secret,
-      privateKey: account.privateKey,
-      password: account.password,
-      uid: account.uid,
-      ...(walletAddress
-        ? {
-            walletAddress,
-            options: {
-              builderFee: false,
-              walletAddress,
-            },
-          }
-        : {}),
-    };
-
-    if (isHyperliquidExchange(exchangeName)) {
-      options.options = buildHyperliquidSpotOptions(
-        (options.options as Record<string, unknown>) || {},
-        walletAddress,
-      );
-    }
-
-    return options;
   }
 
   private buildExchangeConfigsFromDb(
@@ -185,8 +147,6 @@ export class ExchangeInitService {
         label: String(key.key_id || '').trim(),
         apiKey: key.api_key,
         secret: key.api_secret,
-        privateKey:
-          key.exchange === 'hyperliquid' ? key.api_secret : undefined,
         walletAddress:
           key.exchange === 'hyperliquid'
             ? String(key.api_key || '').trim() || undefined
@@ -243,12 +203,24 @@ export class ExchangeInitService {
       attempt += 1
     ) {
       try {
-        const exchange = new config.class(
-          this.buildExchangeConstructorOptions(config.name, account),
-        );
+        const exchange = new config.class({
+          apiKey: account.apiKey,
+          secret: account.secret,
+          password: account.password,
+          uid: account.uid,
+          ...(account.walletAddress
+            ? {
+                walletAddress: account.walletAddress,
+                options: {
+                  builderFee: false,
+                  walletAddress: account.walletAddress,
+                },
+              }
+            : {}),
+        });
 
-        if (account.sandboxMode || isHyperliquidExchange(config.name)) {
-          this.applySpotOnlyExchangeOverrides(config.name, exchange);
+        if (account.sandboxMode) {
+          this.applySandboxExchangeOverrides(config.name, exchange);
         }
 
         if (account.sandboxMode) {
@@ -666,13 +638,7 @@ export class ExchangeInitService {
       // Instantiate the exchange to get its properties
       // We don't need API keys for this
       const exchangeClass = ccxt[exchangeId];
-      const exchange = new exchangeClass(
-        isHyperliquidExchange(exchangeId)
-          ? {
-              options: buildHyperliquidSpotOptions(),
-            }
-          : undefined,
-      );
+      const exchange = new exchangeClass();
 
       return {
         id: exchange.id,
@@ -714,25 +680,17 @@ export class ExchangeInitService {
       // Since we are not authenticated, we can only get public markets
       await exchange.loadMarkets();
 
-      const markets = Object.values(exchange.markets)
-        .filter(
-          (market: any) =>
-            !isHyperliquidExchange(exchangeId) ||
-            isHyperliquidSpotMarket(market),
-        )
-        .map((market: any) => ({
-          symbol: market.symbol,
-          base: market.base,
-          quote: market.quote,
-          baseId: market.baseId,
-          quoteId: market.quoteId,
-          active: market.active,
-          id: market.id,
-          type: market.type,
-          spot: market.spot,
-          precision: market.precision,
-          limits: market.limits,
-        }));
+      const markets = Object.values(exchange.markets).map((market: any) => ({
+        symbol: market.symbol,
+        base: market.base,
+        quote: market.quote,
+        baseId: market.baseId,
+        quoteId: market.quoteId,
+        active: market.active,
+        id: market.id,
+        precision: market.precision,
+        limits: market.limits,
+      }));
 
       await this.cacheService.set(
         cacheKey,

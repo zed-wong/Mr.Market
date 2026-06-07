@@ -220,7 +220,7 @@ describe('ExchangeApiKeyService', () => {
     );
   });
 
-  it('builds hyperliquid exchange client options with walletAddress and privateKey', () => {
+  it('builds hyperliquid exchange client options with walletAddress', () => {
     const { service } = makeService();
 
     expect(
@@ -232,112 +232,12 @@ describe('ExchangeApiKeyService', () => {
     ).toEqual({
       apiKey: '0xwallet',
       secret: 'private-key',
-      privateKey: 'private-key',
       walletAddress: '0xwallet',
       options: {
         builderFee: false,
         walletAddress: '0xwallet',
-        defaultType: 'spot',
-        fetchMarkets: { types: ['spot'] },
-        createOrder: { defaultType: 'spot' },
-        fetchOrder: { defaultType: 'spot' },
-        fetchOpenOrders: { defaultType: 'spot' },
-        cancelOrder: { defaultType: 'spot' },
       },
     });
-  });
-
-  it('rejects hyperliquid deposit address requests before custody exchange calls', async () => {
-    const { service } = makeService();
-
-    await expect(
-      (service as any)._getDepositAddress({
-        exchange: 'hyperliquid',
-        apiKey: '0xwallet',
-        apiSecret: 'private-key',
-        symbol: 'USDC',
-        network: 'Arbitrum',
-      }),
-    ).rejects.toBeInstanceOf(BadRequestException);
-  });
-
-  it('rejects hyperliquid withdrawals before custody exchange calls', async () => {
-    const { service } = makeService();
-
-    await expect(
-      (service as any)._createWithdrawal({
-        exchange: 'hyperliquid',
-        apiKey: '0xwallet',
-        apiSecret: 'private-key',
-        symbol: 'USDC',
-        network: 'Arbitrum',
-        address: '0xreceiver',
-        tag: '',
-        amount: '10',
-      }),
-    ).rejects.toBeInstanceOf(BadRequestException);
-  });
-
-  it('stores hyperliquid credentials through unchanged api_key and api_secret fields', async () => {
-    const addAPIKey = jest.fn().mockImplementation(async (value) => value);
-    const { service } = makeService({ addAPIKey });
-
-    await service.addApiKey({
-      key_id: '1',
-      exchange: 'hyperliquid',
-      name: 'dex wallet',
-      api_key: '0xwallet',
-      api_secret: 'transport-secret',
-    } as APIKeysConfig);
-
-    expect(addAPIKey).toHaveBeenCalledWith(
-      expect.objectContaining({
-        exchange: 'hyperliquid',
-        name: 'dex wallet',
-        api_key: '0xwallet',
-        api_secret: 'enc(plain-secret)',
-      }),
-    );
-    expect(addAPIKey).not.toHaveBeenCalledWith(
-      expect.objectContaining({
-        walletAddress: expect.any(String),
-      }),
-    );
-    expect(addAPIKey).not.toHaveBeenCalledWith(
-      expect.objectContaining({
-        privateKey: expect.any(String),
-      }),
-    );
-  });
-
-  it('validates hyperliquid API keys through a mocked exchange instance only', async () => {
-    const readAPIKey = jest.fn().mockResolvedValue({
-      key_id: '1',
-      exchange: 'hyperliquid',
-      name: 'dex wallet',
-      api_key: '0xwallet',
-      api_secret: 'private-key',
-      validation_status: 'pending',
-      created_at: '2026-04-02T00:00:00.000Z',
-    } as APIKeysConfig);
-    const updateAPIKey = jest.fn().mockResolvedValue(undefined);
-    const { service } = makeService({ readAPIKey, updateAPIKey });
-    const fetchBalance = jest.fn().mockResolvedValue({ free: {} });
-
-    (service as any).exchangeInstances['1'] = {
-      fetchBalance,
-    };
-
-    await (service as any).validateApiKeyInBackground('1');
-
-    expect(fetchBalance).toHaveBeenCalledTimes(1);
-    expect(updateAPIKey).toHaveBeenCalledWith(
-      '1',
-      expect.objectContaining({
-        validation_status: 'valid',
-        validation_error: null,
-      }),
-    );
   });
 
   it('keeps API key validation pending when exchange balance validation times out', async () => {

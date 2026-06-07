@@ -27,9 +27,6 @@ describe('ExchangeConnectorAdapterService', () => {
     ),
     markets: {
       'BTC/USDT': {
-        symbol: 'BTC/USDT',
-        type: 'spot',
-        spot: true,
         limits: {
           amount: { min: 0.001, max: 5 },
           cost: { min: 10, max: 500 },
@@ -64,20 +61,6 @@ describe('ExchangeConnectorAdapterService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    exchange.markets = {
-      'BTC/USDT': {
-        symbol: 'BTC/USDT',
-        type: 'spot',
-        spot: true,
-        limits: {
-          amount: { min: 0.001, max: 5 },
-          cost: { min: 10, max: 500 },
-        },
-        precision: { amount: 4, price: 2 },
-        maker: 0.001,
-        taker: 0.002,
-      },
-    };
     exchange.markets['BTC/USDT'].maker = 0.001;
     exchange.markets['BTC/USDT'].taker = 0.002;
   });
@@ -110,7 +93,7 @@ describe('ExchangeConnectorAdapterService', () => {
     expect(exchange.cancelOrder).toHaveBeenCalledWith('ex-order-1', 'BTC/USDT');
   });
 
-  it('passes encoded cloid and IOC timeInForce through hyperliquid limit-order placement', async () => {
+  it('passes IOC timeInForce through limit-order placement', async () => {
     const service = new ExchangeConnectorAdapterService(
       exchangeInitService as any,
       createConfigService(),
@@ -133,82 +116,12 @@ describe('ExchangeConnectorAdapterService', () => {
       'sell',
       1,
       100,
-      {
-        cloid: '0x8634de59f9b5c185d0cdddf053927df7',
-        timeInForce: 'IOC',
-      },
+      { clientOrderId: 'order-1:1', timeInForce: 'IOC' },
     );
     expect(exchangeInitService.getExchange).toHaveBeenCalledWith(
       'hyperliquid',
       'maker',
     );
-  });
-
-  it('keeps non-hyperliquid clientOrderId placement params unchanged', async () => {
-    const service = new ExchangeConnectorAdapterService(
-      exchangeInitService as any,
-      createConfigService(),
-    );
-
-    await service.placeLimitOrder(
-      'binance',
-      'BTC/USDT',
-      'sell',
-      '2',
-      '101',
-      'original-client-order-id',
-      { timeInForce: 'GTC' },
-      'maker',
-    );
-
-    expect(exchange.createOrder).toHaveBeenCalledWith(
-      'BTC/USDT',
-      'limit',
-      'sell',
-      2,
-      101,
-      { clientOrderId: 'original-client-order-id', timeInForce: 'GTC' },
-    );
-  });
-
-  it('rejects hyperliquid derivative markets before placing an order', async () => {
-    const service = new ExchangeConnectorAdapterService(
-      exchangeInitService as any,
-      createConfigService(),
-    );
-    (exchange.markets as any)['BTC/USDT:USDT'] = {
-      symbol: 'BTC/USDT:USDT',
-      type: 'swap',
-      spot: false,
-      swap: true,
-    };
-
-    await expect(
-      service.placeLimitOrder(
-        'hyperliquid',
-        'BTC/USDT:USDT',
-        'buy',
-        '1',
-        '100',
-      ),
-    ).rejects.toThrow('Hyperliquid support is spot-only');
-
-    expect(exchange.createOrder).not.toHaveBeenCalled();
-  });
-
-  it('rejects unknown hyperliquid markets after loading markets', async () => {
-    const service = new ExchangeConnectorAdapterService(
-      exchangeInitService as any,
-      createConfigService(),
-    );
-    (exchange as any).markets = {};
-
-    await expect(
-      service.placeLimitOrder('hyperliquid', 'ETH/USDT:USDT', 'sell', '1', '2'),
-    ).rejects.toThrow('Hyperliquid support is spot-only');
-
-    expect(exchange.loadMarkets).toHaveBeenCalledTimes(1);
-    expect(exchange.createOrder).not.toHaveBeenCalled();
   });
 
   it('fetches order/open-orders/my-trades/orderbook through adapter', async () => {
@@ -285,26 +198,6 @@ describe('ExchangeConnectorAdapterService', () => {
         takerFee: 0.0025,
       }),
     );
-  });
-
-  it('rejects hyperliquid derivative trading rules before execution planning can use them', async () => {
-    const service = new ExchangeConnectorAdapterService(
-      exchangeInitService as any,
-      createConfigService(),
-    );
-    (exchange.markets as any)['SOL/USDT:USDT'] = {
-      symbol: 'SOL/USDT:USDT',
-      type: 'future',
-      spot: false,
-      future: true,
-      limits: {
-        amount: { min: 1 },
-      },
-    };
-
-    await expect(
-      service.loadTradingRules('hyperliquid', 'SOL/USDT:USDT'),
-    ).rejects.toThrow('Hyperliquid support is spot-only');
   });
 
   it('quantizes orders through ccxt precision helpers', () => {

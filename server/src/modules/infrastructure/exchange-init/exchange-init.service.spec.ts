@@ -1,14 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Test, TestingModule } from '@nestjs/testing';
-import * as ccxt from 'ccxt';
 import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
 
 import { ExchangeInitService } from './exchange-init.service';
 
 describe('ExchangeinitService', () => {
   let service: ExchangeInitService;
-  let cacheService: { get: jest.Mock; set: jest.Mock };
   let exchangeService: {
     readSupportedExchanges: jest.Mock;
     readDecryptedAPIKeys: jest.Mock;
@@ -17,10 +15,6 @@ describe('ExchangeinitService', () => {
 
   beforeEach(async () => {
     jest.useFakeTimers();
-    cacheService = {
-      get: jest.fn().mockResolvedValue(undefined),
-      set: jest.fn().mockResolvedValue(undefined),
-    };
     exchangeService = {
       readSupportedExchanges: jest.fn().mockResolvedValue(['binance']),
       readDecryptedAPIKeys: jest
@@ -46,7 +40,7 @@ describe('ExchangeinitService', () => {
         ExchangeInitService,
         {
           provide: CACHE_MANAGER,
-          useValue: cacheService,
+          useValue: {},
         },
         {
           provide: ExchangeApiKeyService,
@@ -114,7 +108,6 @@ describe('ExchangeinitService', () => {
             label: '77',
             apiKey: '0xabc123',
             secret: 'secret',
-            privateKey: 'secret',
             walletAddress: '0xabc123',
           }),
         ],
@@ -122,17 +115,7 @@ describe('ExchangeinitService', () => {
     ]);
   });
 
-  it('resolves hyperliquid through the existing ccxt.pro fallback path', () => {
-    const resolvedExchangeClass = (service as any).resolveExchangeClass(
-      'hyperliquid',
-    );
-
-    expect(resolvedExchangeClass).toBe(
-      (ccxt as any).pro?.hyperliquid || (ccxt as any).hyperliquid,
-    );
-  });
-
-  it('passes hyperliquid walletAddress and privateKey to exchange initialization', async () => {
+  it('passes walletAddress to exchange initialization when configured', async () => {
     class HyperliquidExchange {
       has = {};
       constructor(public readonly options: Record<string, unknown>) {}
@@ -148,7 +131,6 @@ describe('ExchangeinitService', () => {
         label: 'hl-1',
         apiKey: '0xwallet',
         secret: 'private-key',
-        privateKey: 'private-key',
         walletAddress: '0xwallet',
       },
     );
@@ -158,17 +140,10 @@ describe('ExchangeinitService', () => {
       expect.objectContaining({
         apiKey: '0xwallet',
         secret: 'private-key',
-        privateKey: 'private-key',
         walletAddress: '0xwallet',
         options: expect.objectContaining({
           builderFee: false,
           walletAddress: '0xwallet',
-          defaultType: 'spot',
-          fetchMarkets: expect.objectContaining({ types: ['spot'] }),
-          createOrder: expect.objectContaining({ defaultType: 'spot' }),
-          fetchOrder: expect.objectContaining({ defaultType: 'spot' }),
-          fetchOpenOrders: expect.objectContaining({ defaultType: 'spot' }),
-          cancelOrder: expect.objectContaining({ defaultType: 'spot' }),
         }),
       }),
     );

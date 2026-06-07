@@ -5,10 +5,7 @@ import BigNumber from 'bignumber.js';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
-import {
-  buildSubmittedClientOrderId,
-  encodeClientOrderIdForExchange,
-} from 'src/common/helpers/client-order-id';
+import { buildSubmittedClientOrderId } from 'src/common/helpers/client-order-id';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
@@ -293,10 +290,7 @@ export class StrategyIntentExecutionService {
           return;
         }
 
-        const clientOrderId = await this.reserveClientOrderId(
-          orderId,
-          intent.exchange,
-        );
+        const clientOrderId = await this.reserveClientOrderId(orderId);
         let reservation: OrderReservationResult | undefined;
         let result: Record<string, unknown> | undefined;
 
@@ -362,13 +356,8 @@ export class StrategyIntentExecutionService {
           );
           await this.exchangeOrderMappingService?.createMapping({
             orderId,
-            exchangeName: intent.exchange,
             exchangeOrderId: String(result.id),
             clientOrderId,
-            exchangeClientOrderId: this.buildExchangeClientOrderId(
-              intent.exchange,
-              clientOrderId,
-            ),
           });
           await this.strategyExecutionHistoryRepository?.save(
             this.strategyExecutionHistoryRepository.create({
@@ -384,13 +373,12 @@ export class StrategyIntentExecutionService {
               orderId,
               status:
                 typeof result?.status === 'string' ? result.status : 'open',
-              metadata: this.buildExecutionHistoryMetadata(
-                intent,
+              metadata: {
+                intentId: intent.intentId,
+                intentType: intent.type,
                 clientOrderId,
-                String(result.id),
-                typeof result?.status === 'string' ? result.status : 'open',
-                this.normalizeFilledValue(result?.filled) || '0',
-              ),
+                exchangeOrderId: String(result.id),
+              },
             }),
           );
           this.exchangeOrderTrackerService?.upsertOrder({
@@ -752,55 +740,6 @@ export class StrategyIntentExecutionService {
       : undefined;
   }
 
-  private buildExecutionHistoryMetadata(
-    intent: StrategyOrderIntent,
-    clientOrderId: string,
-    exchangeOrderId: string,
-    status: string,
-    filledQty: string,
-  ): Record<string, unknown> {
-    const metadata =
-      intent.metadata && typeof intent.metadata === 'object'
-        ? { ...(intent.metadata as Record<string, unknown>) }
-        : {};
-    const cycleRole =
-      this.readMetadataString(intent, 'cycleRole') ||
-      this.resolveIntentRole(intent);
-
-    return {
-      ...metadata,
-      intentId: intent.intentId,
-      intentType: intent.type,
-      clientOrderId,
-      exchangeOrderId,
-      ...(metadata.cycleId
-        ? {
-            cycleRole,
-            accountLabel:
-              this.readMetadataString(intent, 'accountLabel') ||
-              intent.accountLabel ||
-              null,
-            side: intent.side,
-            plannedQty:
-              this.readMetadataString(intent, 'plannedQty') || intent.qty,
-            plannedPrice:
-              this.readMetadataString(intent, 'plannedPrice') || intent.price,
-            filledQty,
-            notional:
-              this.readMetadataString(intent, 'notional') ||
-              this.computeNotional(intent.qty, intent.price),
-            status,
-            failureReason:
-              this.readMetadataString(intent, 'failureReason') || null,
-            linkedIntentId:
-              this.readMetadataString(intent, 'linkedIntentId') ||
-              intent.intentId,
-            linkedTrackedOrderId: exchangeOrderId,
-          }
-        : {}),
-    };
-  }
-
   private async assertCreateLimitOrderRisk(
     intent: StrategyOrderIntent,
     orderId: string,
@@ -940,14 +879,6 @@ export class StrategyIntentExecutionService {
       : undefined;
   }
 
-  private computeNotional(qty: string, price: string): string {
-    const qtyBn = new BigNumber(qty || 0);
-    const priceBn = new BigNumber(price || 0);
-    const notional = qtyBn.multipliedBy(priceBn);
-
-    return notional.isFinite() ? notional.toFixed() : '0';
-  }
-
   private readInlineDualAccountRetryAttempt(
     intent: StrategyOrderIntent,
   ): number {
@@ -1051,7 +982,6 @@ export class StrategyIntentExecutionService {
         takerQty,
       );
 
-      await this.strategyIntentStoreService?.upsertIntent(takerIntent);
       const takerResult = await this.consumeIntent(takerIntent);
 
       await this.assertImmediateDualAccountPairedFill(
@@ -1105,17 +1035,6 @@ export class StrategyIntentExecutionService {
       metadata: {
         ...metadata,
         role: 'taker',
-        cycleRole: 'taker',
-        accountLabel: takerAccountLabel,
-        side: intent.side === 'buy' ? 'sell' : 'buy',
-        plannedQty: takerQty.toFixed(),
-        plannedPrice: intent.price,
-        filledQty: '0',
-        notional: this.computeNotional(takerQty.toFixed(), intent.price),
-        status: 'planned',
-        failureReason: null,
-        linkedIntentId: `${intent.intentId}:inline-taker`,
-        linkedTrackedOrderId: null,
         makerOrderId: makerExchangeOrderId,
         makerIntentId: intent.intentId,
         trigger: 'maker_ack',
@@ -1736,10 +1655,7 @@ export class StrategyIntentExecutionService {
     }
   }
 
-  private async reserveClientOrderId(
-    orderId: string,
-    exchangeName: string,
-  ): Promise<string> {
+  private async reserveClientOrderId(orderId: string): Promise<string> {
     const current = this.nextClientOrderSeqByOrderId.get(orderId);
     const nextSeq =
       current ??
@@ -1751,31 +1667,12 @@ export class StrategyIntentExecutionService {
 
     await this.exchangeOrderMappingService?.reserveMapping({
       orderId,
-      exchangeName,
       clientOrderId,
-      exchangeClientOrderId: this.buildExchangeClientOrderId(
-        exchangeName,
-        clientOrderId,
-      ),
     });
 
     this.nextClientOrderSeqByOrderId.set(orderId, nextSeq + 1);
 
     return clientOrderId;
-  }
-
-  private buildExchangeClientOrderId(
-    exchangeName: string,
-    clientOrderId: string,
-  ): string | undefined {
-    const encodedClientOrderId = encodeClientOrderIdForExchange(
-      exchangeName,
-      clientOrderId,
-    );
-
-    return encodedClientOrderId === clientOrderId
-      ? undefined
-      : encodedClientOrderId;
   }
 
   private isCancelResultFinal(result: Record<string, unknown> | undefined) {
