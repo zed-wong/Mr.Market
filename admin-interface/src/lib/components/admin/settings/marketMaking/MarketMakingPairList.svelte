@@ -180,7 +180,7 @@ import { toast } from "svelte-sonner";
                     {#each paginatedPairs as pair}
                         <tr class="hover:bg-base-200/30 transition-colors">
                             <td>
-                                <div class="flex -space-x-3">
+                                <div class="flex -space-x-1.5">
                                     <img
                                         class="inline-block min-w-6 min-h-6 h-6 w-6 rounded-full ring-2 ring-base-100"
                                         src={pair.base_icon_url}
