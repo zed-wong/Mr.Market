@@ -301,7 +301,7 @@ export class ReconciliationService {
     for (const entry of fillEntries) {
       if (!entry.refId) {
         violations += 1;
-        this.pauseAndAuditFillMismatch(entry, 'missing_fill_ref');
+        this.auditFillMismatch(entry, 'missing_fill_ref');
         continue;
       }
 
@@ -309,7 +309,7 @@ export class ReconciliationService {
 
       if (!tradeEvidenceRefs.has(entry.refId)) {
         violations += 1;
-        this.pauseAndAuditFillMismatch(entry, 'missing_exchange_trade');
+        this.auditFillMismatch(entry, 'missing_exchange_trade');
         continue;
       }
 
@@ -629,6 +629,10 @@ export class ReconciliationService {
       );
     }
 
+    this.auditFillMismatch(entry, reason);
+  }
+
+  private auditFillMismatch(entry: LedgerEntry, reason: string): void {
     this.marketMakingEventBus?.emitReconciliationAudit({
       correctionType: 'manual_review',
       orderId: entry.orderId,

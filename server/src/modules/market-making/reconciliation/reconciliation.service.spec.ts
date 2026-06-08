@@ -483,6 +483,12 @@ describe('ReconciliationService', () => {
         },
       ]),
     };
+    const balanceLedgerService = {
+      pauseReservations: jest.fn(),
+    };
+    const marketMakingEventBus = {
+      emitReconciliationAudit: jest.fn(),
+    };
     const service = new ReconciliationService(
       { find: jest.fn().mockResolvedValue([]) } as any,
       {
@@ -506,8 +512,8 @@ describe('ReconciliationService', () => {
       { find: jest.fn().mockResolvedValue([]) } as any,
       { find: jest.fn().mockResolvedValue([]) } as any,
       ledgerEntryRepository as any,
-      undefined,
-      undefined,
+      balanceLedgerService as any,
+      marketMakingEventBus as any,
       exchangeConnectorAdapterService as any,
     );
 
@@ -524,5 +530,18 @@ describe('ReconciliationService', () => {
       checked: 3,
       violations: 2,
     });
+    expect(balanceLedgerService.pauseReservations).not.toHaveBeenCalled();
+    expect(
+      marketMakingEventBus.emitReconciliationAudit,
+    ).toHaveBeenCalledTimes(2);
+    expect(
+      marketMakingEventBus.emitReconciliationAudit,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'order-2',
+        reason: 'missing_exchange_trade',
+        refId: 'exchange-order-missing',
+      }),
+    );
   });
 });
