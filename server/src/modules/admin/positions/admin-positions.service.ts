@@ -5,6 +5,7 @@ import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.ent
 import { MarketMakingOrderBalance } from 'src/common/entities/ledger/market-making-order-balance.entity';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { TrackedOrderEntity } from 'src/common/entities/market-making/tracked-order.entity';
+import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { In, Repository } from 'typeorm';
 
@@ -14,6 +15,17 @@ const MAX_PAGE = 1000;
 const MAX_QUERY_LENGTH = 100;
 const MAX_TOKEN_LENGTH = 64;
 const METADATA_SCAN_LIMIT = 500;
+const ACTIVE_MARKET_MAKING_ORDER_STATES = new Set([
+  'created',
+  'running',
+  'paused',
+]);
+const RISK_RELEVANT_TRACKED_ORDER_STATUSES = new Set([
+  'pending_create',
+  'open',
+  'partially_filled',
+  'pending_cancel',
+]);
 
 const UNAVAILABLE_PNL_REASON =
   'PnL metrics are unavailable because order-scoped balances do not include supported cost basis or mark-price valuation data.';
@@ -43,6 +55,8 @@ export class AdminPositionsService {
     private readonly trackedOrderRepository: Repository<TrackedOrderEntity>,
     @InjectRepository(StrategyInstance)
     private readonly strategyInstanceRepository: Repository<StrategyInstance>,
+    @InjectRepository(MarketMakingOrder)
+    private readonly marketMakingOrderRepository: Repository<MarketMakingOrder>,
   ) {}
 
   async listPositions(input: AdminPositionsQuery) {
@@ -75,9 +89,15 @@ export class AdminPositionsService {
       .take(METADATA_SCAN_LIMIT)
       .getMany();
 
-    const [orderMetadata, strategyMetadata, assetSymbols] = await Promise.all([
+    const [
+      orderMetadata,
+      strategyMetadata,
+      summaryExposureMetadata,
+      assetSymbols,
+    ] = await Promise.all([
       this.loadOrderMetadata(balances),
       this.loadStrategyMetadata(balances),
+      this.loadSummaryExposureMetadata(summaryBalances),
       this.buildAssetSymbolMap(),
     ]);
     const items = balances.map((balance) =>
@@ -93,7 +113,12 @@ export class AdminPositionsService {
     return {
       generatedAt: getRFC3339Timestamp(),
       items,
-      summary: this.buildSummary(summaryBalances, total, assetSymbols),
+      summary: this.buildSummary(
+        summaryBalances,
+        total,
+        assetSymbols,
+        summaryExposureMetadata,
+      ),
       pagination: {
         page: pagination.page,
         limit: pagination.limit,
@@ -347,6 +372,69 @@ export class AdminPositionsService {
     return metadata;
   }
 
+  private async loadSummaryExposureMetadata(
+    balances: MarketMakingOrderBalance[],
+  ): Promise<
+    Map<
+      string,
+      {
+        marketMakingState: string | null;
+        trackedStatuses: Set<string>;
+      }
+    >
+  > {
+    const orderIds = this.uniqueOrderIds(balances);
+    const metadata = new Map<
+      string,
+      {
+        marketMakingState: string | null;
+        trackedStatuses: Set<string>;
+      }
+    >();
+
+    for (const orderId of orderIds) {
+      metadata.set(orderId, {
+        marketMakingState: null,
+        trackedStatuses: new Set(),
+      });
+    }
+
+    if (orderIds.length === 0) {
+      return metadata;
+    }
+
+    const [orders, trackedOrders] = await Promise.all([
+      this.marketMakingOrderRepository.find({
+        where: { orderId: In(orderIds) },
+        select: ['orderId', 'state'],
+        take: METADATA_SCAN_LIMIT,
+      }),
+      this.trackedOrderRepository.find({
+        where: { orderId: In(orderIds) },
+        select: ['orderId', 'status'],
+        take: METADATA_SCAN_LIMIT,
+      }),
+    ]);
+
+    for (const order of orders) {
+      const current = metadata.get(order.orderId);
+
+      if (current) {
+        current.marketMakingState = order.state || null;
+      }
+    }
+
+    for (const trackedOrder of trackedOrders) {
+      const current = metadata.get(trackedOrder.orderId);
+
+      if (current && trackedOrder.status) {
+        current.trackedStatuses.add(trackedOrder.status);
+      }
+    }
+
+    return metadata;
+  }
+
   private serializePosition(
     balance: MarketMakingOrderBalance,
     assetSymbols: Map<string, string>,
@@ -417,6 +505,13 @@ export class AdminPositionsService {
     balances: MarketMakingOrderBalance[],
     totalRows: number,
     assetSymbols: Map<string, string>,
+    exposureMetadata: Map<
+      string,
+      {
+        marketMakingState: string | null;
+        trackedStatuses: Set<string>;
+      }
+    >,
   ) {
     const byAsset = new Map<
       string,
@@ -428,7 +523,11 @@ export class AdminPositionsService {
       }
     >();
 
-    for (const balance of balances) {
+    const activeBalances = balances.filter((balance) =>
+      this.isActiveInventoryBalance(balance, exposureMetadata),
+    );
+
+    for (const balance of activeBalances) {
       const asset = this.resolveAssetSymbol(balance.assetId, assetSymbols);
       const current = byAsset.get(asset) || {
         asset,
@@ -444,7 +543,7 @@ export class AdminPositionsService {
     }
 
     return {
-      scannedRows: balances.length,
+      scannedRows: activeBalances.length,
       totalRows,
       truncated: totalRows > balances.length,
       byAsset: [...byAsset.values()]
@@ -460,6 +559,40 @@ export class AdminPositionsService {
           total: entry.total.toFixed(),
         })),
     };
+  }
+
+  private isActiveInventoryBalance(
+    balance: MarketMakingOrderBalance,
+    exposureMetadata: Map<
+      string,
+      {
+        marketMakingState: string | null;
+        trackedStatuses: Set<string>;
+      }
+    >,
+  ): boolean {
+    const total = new BigNumber(balance.total || 0);
+
+    if (!total.isFinite() || total.isZero()) {
+      return false;
+    }
+
+    const metadata = exposureMetadata.get(balance.orderId);
+
+    if (!metadata) {
+      return false;
+    }
+
+    if (
+      metadata.marketMakingState &&
+      ACTIVE_MARKET_MAKING_ORDER_STATES.has(metadata.marketMakingState)
+    ) {
+      return true;
+    }
+
+    return [...metadata.trackedStatuses].some((status) =>
+      RISK_RELEVANT_TRACKED_ORDER_STATUSES.has(status),
+    );
   }
 
   private emptyResponse(

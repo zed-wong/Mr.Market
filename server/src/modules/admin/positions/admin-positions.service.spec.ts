@@ -116,6 +116,14 @@ describe('AdminPositionsService', () => {
         },
       ]),
     };
+    const marketMakingOrders = {
+      find: jest.fn(async () =>
+        rows.map((row) => ({
+          orderId: row.orderId,
+          state: 'running',
+        })),
+      ),
+    };
 
     return {
       service: new AdminPositionsService(
@@ -123,11 +131,13 @@ describe('AdminPositionsService', () => {
         marketPairs as any,
         trackedOrders as any,
         strategies as any,
+        marketMakingOrders as any,
       ),
       balances,
       marketPairs,
       trackedOrders,
       strategies,
+      marketMakingOrders,
       queryBuilder,
       summaryQueryBuilder,
     };
@@ -199,7 +209,7 @@ describe('AdminPositionsService', () => {
       hasPrevious: false,
     });
     expect(JSON.stringify(result)).not.toContain('user-1');
-    expect(trackedOrders.find).toHaveBeenCalledTimes(1);
+    expect(trackedOrders.find).toHaveBeenCalledTimes(2);
   });
 
   it('applies asset, exchange, query, limit, and page filters safely', async () => {
@@ -336,6 +346,106 @@ describe('AdminPositionsService', () => {
         total: '0.25',
       },
     ]);
+  });
+
+  it('summarizes only active or risk-relevant inventory balances', async () => {
+    const rows = [
+      {
+        orderId: 'active-order',
+        userId: 'user-1',
+        assetId: 'USDT',
+        available: '7',
+        locked: '3',
+        total: '10',
+        updatedAt: ts(1),
+      },
+      {
+        orderId: 'open-tracked-orphan',
+        userId: 'user-1',
+        assetId: 'USDT',
+        available: '4',
+        locked: '1',
+        total: '5',
+        updatedAt: ts(2),
+      },
+      {
+        orderId: 'deleted-order',
+        userId: 'user-1',
+        assetId: 'USDT',
+        available: '100',
+        locked: '0',
+        total: '100',
+        updatedAt: ts(3),
+      },
+      {
+        orderId: 'terminal-tracked',
+        userId: 'user-1',
+        assetId: 'USDT',
+        available: '30',
+        locked: '20',
+        total: '50',
+        updatedAt: ts(4),
+      },
+      {
+        orderId: 'unmapped-orphan',
+        userId: 'user-1',
+        assetId: 'USDT',
+        available: '40',
+        locked: '0',
+        total: '40',
+        updatedAt: ts(5),
+      },
+    ];
+    const { service, marketMakingOrders, trackedOrders } = buildService(
+      rows,
+      rows.length,
+    );
+
+    marketMakingOrders.find.mockResolvedValueOnce([
+      { orderId: 'active-order', state: 'running' },
+      { orderId: 'deleted-order', state: 'deleted' },
+    ]);
+    trackedOrders.find.mockImplementation(async (options?: any) => {
+      if (options?.select?.includes('status')) {
+        return [
+          {
+            orderId: 'open-tracked-orphan',
+            strategyKey: 'strategy-open',
+            exchange: 'mexc',
+            accountLabel: 'maker',
+            pair: 'XIN/USDT',
+            status: 'open',
+            updatedAt: ts(6),
+          },
+          {
+            orderId: 'terminal-tracked',
+            strategyKey: 'strategy-terminal',
+            exchange: 'mexc',
+            accountLabel: 'maker',
+            pair: 'XIN/USDT',
+            status: 'filled',
+            updatedAt: ts(7),
+          },
+        ];
+      }
+
+      return [];
+    });
+
+    const result = await service.listPositions({});
+
+    expect(result.summary).toMatchObject({
+      scannedRows: 2,
+      totalRows: rows.length,
+      byAsset: [
+        {
+          asset: 'USDT',
+          available: '11',
+          locked: '4',
+          total: '15',
+        },
+      ],
+    });
   });
 
   it.each([
