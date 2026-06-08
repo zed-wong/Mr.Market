@@ -6,6 +6,7 @@ import { BalanceStateCacheService } from '../balance-state/balance-state-cache.s
 import { OrderScopedBalanceQueryService } from '../balance-state/order-scoped-balance-query.service';
 import { TimeIndicatorStrategyController } from './controllers/time-indicator-strategy.controller';
 import { DualAccountPlannerService } from './dual-account/dual-account-planner.service';
+import { QuotePlannerService } from './quote/quote-planner.service';
 
 jest.mock(
   'src/common/entities/market-making/strategy-instances.entity',
@@ -118,12 +119,15 @@ describe('StrategyService balance cache helpers', () => {
         }),
       ),
     };
+    const quotePlannerService = new QuotePlannerService(
+      exchangeConnectorAdapterService as any,
+    );
     const dualAccountPlannerService = new DualAccountPlannerService(
       exchangeConnectorAdapterService as any,
       orderScopedBalanceQueryService,
       strategyMarketDataProviderService as any,
       volumeStrategyController as any,
-      undefined,
+      quotePlannerService,
       strategyIntentStoreService as any,
     );
     const timeIndicatorStrategyController = new TimeIndicatorStrategyController(
@@ -474,9 +478,9 @@ describe('StrategyService balance cache helpers', () => {
         accountLabel: 'maker',
         metadata: expect.objectContaining({
           orderId: 'order-1:maker',
-          requestedQty: '1',
+          requestedQty: '0.1',
           effectiveQty: '0.1',
-          selectedSideCapacity: '0.1',
+          targetQty: '1',
         }),
       }),
     ]);

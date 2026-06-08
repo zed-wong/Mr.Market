@@ -1133,7 +1133,8 @@ describe('StrategyService', () => {
       userId: '1',
       assetId: 'BTC',
       amount: '0.5',
-      idempotencyKey: 'mm-fill:client1-pureMarketMaking:ex-1:buy:0.5:base',
+      idempotencyKey:
+        'mm-fill:client1-pureMarketMaking:client1:default:ex-1:buy:0.5:base',
       refType: 'market_making_fill',
       refId: 'ex-1',
     });
@@ -1142,7 +1143,8 @@ describe('StrategyService', () => {
       userId: '1',
       assetId: 'USDT',
       amount: '-50',
-      idempotencyKey: 'mm-fill:client1-pureMarketMaking:ex-1:buy:0.5:quote',
+      idempotencyKey:
+        'mm-fill:client1-pureMarketMaking:client1:default:ex-1:buy:0.5:quote',
       refType: 'market_making_fill',
       refId: 'ex-1',
     });
@@ -1189,7 +1191,8 @@ describe('StrategyService', () => {
       userId: '1',
       assetId: 'BTC',
       amount: '0.0005',
-      idempotencyKey: 'mm-fill:client1-pureMarketMaking:ex-1:buy:0.5:fee:BTC',
+      idempotencyKey:
+        'mm-fill:client1-pureMarketMaking:client1:default:ex-1:buy:0.5:fee:BTC',
       refType: 'market_making_fee',
       refId: 'ex-1',
     });
@@ -1347,12 +1350,14 @@ describe('StrategyService', () => {
     expect(baseAdjusts).toHaveLength(2);
     expect(baseAdjusts[0][0]).toEqual(
       expect.objectContaining({
-        idempotencyKey: 'mm-fill:client1-pureMarketMaking:ex-1:buy:1.5:base',
+        idempotencyKey:
+          'mm-fill:client1-pureMarketMaking:client1:default:ex-1:buy:1.5:base',
       }),
     );
     expect(baseAdjusts[1][0]).toEqual(
       expect.objectContaining({
-        idempotencyKey: 'mm-fill:client1-pureMarketMaking:ex-1:buy:1.5:base',
+        idempotencyKey:
+          'mm-fill:client1-pureMarketMaking:client1:default:ex-1:buy:1.5:base',
       }),
     );
   });
@@ -1408,12 +1413,14 @@ describe('StrategyService', () => {
     expect(baseAdjusts).toHaveLength(2);
     expect(baseAdjusts[0][0]).toEqual(
       expect.objectContaining({
-        idempotencyKey: 'mm-fill:client1-pureMarketMaking:ex-1:buy:1.5:base',
+        idempotencyKey:
+          'mm-fill:client1-pureMarketMaking:client1:default:ex-1:buy:1.5:base',
       }),
     );
     expect(baseAdjusts[1][0]).toEqual(
       expect.objectContaining({
-        idempotencyKey: 'mm-fill:client1-pureMarketMaking:ex-1:buy:99:base',
+        idempotencyKey:
+          'mm-fill:client1-pureMarketMaking:client1:default:ex-1:buy:99:base',
       }),
     );
   });
