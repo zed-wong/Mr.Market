@@ -123,6 +123,8 @@ describe('StrategyIntentExecutionService', () => {
       amount: '100',
       applied: true,
     }),
+    isReservationPausedForLimitOrder: jest.fn().mockReturnValue(false),
+    pauseReservationForLimitOrder: jest.fn(),
   };
 
   const intentStoreService = {
@@ -325,6 +327,18 @@ describe('StrategyIntentExecutionService', () => {
         amount: '100',
         applied: true,
       });
+    orderReservationService.releaseRemainingLimitOrderReservation
+      .mockReset()
+      .mockResolvedValue({
+        orderId: 'c1',
+        assetId: 'USDT',
+        amount: '100',
+        applied: true,
+      });
+    orderReservationService.isReservationPausedForLimitOrder
+      .mockReset()
+      .mockReturnValue(false);
+    orderReservationService.pauseReservationForLimitOrder.mockReset();
     strategyInstanceRepository.findOne.mockResolvedValue({
       strategyKey: 'u1-c1-pureMarketMaking',
       status: 'running',
@@ -646,6 +660,90 @@ describe('StrategyIntentExecutionService', () => {
     );
   });
 
+  it('pauses reservation when exchange rejects create for balance', async () => {
+    const service = createService(
+      true,
+      createConfigService(true, { 'strategy.intent_max_retries': 0 }),
+      createExecutionHistoryRepository(),
+      orderReservationService,
+    );
+
+    exchangeConnectorAdapterService.placeLimitOrder.mockRejectedValue(
+      new Error('mexc {"msg":"Oversold","code":30005}'),
+    );
+
+    await expect(service.consumeIntents([baseIntent])).rejects.toThrow(
+      'Oversold',
+    );
+
+    expect(
+      orderReservationService.pauseReservationForLimitOrder,
+    ).toHaveBeenCalledWith(
+      {
+        orderId: 'c1',
+        userId: 'u1',
+        intentId: 'intent-1',
+        pair: 'BTC/USDT',
+        side: 'buy',
+        price: '100',
+        qty: '1',
+      },
+      {
+        source: 'exchange_create_failed',
+        reason: 'exchange_balance_rejected',
+        strategyKey: 'u1-c1-pureMarketMaking',
+        refType: 'strategy_order_intent',
+        refId: 'intent-1',
+      },
+    );
+  });
+
+  it('blocks dual-account maker create when inline taker reservation is paused', async () => {
+    const service = createService(
+      true,
+      createConfigService(true),
+      createExecutionHistoryRepository(),
+      orderReservationService,
+    );
+
+    orderReservationService.isReservationPausedForLimitOrder.mockReturnValue(
+      true,
+    );
+
+    await expect(
+      service.consumeIntents([
+        {
+          ...baseIntent,
+          intentId: 'dual-maker-paused-taker',
+          strategyKey: 'admin-direct-o1-efficientDualAccountVolume',
+          clientId: 'o1',
+          accountLabel: '2',
+          metadata: {
+            role: 'maker',
+            baseOrderId: 'o1',
+            orderId: 'o1:2',
+            takerAccountLabel: '5',
+          },
+        },
+      ]),
+    ).rejects.toThrow('inline taker reservation paused');
+
+    expect(
+      orderReservationService.isReservationPausedForLimitOrder,
+    ).toHaveBeenCalledWith({
+      orderId: 'o1:5',
+      userId: 'u1',
+      intentId: 'dual-maker-paused-taker:inline-taker',
+      pair: 'BTC/USDT',
+      side: 'sell',
+      price: '100',
+      qty: '1',
+    });
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).not.toHaveBeenCalled();
+  });
+
   it('releases reservation and fails intent when exchange create returns rejected status', async () => {
     const service = createService(
       true,
@@ -790,7 +888,7 @@ describe('StrategyIntentExecutionService', () => {
     expect(exchangeConnectorAdapterService.fetchOrder).toHaveBeenCalledTimes(4);
     expect(
       exchangeConnectorAdapterService.fetchOrderBook,
-    ).not.toHaveBeenCalled();
+    ).toHaveBeenCalledWith('binance', 'BTC/USDT');
     expect(exchangeConnectorAdapterService.cancelOrder).not.toHaveBeenCalled();
     expect(strategyInstanceRepository.update).not.toHaveBeenCalled();
     expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
@@ -808,6 +906,47 @@ describe('StrategyIntentExecutionService', () => {
         role: 'taker',
         exchangeOrderId: 'taker-order-1',
       }),
+    );
+  });
+
+  it('cancels maker and skips inline taker when maker is not exclusive top-of-book', async () => {
+    exchangeConnectorAdapterService.placeLimitOrder.mockResolvedValueOnce({
+      id: 'maker-order-crowded',
+      status: 'open',
+    });
+    exchangeConnectorAdapterService.fetchOrder.mockResolvedValue({
+      id: 'maker-order-crowded',
+      status: 'open',
+      filled: '0',
+    });
+    exchangeConnectorAdapterService.fetchOrderBook.mockResolvedValue({
+      bids: [[100, 2]],
+      asks: [[101, 1]],
+    });
+    const service = createService(true);
+
+    await service.consumeIntents([
+      {
+        ...baseIntent,
+        intentId: 'dual-maker-crowded-book',
+        accountLabel: 'maker',
+        metadata: {
+          role: 'maker',
+          takerAccountLabel: 'taker',
+          cycleId: 'cycle-crowded-book',
+          orderId: 'dual-cycle-crowded-book',
+        },
+      },
+    ]);
+
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).toHaveBeenCalledTimes(1);
+    expect(exchangeConnectorAdapterService.cancelOrder).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      'maker-order-crowded',
+      'maker',
     );
   });
 
@@ -1062,7 +1201,7 @@ describe('StrategyIntentExecutionService', () => {
 
     expect(
       exchangeConnectorAdapterService.fetchOrderBook,
-    ).not.toHaveBeenCalled();
+    ).toHaveBeenCalledWith('binance', 'BTC/USDT');
     expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
       'dual-maker-partial:inline-taker',
       'DONE',

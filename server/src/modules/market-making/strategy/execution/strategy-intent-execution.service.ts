@@ -295,6 +295,8 @@ export class StrategyIntentExecutionService {
         let result: Record<string, unknown> | undefined;
 
         if (this.orderReservationService) {
+          this.assertImmediateDualAccountTakerReservationAvailable(intent);
+
           reservation = await this.orderReservationService.reserveForLimitOrder(
             {
               orderId,
@@ -337,6 +339,11 @@ export class StrategyIntentExecutionService {
               reason: 'exchange_create_failed',
             });
           }
+          this.pauseReservationAfterExchangeBalanceRejection(
+            intent,
+            orderId,
+            error,
+          );
           throw error;
         }
 
@@ -974,6 +981,85 @@ export class StrategyIntentExecutionService {
     return metadataOrderId || intent.clientId;
   }
 
+  private assertImmediateDualAccountTakerReservationAvailable(
+    intent: StrategyOrderIntent,
+  ): void {
+    if (intent.type !== 'CREATE_LIMIT_ORDER' || intent.timeInForce === 'IOC') {
+      return;
+    }
+
+    if (this.resolveIntentRole(intent) !== 'maker') {
+      return;
+    }
+
+    const takerAccountLabel = this.readMetadataString(
+      intent,
+      'takerAccountLabel',
+    );
+    const baseOrderId = this.readMetadataString(intent, 'baseOrderId');
+
+    if (!takerAccountLabel || !baseOrderId || !this.orderReservationService) {
+      return;
+    }
+
+    const takerPaused =
+      this.orderReservationService.isReservationPausedForLimitOrder({
+        orderId: `${baseOrderId}:${takerAccountLabel}`,
+        userId: intent.userId,
+        intentId: `${intent.intentId}:inline-taker`,
+        pair: intent.pair,
+        side: intent.side === 'buy' ? 'sell' : 'buy',
+        price: intent.price,
+        qty: intent.qty,
+      });
+
+    if (takerPaused) {
+      throw new Error(
+        'inline taker reservation paused for order balance mismatch',
+      );
+    }
+  }
+
+  private pauseReservationAfterExchangeBalanceRejection(
+    intent: StrategyOrderIntent,
+    orderId: string,
+    error: unknown,
+  ): void {
+    if (!this.orderReservationService) {
+      return;
+    }
+
+    const message = error instanceof Error ? error.message : String(error);
+    const normalized = message.toLowerCase();
+
+    if (
+      !normalized.includes('oversold') &&
+      !normalized.includes('insufficient balance') &&
+      !normalized.includes('insufficient available')
+    ) {
+      return;
+    }
+
+    this.orderReservationService.pauseReservationForLimitOrder(
+      {
+        orderId,
+        userId: intent.userId,
+        intentId: intent.intentId,
+        pair: intent.pair,
+        side: intent.side,
+        price: intent.price,
+        qty: intent.qty,
+      },
+      {
+        source: 'exchange_create_failed',
+        reason: 'exchange_balance_rejected',
+        strategyKey: intent.strategyKey,
+        refType: 'strategy_order_intent',
+        refId: intent.intentId,
+      },
+    );
+  }
+
   private async maybeExecuteImmediateDualAccountTaker(
     intent: StrategyOrderIntent,
     makerResult: unknown,
@@ -1028,6 +1114,24 @@ export class StrategyIntentExecutionService {
           makerExchangeOrderId,
           'post-delay',
         );
+
+      const makerAppearsMatchable =
+        await this.verifyImmediateDualAccountMakerTopOfBook(
+          intent,
+          makerExchangeOrderId,
+          makerDispatchSnapshot,
+        );
+
+      if (!makerAppearsMatchable) {
+        await this.cancelRemainingImmediateDualAccountMaker(
+          intent,
+          makerExchangeOrderId,
+          'maker_not_exclusive_top_of_book_before_taker',
+        );
+
+        return;
+      }
+
       const takerQty = makerDispatchSnapshot.remainingQty;
 
       if (
@@ -1113,6 +1217,107 @@ export class StrategyIntentExecutionService {
         triggerFillQty: takerQty.toFixed(),
       },
     };
+  }
+
+  private async verifyImmediateDualAccountMakerTopOfBook(
+    intent: StrategyOrderIntent,
+    makerExchangeOrderId: string,
+    makerSnapshot: ImmediateDualAccountOrderSnapshot,
+  ): Promise<boolean> {
+    try {
+      const orderBook = await this.exchangeConnectorAdapterService.fetchOrderBook(
+        intent.exchange,
+        intent.pair,
+      );
+      const topLevel = this.readImmediateDualAccountTopLevel(
+        intent.side === 'buy' ? orderBook?.bids : orderBook?.asks,
+      );
+
+      if (!topLevel) {
+        this.logger.warn(
+          [
+            'Skipping immediate dual-account taker because top of book is unavailable',
+            `strategy=${intent.strategyKey}`,
+            `intent=${intent.intentId}`,
+            `makerOrderId=${makerExchangeOrderId}`,
+            `side=${intent.side}`,
+          ].join(' | '),
+        );
+
+        return false;
+      }
+
+      const makerPrice = new BigNumber(intent.price || 0);
+      const topPrice = topLevel.price;
+      const topAmount = topLevel.amount;
+      const remainingQty = makerSnapshot.remainingQty;
+      const priceMatches = topPrice.isEqualTo(makerPrice);
+      const topAmountDoesNotExceedMaker = topAmount.isLessThanOrEqualTo(
+        remainingQty.plus(
+          StrategyIntentExecutionService.DUAL_ACCOUNT_QTY_TOLERANCE,
+        ),
+      );
+
+      if (priceMatches && topAmountDoesNotExceedMaker) {
+        return true;
+      }
+
+      this.logger.warn(
+        [
+          'Skipping immediate dual-account taker because maker is not exclusive top-of-book',
+          `strategy=${intent.strategyKey}`,
+          `intent=${intent.intentId}`,
+          `makerOrderId=${makerExchangeOrderId}`,
+          `side=${intent.side}`,
+          `makerPrice=${makerPrice.toFixed()}`,
+          `makerRemainingQty=${remainingQty.toFixed()}`,
+          `topPrice=${topPrice.toFixed()}`,
+          `topAmount=${topAmount.toFixed()}`,
+        ].join(' | '),
+      );
+
+      return false;
+    } catch (error) {
+      this.logger.warn(
+        [
+          'Skipping immediate dual-account taker because order book verification failed',
+          `strategy=${intent.strategyKey}`,
+          `intent=${intent.intentId}`,
+          `makerOrderId=${makerExchangeOrderId}`,
+          `error=${error instanceof Error ? error.message : String(error)}`,
+        ].join(' | '),
+      );
+
+      return false;
+    }
+  }
+
+  private readImmediateDualAccountTopLevel(
+    levels: unknown,
+  ): { price: BigNumber; amount: BigNumber } | null {
+    if (!Array.isArray(levels) || levels.length === 0) {
+      return null;
+    }
+
+    const level = levels[0];
+
+    if (!Array.isArray(level) || level.length < 2) {
+      return null;
+    }
+
+    const price = new BigNumber(level[0]);
+    const amount = new BigNumber(level[1]);
+
+    if (
+      !price.isFinite() ||
+      price.isLessThanOrEqualTo(0) ||
+      !amount.isFinite() ||
+      amount.isLessThanOrEqualTo(0)
+    ) {
+      return null;
+    }
+
+    return { price, amount };
   }
 
   private async waitForImmediateDualAccountMakerReady(

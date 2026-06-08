@@ -33,7 +33,7 @@ type BalanceLedgerResult = {
   balance: MarketMakingOrderBalance;
 };
 
-type ReservationPauseMetadata = {
+export type ReservationPauseMetadata = {
   source?: string;
   reason?: string;
   strategyKey?: string;

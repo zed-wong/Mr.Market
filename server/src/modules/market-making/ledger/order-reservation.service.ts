@@ -5,7 +5,10 @@ import { createHash } from 'crypto';
 import { LedgerEntry } from 'src/common/entities/ledger/ledger-entry.entity';
 import { Repository } from 'typeorm';
 
-import { BalanceLedgerService } from './balance-ledger.service';
+import {
+  BalanceLedgerService,
+  ReservationPauseMetadata,
+} from './balance-ledger.service';
 
 type LimitOrderReservationCommand = {
   orderId: string;
@@ -56,6 +59,30 @@ export class OrderReservationService {
     });
 
     return { ...reservation, applied: result.applied };
+  }
+
+  isReservationPausedForLimitOrder(
+    command: LimitOrderReservationCommand,
+  ): boolean {
+    const reservation = this.calculateReservation(command);
+
+    return this.balanceLedgerService.isReservationPaused(
+      command.orderId,
+      reservation.assetId,
+    );
+  }
+
+  pauseReservationForLimitOrder(
+    command: LimitOrderReservationCommand,
+    metadata: ReservationPauseMetadata = {},
+  ): void {
+    const reservation = this.calculateReservation(command);
+
+    this.balanceLedgerService.pauseReservations(
+      command.orderId,
+      reservation.assetId,
+      metadata,
+    );
   }
 
   async releaseLimitOrderReservation(
