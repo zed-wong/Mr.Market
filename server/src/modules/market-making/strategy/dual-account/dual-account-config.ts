@@ -31,6 +31,17 @@ export const DEFAULT_DUAL_ACCOUNT_SAFETY_BUFFER: DualAccountSafetyBufferConfig =
     feeCostMultiplier: 2,
   };
 
+export const OPTIMAL_PRICE_SAFETY_MARGIN = 0.15;
+
+export const OPTIMAL_MAKER_TIMEOUT_MS = 15_000;
+
+export function resolveAccountScopedOrderId(
+  marketMakingOrderId: string,
+  accountLabel: string,
+): string {
+  return `${marketMakingOrderId}:${accountLabel}`;
+}
+
 export function mergeDualAccountConfigIntoRuntime(
   runtime: DualAccountVolumeStrategyParams,
   persisted?: Partial<DualAccountVolumeStrategyParams>,

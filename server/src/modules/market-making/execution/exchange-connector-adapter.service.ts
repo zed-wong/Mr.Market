@@ -323,6 +323,23 @@ export class ExchangeConnectorAdapterService {
     );
   }
 
+  getCachedTradingRules(
+    exchangeName: string,
+    pair: string,
+    _accountLabel?: string,
+  ):
+    | {
+        amountMin?: number;
+        amountMax?: number;
+        costMin?: number;
+        costMax?: number;
+        makerFee?: number;
+        takerFee?: number;
+      }
+    | undefined {
+    return this.marketRulesByKey.get(this.toMarketKey(exchangeName, pair));
+  }
+
   quantizeOrder(
     exchangeName: string,
     pair: string,

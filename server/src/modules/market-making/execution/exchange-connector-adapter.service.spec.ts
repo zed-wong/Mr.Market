@@ -183,6 +183,32 @@ describe('ExchangeConnectorAdapterService', () => {
     expect(exchange.fetchBalance).toHaveBeenCalled();
   });
 
+  it('exposes already loaded trading rules from cache without exchange I/O', async () => {
+    const service = new ExchangeConnectorAdapterService(
+      exchangeInitService as any,
+      createConfigService(),
+    );
+
+    expect(service.getCachedTradingRules('binance', 'BTC/USDT')).toBeUndefined();
+
+    await service.loadTradingRules('binance', 'BTC/USDT', 'account-a');
+    exchange.loadMarkets.mockClear();
+    exchangeInitService.getExchange.mockClear();
+
+    expect(
+      service.getCachedTradingRules('binance', 'BTC/USDT', 'account-b'),
+    ).toEqual({
+      amountMin: 0.001,
+      amountMax: 5,
+      costMin: 10,
+      costMax: 500,
+      makerFee: 0.001,
+      takerFee: 0.002,
+    });
+    expect(exchange.loadMarkets).not.toHaveBeenCalled();
+    expect(exchangeInitService.getExchange).not.toHaveBeenCalled();
+  });
+
   it('loads MEXC trading fees from ccxt market data without overrides', async () => {
     const service = new ExchangeConnectorAdapterService(
       exchangeInitService as any,

@@ -416,13 +416,13 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
         'binance',
         'BTC/USDT',
         'account-a',
-        'mm-order-1',
+        'mm-order-1:account-a',
       );
       expect(balanceQuery.getAvailableBalancesForPair).toHaveBeenCalledWith(
         'binance',
         'BTC/USDT',
         'account-b',
-        'mm-order-1',
+        'mm-order-1:account-b',
       );
       expect(exchangeConnector.getCachedTradingRules).toHaveBeenCalledWith(
         'binance',
@@ -466,6 +466,65 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
           '2026-06-04T00:00:00.000Z',
         ),
       ).resolves.toEqual([]);
+    } finally {
+      randomSpy.mockRestore();
+    }
+  });
+
+  it('does not schedule optimal volume when capacity falls below exchange notional minimum', async () => {
+    const { planner, intentStore } = buildPlanner({
+      bestBid: '53',
+      bestAsk: '55',
+      balances: {
+        'account-a': buildBalances(0, 100),
+        'account-b': buildBalances(0.017, 0),
+      },
+      rules: {
+        amountMin: 0.001,
+        costMin: 1,
+        makerFee: 0.001,
+        takerFee: 0.001,
+      },
+    });
+    const randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0.5);
+
+    try {
+      await expect(
+        planner.buildOptimalDualAccountVolumeActions(
+          'xin-strategy',
+          {
+            ...baseParams,
+            exchangeName: 'mexc',
+            symbol: 'XIN/USDT',
+            pair: 'XIN/USDT',
+            baseTradeAmount: 0.02,
+            maxOrderAmount: 0.02,
+          },
+          '2026-06-08T05:38:53.000Z',
+        ),
+      ).resolves.toEqual([]);
+      expect(intentStore.createLimitOrderIntent).not.toHaveBeenCalled();
+    } finally {
+      randomSpy.mockRestore();
+    }
+  });
+
+  it('does not schedule dual-account execution when cached trading rules are unavailable at runtime', async () => {
+    const { planner, exchangeConnector, intentStore } = buildPlanner();
+    const randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0.5);
+
+    exchangeConnector.getCachedTradingRules.mockReturnValue(undefined);
+
+    try {
+      await expect(
+        planner.buildDualAccountBestCapacityVolumeActions(
+          'missing-rules-strategy',
+          baseParams,
+          '2026-06-04T00:00:00.000Z',
+        ),
+      ).resolves.toEqual([]);
+      expect(exchangeConnector.loadTradingRules).not.toHaveBeenCalled();
+      expect(intentStore.createLimitOrderIntent).not.toHaveBeenCalled();
     } finally {
       randomSpy.mockRestore();
     }
@@ -593,13 +652,13 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
       'binance',
       'BTC/USDT',
       'account-a',
-      'mm-order-1',
+      'mm-order-1:account-a',
     );
     expect(balanceQuery.getAvailableBalancesForPair).toHaveBeenCalledWith(
       'binance',
       'BTC/USDT',
       'account-b',
-      'mm-order-1',
+      'mm-order-1:account-b',
     );
     expect(exchangeConnector.loadTradingRules).not.toHaveBeenCalled();
     expect(exchangeConnector.fetchOrderBook).not.toHaveBeenCalled();

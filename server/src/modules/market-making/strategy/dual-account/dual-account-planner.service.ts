@@ -602,20 +602,54 @@ export class DualAccountPlannerService {
     context: 'execution' | 'rebalance',
   ): Promise<DualAccountBalanceSnapshot | null> {
     try {
-      const [makerBalances, takerBalances] = await Promise.all([
+      const scopedMakerOrderId = params.marketMakingOrderId
+        ? dualAccountConfig.resolveAccountScopedOrderId(
+            params.marketMakingOrderId,
+            params.makerAccountLabel,
+          )
+        : undefined;
+      const scopedTakerOrderId = params.marketMakingOrderId
+        ? dualAccountConfig.resolveAccountScopedOrderId(
+            params.marketMakingOrderId,
+            params.takerAccountLabel,
+          )
+        : undefined;
+      const fallbackOrderId =
+        params.marketMakingOrderId || params.clientId || undefined;
+
+      let [makerBalances, takerBalances] = await Promise.all([
         this.orderScopedBalanceQueryService?.getAvailableBalancesForPair(
           params.exchangeName,
           params.symbol,
           params.makerAccountLabel,
-          params.marketMakingOrderId,
+          scopedMakerOrderId,
         ),
         this.orderScopedBalanceQueryService?.getAvailableBalancesForPair(
           params.exchangeName,
           params.symbol,
           params.takerAccountLabel,
-          params.marketMakingOrderId,
+          scopedTakerOrderId,
         ),
       ]);
+
+      if (!makerBalances && scopedMakerOrderId && fallbackOrderId) {
+        makerBalances =
+          await this.orderScopedBalanceQueryService?.getAvailableBalancesForPair(
+            params.exchangeName,
+            params.symbol,
+            params.makerAccountLabel,
+            fallbackOrderId,
+          );
+      }
+      if (!takerBalances && scopedTakerOrderId && fallbackOrderId) {
+        takerBalances =
+          await this.orderScopedBalanceQueryService?.getAvailableBalancesForPair(
+            params.exchangeName,
+            params.symbol,
+            params.takerAccountLabel,
+            fallbackOrderId,
+          );
+      }
 
       if (!makerBalances || !takerBalances) {
         return null;
@@ -1546,7 +1580,10 @@ export class DualAccountPlannerService {
 
     const tickId = ts;
     const cycleId = `${strategyKey}:cycle:${publishedCycles}:${tickId}`;
-    const orderId = this.resolveOrderScopedOrderId(params);
+    const orderId = this.resolveOrderScopedOrderId(
+      params,
+      resolvedAccounts.makerAccountLabel,
+    );
     const accountBuyBias = profile.buyBias ?? params.buyBias;
     const fallbackApplied = side !== preferredSide;
     const capacityDiagnostics = balanceSnapshot
@@ -1623,6 +1660,7 @@ export class DualAccountPlannerService {
           cycleId,
           tickId,
           orderId,
+          baseOrderId: params.marketMakingOrderId || params.clientId,
           role: 'maker',
           cycleRole: 'maker',
           accountLabel: resolvedAccounts.makerAccountLabel,
@@ -1719,6 +1757,20 @@ export class DualAccountPlannerService {
       params.exchangeName,
       params.symbol,
     );
+    const rules = this.getCachedDualAccountTradingRules(
+      params.exchangeName,
+      params.symbol,
+      params.makerAccountLabel,
+    );
+
+    if (!this.hasMinimumTradingRules(rules)) {
+      this.logger.warn(
+        `Skipping dual-account best-capacity volume cycle for ${strategyKey}: cached trading rules are missing or incomplete for ${params.exchangeName} ${params.symbol}`,
+      );
+
+      return [];
+    }
+
     const publishedCycles = Number(params.publishedCycles || 0);
     const bestBidBn = new BigNumber(bestBid);
     const bestAskBn = new BigNumber(bestAsk);
@@ -1808,7 +1860,10 @@ export class DualAccountPlannerService {
       candidate,
     } = resolvedExecution;
     const cycleId = `${strategyKey}:cycle:${publishedCycles}:${ts}`;
-    const orderId = this.resolveOrderScopedOrderId(params);
+    const orderId = this.resolveOrderScopedOrderId(
+      params,
+      resolvedAccounts.makerAccountLabel,
+    );
     const accountBuyBias = profile.buyBias ?? params.buyBias;
     const selectedCapacity = candidate.capacity;
     const estimatedLegNotional = adjustedQuote.qty.multipliedBy(
@@ -1861,6 +1916,7 @@ export class DualAccountPlannerService {
           cycleId,
           tickId: ts,
           orderId,
+          baseOrderId: params.marketMakingOrderId || params.clientId,
           role: 'maker',
           cycleRole: 'maker',
           accountLabel: resolvedAccounts.makerAccountLabel,
@@ -1919,6 +1975,470 @@ export class DualAccountPlannerService {
         resolvedAccounts.makerAccountLabel,
       ),
     ];
+  }
+
+  async buildOptimalDualAccountVolumeActions(
+    strategyKey: string,
+    params: DualAccountVolumeStrategyParams,
+    ts: string,
+  ): Promise<ExecutorAction[]> {
+    if (!this.strategyMarketDataProviderService) {
+      throw new Error('strategy market data provider is not available');
+    }
+
+    if (
+      !this.hasFreshTrackedOrderBook(strategyKey, params, 'optimal volume')
+    ) {
+      return [];
+    }
+
+    const trackedBestBidAsk =
+      this.strategyMarketDataProviderService.getTrackedBestBidAsk(
+        params.exchangeName,
+        params.symbol,
+      );
+
+    if (!trackedBestBidAsk) {
+      if (params.orderBookReady) {
+        this.logger.warn(
+          `Skipping optimal dual-account volume cycle for ${strategyKey}: tracked order book unavailable`,
+        );
+      }
+
+      return [];
+    }
+
+    const { bestBid, bestAsk } = trackedBestBidAsk;
+    const bestBidBn = new BigNumber(bestBid);
+    const bestAskBn = new BigNumber(bestAsk);
+    const spread = bestAskBn.minus(bestBidBn);
+
+    if (spread.isLessThanOrEqualTo(0)) {
+      this.logger.warn(
+        `Skipping optimal dual-account volume cycle for ${strategyKey}: no spread bestBid=${bestBid} bestAsk=${bestAsk}`,
+      );
+
+      return [];
+    }
+
+    const feeBufferRate = await this.resolveFeeBufferRate(
+      params.exchangeName,
+      params.symbol,
+    );
+    const feeRates = this.resolveCachedDualAccountFeeRates(
+      params.exchangeName,
+      params.symbol,
+      params.makerAccountLabel,
+      feeBufferRate,
+    );
+    const publishedCycles = Number(params.publishedCycles || 0);
+    const spreadPosition = new BigNumber(Math.random());
+    const price = bestBidBn.plus(spread.multipliedBy(spreadPosition));
+
+    if (!price.isFinite() || price.isLessThanOrEqualTo(0)) {
+      this.logger.error(
+        `Skipping optimal dual-account volume cycle for ${strategyKey}: invalid price ${price.toFixed()}`,
+      );
+
+      return [];
+    }
+
+    const decisionStartedAtMs = Date.now();
+    const balanceSnapshot = await this.loadBalanceSnapshot(params, 'execution');
+
+    if (!balanceSnapshot) {
+      return [];
+    }
+
+    const rules = this.getCachedDualAccountTradingRules(
+      params.exchangeName,
+      params.symbol,
+      params.makerAccountLabel,
+    );
+
+    if (!this.hasMinimumTradingRules(rules)) {
+      this.logger.warn(
+        `Skipping optimal dual-account volume cycle for ${strategyKey}: cached trading rules are missing or incomplete for ${params.exchangeName} ${params.symbol}`,
+      );
+
+      return [];
+    }
+
+    const amountMin = new BigNumber(rules?.amountMin || 0);
+    const costMin = new BigNumber(rules?.costMin || 0);
+    const priceSafetyMargin = new BigNumber(
+      dualAccountConfig.OPTIMAL_PRICE_SAFETY_MARGIN,
+    );
+    const sustainableMinNotional = costMin.multipliedBy(
+      new BigNumber(1).plus(priceSafetyMargin),
+    );
+
+    type OptimalCandidate = {
+      side: 'buy' | 'sell';
+      makerAccountLabel: string;
+      takerAccountLabel: string;
+      makerBalances: DualAccountPairBalances;
+      takerBalances: DualAccountPairBalances;
+      sustainableQty: BigNumber;
+      roleAssignment: 'configured' | 'swapped';
+      score: BigNumber;
+    };
+
+    const candidateConfigs: Array<{
+      side: 'buy' | 'sell';
+      makerAccountLabel: string;
+      takerAccountLabel: string;
+      makerBalances: DualAccountPairBalances;
+      takerBalances: DualAccountPairBalances;
+      roleAssignment: 'configured' | 'swapped';
+    }> = [
+      {
+        side: 'buy',
+        makerAccountLabel: params.makerAccountLabel,
+        takerAccountLabel: params.takerAccountLabel,
+        makerBalances: balanceSnapshot.makerBalances,
+        takerBalances: balanceSnapshot.takerBalances,
+        roleAssignment: 'configured',
+      },
+      {
+        side: 'buy',
+        makerAccountLabel: params.takerAccountLabel,
+        takerAccountLabel: params.makerAccountLabel,
+        makerBalances: balanceSnapshot.takerBalances,
+        takerBalances: balanceSnapshot.makerBalances,
+        roleAssignment: 'swapped',
+      },
+      {
+        side: 'sell',
+        makerAccountLabel: params.makerAccountLabel,
+        takerAccountLabel: params.takerAccountLabel,
+        makerBalances: balanceSnapshot.makerBalances,
+        takerBalances: balanceSnapshot.takerBalances,
+        roleAssignment: 'configured',
+      },
+      {
+        side: 'sell',
+        makerAccountLabel: params.takerAccountLabel,
+        takerAccountLabel: params.makerAccountLabel,
+        makerBalances: balanceSnapshot.takerBalances,
+        takerBalances: balanceSnapshot.makerBalances,
+        roleAssignment: 'swapped',
+      },
+    ];
+
+    const validCandidates: OptimalCandidate[] = [];
+
+    for (const config of candidateConfigs) {
+      const sustainableQty = this.computeSustainableQty(
+        config.side,
+        config.makerBalances,
+        config.takerBalances,
+        price,
+        feeRates.makerFeeRate,
+        feeRates.takerFeeRate,
+        costMin,
+        amountMin,
+        sustainableMinNotional,
+      );
+
+      if (sustainableQty.isLessThanOrEqualTo(0)) {
+        continue;
+      }
+
+      const maxOrderAmount = new BigNumber(params.maxOrderAmount || 0);
+      let effectiveQty = maxOrderAmount.isGreaterThan(0)
+        ? BigNumber.min(sustainableQty, maxOrderAmount)
+        : sustainableQty;
+
+      if (params.tradeAmountVariance && params.tradeAmountVariance > 0) {
+        const varianceFactor = new BigNumber(1).minus(
+          new BigNumber(Math.random()).multipliedBy(params.tradeAmountVariance),
+        );
+        const variedQty = effectiveQty.multipliedBy(varianceFactor);
+
+        if (
+          variedQty.isGreaterThanOrEqualTo(amountMin) &&
+          variedQty.multipliedBy(price).isGreaterThanOrEqualTo(costMin)
+        ) {
+          effectiveQty = variedQty;
+        }
+      }
+
+      if (
+        effectiveQty.isLessThan(amountMin) ||
+        effectiveQty.multipliedBy(price).isLessThan(costMin)
+      ) {
+        continue;
+      }
+
+      const score = effectiveQty.multipliedBy(price);
+
+      validCandidates.push({
+        ...config,
+        sustainableQty: effectiveQty,
+        score,
+      });
+    }
+
+    if (validCandidates.length === 0) {
+      this.logger.warn(
+        `Stopping optimal dual-account volume for ${strategyKey}: no sustainable candidate found`,
+      );
+
+      return [];
+    }
+
+    validCandidates.sort((a, b) => b.score.comparedTo(a.score));
+    const selected = validCandidates[0];
+
+    const adjustedQuote = await this.quantizeAndAdaptDualAccountQuote(
+      strategyKey,
+      params,
+      selected.side,
+      price,
+      selected.sustainableQty,
+      {
+        makerAccountLabel: selected.makerAccountLabel,
+        takerAccountLabel: selected.takerAccountLabel,
+        makerBalances: selected.makerBalances,
+        takerBalances: selected.takerBalances,
+        capacity: selected.sustainableQty,
+      },
+      bestBidBn,
+      bestAskBn,
+      feeBufferRate,
+    );
+
+    if (!adjustedQuote) {
+      this.logger.warn(
+        `Skipping optimal dual-account volume cycle for ${strategyKey}: quantization failed for best candidate`,
+      );
+
+      return [];
+    }
+
+    const decisionDurationMs = Date.now() - decisionStartedAtMs;
+    const cycleId = `${strategyKey}:cycle:${publishedCycles}:${ts}`;
+    const orderId = this.resolveOrderScopedOrderId(
+      params,
+      selected.makerAccountLabel,
+    );
+    const estimatedLegNotional = adjustedQuote.qty.multipliedBy(
+      adjustedQuote.price,
+    );
+    const estimatedTotalFee = estimatedLegNotional.multipliedBy(feeBufferRate);
+
+    this.logger.log(
+      [
+        'Optimal dual-account volume decision',
+        `strategy=${strategyKey}`,
+        `cycle=${cycleId}`,
+        `tick=${ts}`,
+        `selectedSide=${selected.side}`,
+        `roleAssignment=${selected.roleAssignment}`,
+        `candidateCount=${validCandidates.length}`,
+        `price=${adjustedQuote.price.toFixed()}`,
+        `sustainableQty=${selected.sustainableQty.toFixed()}`,
+        `effectiveQty=${adjustedQuote.qty.toFixed()}`,
+        `notional=${estimatedLegNotional.toFixed()}`,
+        `maker=${selected.makerAccountLabel}`,
+        `taker=${selected.takerAccountLabel}`,
+        `estimatedFee=${estimatedTotalFee.toFixed()}`,
+        `decisionDurationMs=${decisionDurationMs}`,
+      ].join(' | '),
+    );
+
+    return [
+      this.createIntent(
+        strategyKey,
+        strategyKey,
+        params.userId,
+        params.clientId,
+        params.exchangeName,
+        params.symbol,
+        selected.side,
+        adjustedQuote.price,
+        adjustedQuote.qty,
+        ts,
+        `optimal-dual-account-volume-maker-${publishedCycles}`,
+        params.executionCategory,
+        {
+          cycleId,
+          tickId: ts,
+          orderId,
+          baseOrderId: params.marketMakingOrderId || params.clientId,
+          role: 'maker',
+          cycleRole: 'maker',
+          accountLabel: selected.makerAccountLabel,
+          side: selected.side,
+          plannedQty: adjustedQuote.qty.toFixed(),
+          plannedPrice: adjustedQuote.price.toFixed(),
+          filledQty: '0',
+          notional: estimatedLegNotional.toFixed(),
+          status: 'planned',
+          failureReason: null,
+          linkedIntentId: null,
+          linkedTrackedOrderId: null,
+          selectionModel: 'optimal_sustainable',
+          candidateCount: validCandidates.length,
+          sustainableQty: selected.sustainableQty.toFixed(),
+          roleAssignment: selected.roleAssignment,
+          makerAccountLabel: selected.makerAccountLabel,
+          takerAccountLabel: selected.takerAccountLabel,
+          configuredMakerAccountLabel: params.makerAccountLabel,
+          configuredTakerAccountLabel: params.takerAccountLabel,
+          estimatedTotalFee: estimatedTotalFee.toFixed(),
+          feeBufferRate: feeBufferRate.toFixed(),
+          priceSafetyMargin: priceSafetyMargin.toFixed(),
+        },
+        true,
+        selected.makerAccountLabel,
+      ),
+    ];
+  }
+
+  computeSustainableQty(
+    side: 'buy' | 'sell',
+    makerBalances: DualAccountPairBalances,
+    takerBalances: DualAccountPairBalances,
+    price: BigNumber,
+    makerFeeRate: BigNumber,
+    takerFeeRate: BigNumber,
+    costMin: BigNumber,
+    amountMin: BigNumber,
+    sustainableMinNotional: BigNumber,
+  ): BigNumber {
+    if (!price.isFinite() || price.isLessThanOrEqualTo(0)) {
+      return new BigNumber(0);
+    }
+
+    if (side === 'buy') {
+      // Maker buy: maker spends quote, receives base (makerFee on received base)
+      // Taker sell: taker spends base, receives quote (takerFee on received quote)
+      // Post-cycle:
+      //   maker.base' = maker.base + qty × (1 - makerFeeRate)
+      //   maker.quote' = maker.quote - qty × price
+      //   taker.base' = taker.base - qty
+      //   taker.quote' = taker.quote + qty × price × (1 - takerFeeRate)
+      //
+      // Reverse (sell) feasibility — roles may swap, so check BOTH reverse options:
+      // Option A: maker sells base, taker buys with quote
+      //   needs maker.base' >= amountMin AND taker.quote' sufficient
+      //   maker.base' = maker.base + qty×(1-makerFee) → always increases → ✓
+      //   taker.quote' = taker.quote + qty×price×(1-takerFee) → always increases → ✓
+      //   Reverse capacity for sell = min(maker.base', taker.quote'/price)
+      //   Always feasible after buy since both increase.
+      //
+      // But we must also check: is the reverse notional >= sustainableMinNotional?
+      // Since both increase with qty, bigger qty = bigger reverse capacity. So buy
+      // direction has NO upper sustainable constraint from reverse feasibility.
+      //
+      // The real constraints are just capacity:
+      //   qty <= maker.quote / price  (maker has enough quote)
+      //   qty <= taker.base           (taker has enough base to sell)
+
+      const maxByMakerQuote = makerBalances.quote.dividedBy(price);
+      const maxByTakerBase = takerBalances.base;
+      const maxQty = BigNumber.min(maxByMakerQuote, maxByTakerBase);
+
+      // Verify reverse is feasible at this qty (should always be true for buy)
+      const postMakerBase = makerBalances.base.plus(
+        maxQty.multipliedBy(new BigNumber(1).minus(makerFeeRate)),
+      );
+      const postTakerQuote = takerBalances.quote.plus(
+        maxQty.multipliedBy(price).multipliedBy(
+          new BigNumber(1).minus(takerFeeRate),
+        ),
+      );
+      const reverseCapacity = BigNumber.min(
+        postMakerBase,
+        postTakerQuote.dividedBy(price),
+      );
+      const reverseNotional = reverseCapacity.multipliedBy(price);
+
+      if (reverseNotional.isLessThan(sustainableMinNotional)) {
+        // Edge case: even at full capacity the reverse is too small.
+        // This means system value is too low to continue after this cycle.
+        // Still allow if current qty itself is valid (last viable cycle).
+        if (
+          maxQty.isGreaterThanOrEqualTo(amountMin) &&
+          maxQty.multipliedBy(price).isGreaterThanOrEqualTo(
+            costMin.isGreaterThan(0) ? costMin : new BigNumber(0),
+          )
+        ) {
+          return maxQty;
+        }
+
+        return new BigNumber(0);
+      }
+
+      // For buy: also ensure we don't deplete maker.quote to the point where
+      // a same-direction buy next cycle would be impossible AND reverse is
+      // the only option. But since reverse IS always feasible after buy,
+      // we just return capacity as the sustainable qty.
+      if (maxQty.isLessThan(amountMin)) {
+        return new BigNumber(0);
+      }
+
+      return maxQty;
+    }
+
+    // side === 'sell'
+    // Maker sell: maker spends base, receives quote (makerFee on received quote)
+    // Taker buy: taker spends quote, receives base (takerFee on received base)
+    // Post-cycle:
+    //   maker.base' = maker.base - qty
+    //   maker.quote' = maker.quote + qty × price × (1 - makerFeeRate)
+    //   taker.base' = taker.base + qty × (1 - takerFeeRate)
+    //   taker.quote' = taker.quote - qty × price
+    //
+    // Reverse (buy) feasibility:
+    //   maker buys: needs maker.quote' for quote → maker.quote + qty×price×(1-makerFee) → increases ✓
+    //   taker sells: needs taker.base' for base → taker.base + qty×(1-takerFee) → increases ✓
+    //   Reverse capacity = min(maker.quote'/price, taker.base') → both increase with qty → ✓
+    //
+    // Same analysis: sell always makes the reverse (buy) more feasible.
+    // Constraints are just capacity:
+    //   qty <= maker.base          (maker has enough base to sell)
+    //   qty <= taker.quote / price (taker has enough quote to buy)
+
+    const maxByMakerBase = makerBalances.base;
+    const maxByTakerQuote = takerBalances.quote.dividedBy(price);
+    const maxQty = BigNumber.min(maxByMakerBase, maxByTakerQuote);
+
+    // Verify reverse (buy) feasibility
+    const postMakerQuote = makerBalances.quote.plus(
+      maxQty.multipliedBy(price).multipliedBy(
+        new BigNumber(1).minus(makerFeeRate),
+      ),
+    );
+    const postTakerBase = takerBalances.base.plus(
+      maxQty.multipliedBy(new BigNumber(1).minus(takerFeeRate)),
+    );
+    const reverseCapacity = BigNumber.min(
+      postMakerQuote.dividedBy(price),
+      postTakerBase,
+    );
+    const reverseNotional = reverseCapacity.multipliedBy(price);
+
+    if (reverseNotional.isLessThan(sustainableMinNotional)) {
+      if (
+        maxQty.isGreaterThanOrEqualTo(amountMin) &&
+        maxQty.multipliedBy(price).isGreaterThanOrEqualTo(
+          costMin.isGreaterThan(0) ? costMin : new BigNumber(0),
+        )
+      ) {
+        return maxQty;
+      }
+
+      return new BigNumber(0);
+    }
+
+    if (maxQty.isLessThan(amountMin)) {
+      return new BigNumber(0);
+    }
+
+    return maxQty;
   }
 
   private async resolveDualAccountCycleAccounts(
@@ -2000,8 +2520,21 @@ export class DualAccountPlannerService {
       DualAccountVolumeStrategyParams,
       'marketMakingOrderId' | 'clientId'
     >,
+    accountLabel?: string,
   ): string {
-    return this.readString(params.marketMakingOrderId, params.clientId);
+    const baseOrderId = this.readString(
+      params.marketMakingOrderId,
+      params.clientId,
+    );
+
+    if (!accountLabel || !params.marketMakingOrderId) {
+      return baseOrderId;
+    }
+
+    return dualAccountConfig.resolveAccountScopedOrderId(
+      params.marketMakingOrderId,
+      accountLabel,
+    );
   }
 
   private hasFreshTrackedOrderBook(
@@ -2539,7 +3072,7 @@ export class DualAccountPlannerService {
       return null;
     }
 
-    const orderId = this.resolveOrderScopedOrderId(params);
+    const orderId = this.resolveOrderScopedOrderId(params, accountLabel);
     const cycleId = `${strategyKey}:rebalance:${ts}:${accountLabel}:${side}`;
 
     const rebalanceNotional = adjustedQuote.qty.multipliedBy(
@@ -2948,7 +3481,16 @@ export class DualAccountPlannerService {
         params.exchangeName,
         params.symbol,
         resolvedAccounts.makerAccountLabel,
-      ) || {};
+      ) || undefined;
+
+    if (!this.hasMinimumTradingRules(rules)) {
+      this.logger.warn(
+        `Skipping dual-account volume cycle for ${strategyKey}: cached trading rules are missing or incomplete for ${params.exchangeName} ${params.symbol}`,
+      );
+
+      return null;
+    }
+
     let effectiveQty = requestedQty;
 
     if (
@@ -3598,6 +4140,21 @@ export class DualAccountPlannerService {
       connector?.getCachedTradingRules?.(exchangeName, pair, accountLabel) ||
       connector?.getCachedTradingRules?.(exchangeName, pair) ||
       undefined
+    );
+  }
+
+  private hasMinimumTradingRules(
+    rules:
+      | {
+          amountMin?: number;
+          costMin?: number;
+        }
+      | undefined,
+  ): boolean {
+    return Boolean(
+      rules &&
+        (this.readPositiveFiniteNumber(rules.amountMin) !== null ||
+          this.readPositiveFiniteNumber(rules.costMin) !== null),
     );
   }
 
