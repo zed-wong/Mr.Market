@@ -27,6 +27,9 @@ type ReconciliationReport = {
 };
 
 const ESTIMATED_FEE_MAX_AGE_MS = 15 * 60 * 1000;
+const BASE_FILL_AMOUNT_TOLERANCE = new BigNumber('0.000000000001');
+const QUOTE_FILL_AMOUNT_RELATIVE_TOLERANCE = new BigNumber('0.001');
+const QUOTE_FILL_AMOUNT_ABSOLUTE_TOLERANCE = new BigNumber('0.01');
 
 @Injectable()
 export class ReconciliationService {
@@ -531,7 +534,48 @@ export class ReconciliationService {
       return true;
     }
 
-    return new BigNumber(entry.amount).abs().isEqualTo(expectedAmount.abs());
+    return this.fillAmountsMatch(
+      entry.assetId,
+      trackedOrder.pair,
+      new BigNumber(entry.amount),
+      expectedAmount,
+    );
+  }
+
+  private fillAmountsMatch(
+    assetId: string,
+    pair: string,
+    ledgerAmount: BigNumber,
+    expectedAmount: BigNumber,
+  ): boolean {
+    const absoluteDifference = ledgerAmount
+      .abs()
+      .minus(expectedAmount.abs())
+      .abs();
+    const tolerance = this.getFillAmountTolerance(
+      assetId,
+      pair,
+      expectedAmount,
+    );
+
+    return absoluteDifference.isLessThanOrEqualTo(tolerance);
+  }
+
+  private getFillAmountTolerance(
+    assetId: string,
+    pair: string,
+    expectedAmount: BigNumber,
+  ): BigNumber {
+    const [, quoteAsset] = pair.split('/');
+
+    if (assetId.toUpperCase() !== quoteAsset?.toUpperCase()) {
+      return BASE_FILL_AMOUNT_TOLERANCE;
+    }
+
+    return BigNumber.maximum(
+      QUOTE_FILL_AMOUNT_ABSOLUTE_TOLERANCE,
+      expectedAmount.abs().multipliedBy(QUOTE_FILL_AMOUNT_RELATIVE_TOLERANCE),
+    );
   }
 
   private getExpectedFillAmountForAsset(
