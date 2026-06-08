@@ -524,6 +524,8 @@ export class FillSettlementService {
     return [
       'mm-fill',
       command.strategyKey,
+      command.orderId,
+      this.readString(fill.accountLabel) || 'default',
       orderIdentity,
       fill.side,
       cumulativeQty,

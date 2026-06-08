@@ -37,7 +37,7 @@ describe('FillSettlementService', () => {
       userId: 'user-1',
       assetId: 'USDT',
       amount: '-50',
-      idempotencyKey: 'mm-fill:strategy-1:ex-1:buy:0.5:quote',
+      idempotencyKey: 'mm-fill:strategy-1:order-1:default:ex-1:buy:0.5:quote',
       refType: 'market_making_fill',
       refId: 'ex-1',
     });
@@ -46,7 +46,7 @@ describe('FillSettlementService', () => {
       userId: 'user-1',
       assetId: 'BTC',
       amount: '0.5',
-      idempotencyKey: 'mm-fill:strategy-1:ex-1:buy:0.5:base',
+      idempotencyKey: 'mm-fill:strategy-1:order-1:default:ex-1:buy:0.5:base',
       refType: 'market_making_fill',
       refId: 'ex-1',
     });
@@ -81,7 +81,7 @@ describe('FillSettlementService', () => {
       expect.objectContaining({
         assetId: 'USDT',
         amount: '-50',
-        idempotencyKey: 'mm-fill:strategy-1:ex-1:buy:0.5:quote',
+        idempotencyKey: 'mm-fill:strategy-1:order-1:default:ex-1:buy:0.5:quote',
       }),
     );
   });
@@ -111,7 +111,7 @@ describe('FillSettlementService', () => {
       userId: 'user-1',
       assetId: 'BTC',
       amount: '0.0005',
-      idempotencyKey: 'mm-fill:strategy-1:ex-1:buy:0.5:fee:BTC',
+      idempotencyKey: 'mm-fill:strategy-1:order-1:default:ex-1:buy:0.5:fee:BTC',
       refType: 'market_making_fee',
       refId: 'ex-1',
     });
@@ -152,13 +152,13 @@ describe('FillSettlementService', () => {
     expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
-        idempotencyKey: 'mm-fill:strategy-1:ex-1:buy:0.5:quote',
+        idempotencyKey: 'mm-fill:strategy-1:order-1:default:ex-1:buy:0.5:quote',
       }),
     );
     expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(
       3,
       expect.objectContaining({
-        idempotencyKey: 'mm-fill:strategy-1:ex-1:buy:0.5:quote',
+        idempotencyKey: 'mm-fill:strategy-1:order-1:default:ex-1:buy:0.5:quote',
       }),
     );
   });

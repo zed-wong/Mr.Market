@@ -740,6 +740,9 @@ describe('ExchangeOrderTrackerService', () => {
     };
     const executorRegistry = {
       getExecutor: jest.fn().mockReturnValue({
+        getSession: jest.fn((orderId: string) =>
+          orderId === 'u1-c1' ? { orderId } : undefined,
+        ),
         onFill,
       }),
     };
@@ -782,6 +785,9 @@ describe('ExchangeOrderTrackerService', () => {
     const onFill = jest.fn().mockResolvedValue(undefined);
     const executorRegistry = {
       getExecutor: jest.fn().mockReturnValue({
+        getSession: jest.fn((orderId: string) =>
+          orderId === 'order-1:2' ? { orderId } : undefined,
+        ),
         onFill,
       }),
     };
@@ -845,6 +851,9 @@ describe('ExchangeOrderTrackerService', () => {
     const onFill = jest.fn().mockResolvedValue(undefined);
     const executorRegistry = {
       getExecutor: jest.fn().mockReturnValue({
+        getSession: jest.fn((orderId: string) =>
+          orderId === 'order-1' ? { orderId } : undefined,
+        ),
         onFill,
       }),
     };
@@ -879,7 +888,7 @@ describe('ExchangeOrderTrackerService', () => {
     expect(onFill).toHaveBeenCalledTimes(1);
     expect(onFill).toHaveBeenCalledWith(
       expect.objectContaining({
-        orderId: 'order-1:5',
+        orderId: 'order-1',
         exchangeOrderId: 'ex-2',
         accountLabel: '5',
         qty: '0.15',

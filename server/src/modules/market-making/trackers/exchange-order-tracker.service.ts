@@ -15,6 +15,7 @@ import { Repository } from 'typeorm';
 
 import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
 import { OrderReservationService } from '../ledger/order-reservation.service';
+import { ExchangePairExecutor } from '../strategy/execution/exchange-pair-executor';
 import { ExecutorRegistry } from '../strategy/execution/executor-registry';
 import { MarketMakingRuntimeTimingService } from '../tick/runtime-timing.service';
 
@@ -875,8 +876,18 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
       return;
     }
 
+    const routedOrderId = this.resolveFillRouteOrderId(previousOrder, executor);
+
+    if (!routedOrderId) {
+      this.logger.warn(
+        `Skipping recovered fill settlement for ${previousOrder.strategyKey}:${previousOrder.exchangeOrderId}: no active executor session for orderId=${previousOrder.orderId}`,
+      );
+
+      return;
+    }
+
     await executor.onFill({
-      orderId: previousOrder.orderId,
+      orderId: routedOrderId,
       exchangeOrderId: previousOrder.exchangeOrderId,
       clientOrderId: previousOrder.clientOrderId,
       accountLabel: previousOrder.accountLabel,
@@ -886,6 +897,27 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
       cumulativeQty: fillDelta.cumulativeQty,
       receivedAt: ts,
     });
+  }
+
+  private resolveFillRouteOrderId(
+    order: TrackedOrder,
+    executor: ExchangePairExecutor,
+  ): string | null {
+    if (executor.getSession(order.orderId)) {
+      return order.orderId;
+    }
+
+    const accountScopedSeparatorIndex = order.orderId.lastIndexOf(':');
+
+    if (accountScopedSeparatorIndex > 0) {
+      const baseOrderId = order.orderId.slice(0, accountScopedSeparatorIndex);
+
+      if (executor.getSession(baseOrderId)) {
+        return baseOrderId;
+      }
+    }
+
+    return null;
   }
 
   private getPrunedFillLog(
