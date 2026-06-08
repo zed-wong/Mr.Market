@@ -4,10 +4,68 @@ import axios from 'axios';
 import * as path from 'path';
 import * as winston from 'winston';
 
+export type MarketMakingLogFieldValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined;
+
+export type MarketMakingLogFields = Record<string, MarketMakingLogFieldValue>;
+
+export type MarketMakingLogOptions = {
+  onceKey?: string;
+  windowMs?: number;
+};
+
+export type MarketMakingLogger = {
+  info(message: string, fields?: MarketMakingLogFields): void;
+  debug(message: string, fields?: MarketMakingLogFields): void;
+  warn(
+    message: string,
+    fields?: MarketMakingLogFields,
+    options?: MarketMakingLogOptions,
+  ): void;
+  error(message: string, fields?: MarketMakingLogFields, trace?: string): void;
+};
+
 @Injectable({ scope: Scope.DEFAULT })
 export class CustomLogger extends Logger {
   private static discordWebhookUrl = '';
   private static mixinGroupWebhookUrl = '';
+  private static readonly marketMakingRateLimitUntilByKey = new Map<
+    string,
+    number
+  >();
+  private static readonly marketMakingIdentityFieldOrder = [
+    'reason',
+    'strategy',
+    'exchange',
+    'pair',
+    'account',
+    'side',
+    'order',
+    'slot',
+    'scope',
+  ];
+  private static readonly marketMakingDiagnosticFieldOrder = [
+    'actions',
+    'creates',
+    'cancels',
+    'layers',
+    'ageMs',
+    'durationMs',
+    'thresholdMs',
+    'required',
+    'available',
+    'asset',
+    'status',
+    'repeat',
+    'driver',
+    'count',
+    'maxMs',
+    'lastMs',
+  ];
 
   private logger: winston.Logger;
   private readonly silentForTests: boolean;
@@ -121,6 +179,116 @@ export class CustomLogger extends Logger {
 
     this.logToDiscord(message, 'WARNING');
     this.logToMixinGroup(`WARN [${this.context}]: ${message}`);
+  }
+
+  marketMaking(): MarketMakingLogger {
+    return {
+      info: (message, fields = {}) => {
+        this.log(this.formatMarketMakingMessage(message, fields));
+      },
+      debug: (message, fields = {}) => {
+        this.debug(this.formatMarketMakingMessage(message, fields));
+      },
+      warn: (message, fields = {}, options = {}) => {
+        if (this.shouldSkipMarketMakingLog(options)) {
+          return;
+        }
+
+        this.warn(this.formatMarketMakingMessage(message, fields));
+      },
+      error: (message, fields = {}, trace) => {
+        this.error(this.formatMarketMakingMessage(message, fields), trace);
+      },
+    };
+  }
+
+  private shouldSkipMarketMakingLog(options: MarketMakingLogOptions): boolean {
+    if (!options.onceKey) {
+      return false;
+    }
+
+    const windowMs = Number(options.windowMs || 0);
+
+    if (!Number.isFinite(windowMs) || windowMs <= 0) {
+      return false;
+    }
+
+    const nowMs = Date.now();
+    const suppressUntilMs =
+      CustomLogger.marketMakingRateLimitUntilByKey.get(options.onceKey) || 0;
+
+    if (nowMs < suppressUntilMs) {
+      return true;
+    }
+
+    CustomLogger.marketMakingRateLimitUntilByKey.set(
+      options.onceKey,
+      nowMs + windowMs,
+    );
+
+    return false;
+  }
+
+  private formatMarketMakingMessage(
+    message: string,
+    fields: MarketMakingLogFields,
+  ): string {
+    const formattedFieldGroups = this.formatMarketMakingFieldGroups(fields);
+
+    return [`[MM] ${message}`, ...formattedFieldGroups].join(' | ');
+  }
+
+  private formatMarketMakingFieldGroups(
+    fields: MarketMakingLogFields,
+  ): string[] {
+    const normalizedFields = this.normalizeMarketMakingFields(fields);
+    const identityFields = this.pickMarketMakingFields(
+      normalizedFields,
+      CustomLogger.marketMakingIdentityFieldOrder,
+    );
+    const diagnosticFields = this.pickMarketMakingFields(
+      normalizedFields,
+      CustomLogger.marketMakingDiagnosticFieldOrder,
+    );
+    const knownFieldNames = new Set([
+      ...CustomLogger.marketMakingIdentityFieldOrder,
+      ...CustomLogger.marketMakingDiagnosticFieldOrder,
+    ]);
+    const remainingFields = Object.entries(normalizedFields)
+      .filter(([key]) => !knownFieldNames.has(key))
+      .map(([key, value]) => `${key}=${value}`)
+      .join(' ');
+
+    return [identityFields, diagnosticFields, remainingFields].filter(
+      (group) => group.length > 0,
+    );
+  }
+
+  private normalizeMarketMakingFields(
+    fields: MarketMakingLogFields,
+  ): Record<string, string> {
+    return Object.entries(fields).reduce<Record<string, string>>(
+      (acc, [key, value]) => {
+        if (value === undefined || value === null || value === '') {
+          return acc;
+        }
+
+        acc[key] = String(value);
+
+        return acc;
+      },
+      {},
+    );
+  }
+
+  private pickMarketMakingFields(
+    fields: Record<string, string>,
+    fieldOrder: string[],
+  ): string {
+    return fieldOrder
+      .filter((field) => fields[field] !== undefined)
+      .map((field) => `${field}=${fields[field]}`)
+      .join(' ');
   }
 
   onModuleInit() {
