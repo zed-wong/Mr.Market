@@ -35,6 +35,7 @@ export type MarketMakingFillManualReviewEvent = {
   reason:
     | 'unresolved_order'
     | 'missing_executor'
+    | 'missing_session'
     | 'account_boundary_violation';
   reviewStatus: 'manual_review';
   observedAt: string;

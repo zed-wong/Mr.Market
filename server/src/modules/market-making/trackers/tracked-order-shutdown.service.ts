@@ -229,7 +229,7 @@ export class TrackedOrderShutdownService {
           clientOrderId,
         );
 
-      if (byClientOrderId?.orderId === strategyOrderId) {
+      if (this.isStrategyOrderScope(byClientOrderId?.orderId, strategyOrderId)) {
         return true;
       }
     }
@@ -240,12 +240,28 @@ export class TrackedOrderShutdownService {
           exchangeOrderId,
         );
 
-      if (byExchangeOrderId?.orderId === strategyOrderId) {
+      if (
+        this.isStrategyOrderScope(byExchangeOrderId?.orderId, strategyOrderId)
+      ) {
         return true;
       }
     }
 
     return false;
+  }
+
+  private isStrategyOrderScope(
+    mappedOrderId: string | undefined,
+    strategyOrderId: string,
+  ): boolean {
+    if (!mappedOrderId) {
+      return false;
+    }
+
+    return (
+      mappedOrderId === strategyOrderId ||
+      mappedOrderId.startsWith(`${strategyOrderId}:`)
+    );
   }
 
   async cancelRecoveredExchangeOrder(

@@ -776,4 +776,93 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
     );
     expect(exchangeConnector.loadTradingRules).not.toHaveBeenCalled();
   });
+
+  it('counts inline taker fills from the sibling account-scoped order id', () => {
+    const { planner } = buildPlanner();
+    const params: DualAccountVolumeStrategyParams = {
+      ...baseParams,
+      activeCycle: {
+        cycleId: 'cycle-1',
+        tickId: '2026-06-08T00:00:00.000Z',
+        orderId: 'mm-order-1:account-a',
+        makerSide: 'buy',
+        makerAccountLabel: 'account-a',
+        takerAccountLabel: 'account-b',
+        price: '100',
+        requestedQty: '0.5',
+        makerFilledQty: '0.5',
+        takerFilledQty: '0',
+      },
+    };
+
+    const next = planner.applyFillProgress(
+      { qty: '0.5' },
+      {
+        orderId: 'mm-order-1:account-b',
+        strategyKey: 'strategy-1',
+        exchange: 'binance',
+        accountLabel: 'account-b',
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'taker-ex-1',
+        side: 'sell',
+        price: '100',
+        qty: '0.5',
+        status: 'filled',
+        role: 'taker',
+        createdAt: '2026-06-08T00:00:00.000Z',
+        updatedAt: '2026-06-08T00:00:01.000Z',
+      },
+      params,
+    );
+
+    expect(next.activeCycle).toEqual(
+      expect.objectContaining({
+        makerFilledQty: '0.5',
+        takerFilledQty: '0.5',
+        matchedFilledQty: '0.5',
+        matchedQuoteVolume: '50',
+      }),
+    );
+  });
+
+  it('does not treat arbitrary colon suffixes as account-scoped order ids', () => {
+    const { planner } = buildPlanner();
+    const params: DualAccountVolumeStrategyParams = {
+      ...baseParams,
+      activeCycle: {
+        cycleId: 'cycle-1',
+        tickId: '2026-06-08T00:00:00.000Z',
+        orderId: 'client1:cycle:1',
+        makerSide: 'buy',
+        makerAccountLabel: 'account-a',
+        takerAccountLabel: 'account-b',
+        price: '100',
+        requestedQty: '0.5',
+        makerFilledQty: '0',
+        takerFilledQty: '0',
+      },
+    };
+
+    const next = planner.applyFillProgress(
+      { qty: '0.5' },
+      {
+        orderId: 'client1:cycle:2',
+        strategyKey: 'strategy-1',
+        exchange: 'binance',
+        accountLabel: 'account-b',
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'taker-ex-1',
+        side: 'sell',
+        price: '100',
+        qty: '0.5',
+        status: 'filled',
+        role: 'taker',
+        createdAt: '2026-06-08T00:00:00.000Z',
+        updatedAt: '2026-06-08T00:00:01.000Z',
+      },
+      params,
+    );
+
+    expect(next).toBe(params);
+  });
 });

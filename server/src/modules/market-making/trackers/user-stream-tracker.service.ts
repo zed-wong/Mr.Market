@@ -42,6 +42,7 @@ type OrphanedFillEvent = RoutedFillCandidate & {
   reason:
     | 'unresolved_order'
     | 'missing_executor'
+    | 'missing_session'
     | 'account_boundary_violation';
 };
 
@@ -261,12 +262,14 @@ export class UserStreamTrackerService
       (trackedOrder
         ? this.executorRegistry?.getExecutor(fill.exchange, trackedOrder.pair)
         : undefined);
-    const resolvedSession = resolution?.orderId
-      ? resolvedExecutor?.getSession(resolution.orderId) ||
-        executor?.getSession(resolution.orderId)
-      : trackedOrder?.orderId && executor
-      ? executor.getSession(trackedOrder.orderId)
-      : undefined;
+    const routeOrderId = executor
+      ? this.resolveFillRouteOrderId(
+          resolution?.orderId || trackedOrder?.orderId,
+          executor,
+        )
+      : null;
+    const resolvedSession =
+      routeOrderId && executor ? executor.getSession(routeOrderId) : undefined;
 
     if (
       resolvedSession?.accountLabel &&
@@ -305,8 +308,14 @@ export class UserStreamTrackerService
     }
 
     if (!resolution && trackedOrder && executor) {
+      if (!routeOrderId) {
+        this.recordOrphanedFill(fill, 'missing_session');
+
+        return;
+      }
+
       await executor.onFill({
-        orderId: trackedOrder.orderId,
+        orderId: routeOrderId,
         exchangeOrderId: fill.exchangeOrderId,
         clientOrderId: fill.clientOrderId || trackedOrder.clientOrderId,
         accountLabel: fill.accountLabel,
@@ -334,8 +343,20 @@ export class UserStreamTrackerService
       return;
     }
 
+    if (!routeOrderId) {
+      this.recordOrphanedFill(
+        {
+          ...fill,
+          orderId: resolution.orderId,
+        },
+        'missing_session',
+      );
+
+      return;
+    }
+
     await executor.onFill({
-      orderId: resolution.orderId,
+      orderId: routeOrderId,
       exchangeOrderId: fill.exchangeOrderId,
       clientOrderId: fill.clientOrderId,
       accountLabel: fill.accountLabel,
@@ -480,6 +501,29 @@ export class UserStreamTrackerService
       createdAt: trackedOrder.createdAt,
       updatedAt: event.receivedAt,
     });
+  }
+
+  private resolveFillRouteOrderId(
+    orderId: string | undefined,
+    executor: { getSession(orderId: string): unknown },
+  ): string | null {
+    if (!orderId) {
+      return null;
+    }
+
+    if (executor.getSession(orderId)) {
+      return orderId;
+    }
+
+    const accountScopedSeparatorIndex = orderId.lastIndexOf(':');
+
+    if (accountScopedSeparatorIndex <= 0) {
+      return null;
+    }
+
+    const baseOrderId = orderId.slice(0, accountScopedSeparatorIndex);
+
+    return executor.getSession(baseOrderId) ? baseOrderId : null;
   }
 
   private normalizeEventPayload(

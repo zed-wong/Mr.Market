@@ -148,6 +148,77 @@ describe('UserStreamTrackerService', () => {
     expect(service.getOrphanedFills()).toEqual([]);
   });
 
+  it('routes account-scoped dual-account fills to the base executor session', async () => {
+    const onFill = jest.fn();
+    const getSession = jest.fn((orderId: string) =>
+      orderId === 'order-1' ? { accountLabel: undefined } : undefined,
+    );
+    const service = new UserStreamTrackerService(
+      undefined,
+      {
+        resolveOrderForFill: jest.fn().mockResolvedValue({
+          orderId: 'order-1:maker',
+          source: 'exchangeOrderMapping',
+        }),
+      } as unknown as FillRoutingService,
+      {
+        getByExchangeOrderId: jest.fn().mockReturnValue({
+          orderId: 'order-1:maker',
+          strategyKey: 'strategy-1',
+          exchange: 'binance',
+          accountLabel: 'maker',
+          pair: 'BTC/USDT',
+          exchangeOrderId: 'ex-1',
+          clientOrderId: 'client-1',
+          side: 'buy',
+          price: '100',
+          qty: '1',
+          status: 'open',
+          createdAt: '2026-03-11T00:00:00.000Z',
+          updatedAt: '2026-03-11T00:00:00.000Z',
+        }),
+        upsertOrder: jest.fn(),
+        markUserStreamActivity: jest.fn(),
+      } as unknown as ExchangeOrderTrackerService,
+      {
+        findExecutorByOrderId: jest.fn().mockReturnValue(undefined),
+        getExecutor: jest.fn().mockReturnValue({
+          getSession,
+          onFill,
+        }),
+      } as unknown as ExecutorRegistry,
+    );
+
+    service.queueAccountEvent({
+      exchange: 'binance',
+      accountLabel: 'maker',
+      kind: 'trade',
+      payload: {
+        exchangeOrderId: 'ex-1',
+        clientOrderId: 'client-1',
+        pair: 'BTC/USDT',
+        side: 'buy',
+        price: '100',
+        qty: '1',
+        raw: {},
+      },
+      receivedAt: '2026-03-11T00:00:02.000Z',
+    });
+
+    await service.onTick('2026-03-11T00:00:03.000Z');
+
+    expect(getSession).toHaveBeenCalledWith('order-1:maker');
+    expect(getSession).toHaveBeenCalledWith('order-1');
+    expect(onFill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'order-1',
+        exchangeOrderId: 'ex-1',
+        accountLabel: 'maker',
+      }),
+    );
+    expect(service.getOrphanedFills()).toEqual([]);
+  });
+
   it('deduplicates repeated normalized trade events for the same fill', async () => {
     const onFill = jest.fn();
     const service = new UserStreamTrackerService(

@@ -1020,8 +1020,8 @@ export class DualAccountPlannerService {
     }
 
     return side === 'buy'
-      ? price.isGreaterThanOrEqualTo(bestBid) && price.isLessThan(bestAsk)
-      : price.isGreaterThan(bestBid) && price.isLessThanOrEqualTo(bestAsk);
+      ? price.isGreaterThan(bestBid) && price.isLessThan(bestAsk)
+      : price.isGreaterThan(bestBid) && price.isLessThan(bestAsk);
   }
 
   clonePairBalances(
@@ -1189,7 +1189,7 @@ export class DualAccountPlannerService {
 
     const activeCycle = { ...params.activeCycle };
 
-    if (trackedOrder.orderId !== activeCycle.orderId) {
+    if (!this.isTrackedOrderInActiveCycle(trackedOrder, activeCycle)) {
       return params;
     }
 
@@ -1226,6 +1226,47 @@ export class DualAccountPlannerService {
     }
 
     return params;
+  }
+
+  private isTrackedOrderInActiveCycle(
+    trackedOrder: TrackedOrder,
+    activeCycle: DualAccountActiveCycleState,
+  ): boolean {
+    if (trackedOrder.orderId === activeCycle.orderId) {
+      return true;
+    }
+
+    const activeBaseOrderId = this.stripKnownAccountScope(
+      activeCycle.orderId,
+      [activeCycle.makerAccountLabel, activeCycle.takerAccountLabel],
+    );
+    const trackedBaseOrderId = this.stripKnownAccountScope(
+      trackedOrder.orderId,
+      [activeCycle.makerAccountLabel, activeCycle.takerAccountLabel],
+    );
+
+    return Boolean(
+      activeBaseOrderId &&
+        trackedBaseOrderId &&
+        activeBaseOrderId !== activeCycle.orderId &&
+        trackedBaseOrderId !== trackedOrder.orderId &&
+        activeBaseOrderId === trackedBaseOrderId,
+    );
+  }
+
+  private stripKnownAccountScope(
+    orderId: string,
+    accountLabels: Array<string | undefined>,
+  ): string {
+    const matchedAccountLabel = accountLabels.find(
+      (accountLabel) => accountLabel && orderId.endsWith(`:${accountLabel}`),
+    );
+
+    if (!matchedAccountLabel) {
+      return orderId;
+    }
+
+    return orderId.slice(0, -1 * (`:${matchedAccountLabel}`.length));
   }
 
   updateMatchedCycleMetrics(
