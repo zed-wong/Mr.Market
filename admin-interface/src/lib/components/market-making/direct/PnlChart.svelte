@@ -17,17 +17,20 @@
     }
 
     let chartData = $derived(
-        series.map((point, i) => ({
-            index: i,
-            label: point.t,
-            net: toNumber(point.net),
-        }))
+        series
+            .map((point, i) => ({
+                index: i,
+                label: point.t,
+                net: toNumber(point.net),
+            }))
+            .filter((point) => Number.isFinite(point.net))
     );
 
     let latestNet = $derived(
         chartData.length ? chartData[chartData.length - 1].net : 0
     );
 
+    let canRenderChart = $derived(chartData.length >= 2);
     let lineColor = $derived(latestNet >= 0 ? "var(--color-success)" : "var(--color-error)");
 </script>
 
@@ -41,7 +44,7 @@
         </span>
     </div>
 
-    {#if series.length === 0}
+    {#if !canRenderChart}
         <div class="h-[180px] flex items-center justify-center bg-base-200 rounded-lg">
             <span class="text-xs text-base-content/50">
                 {$_("admin_direct_mm_pnl_chart_empty")}
