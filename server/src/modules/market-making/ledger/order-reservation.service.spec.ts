@@ -8,6 +8,7 @@ describe('OrderReservationService', () => {
   };
   const ledgerEntryRepository = {
     find: jest.fn(),
+    findOneBy: jest.fn(),
   };
 
   beforeEach(() => {
@@ -16,6 +17,7 @@ describe('OrderReservationService', () => {
     balanceLedgerService.unlockFunds.mockResolvedValue({ applied: true });
     balanceLedgerService.getExistingBalance.mockResolvedValue(null);
     ledgerEntryRepository.find.mockResolvedValue([]);
+    ledgerEntryRepository.findOneBy.mockResolvedValue(null);
   });
 
   it('reserves quote asset for buy limit orders', async () => {
@@ -88,7 +90,8 @@ describe('OrderReservationService', () => {
       userId: 'user-1',
       assetId: 'USDT',
       amount: '150',
-      idempotencyKey: 'reserve-release:intent-1:exchange_create_failed',
+      idempotencyKey:
+        'reserve-release:order-1:intent-1:exchange_create_failed',
       refType: 'exchange_create_failed',
       refId: 'intent-1',
     });
@@ -116,7 +119,7 @@ describe('OrderReservationService', () => {
       assetId: 'USDT',
       amount: '110',
       idempotencyKey:
-        'reserve-release:exchange-order-1:exchange_order_cancelled',
+        'reserve-release:order-1:exchange-order-1:exchange_order_cancelled',
       refType: 'exchange_order_cancelled',
       refId: 'exchange-order-1',
     });
@@ -148,7 +151,7 @@ describe('OrderReservationService', () => {
       assetId: 'USDT',
       amount: '25',
       idempotencyKey:
-        'reserve-release:exchange-order-1:exchange_order_cancelled',
+        'reserve-release:order-1:exchange-order-1:exchange_order_cancelled',
       refType: 'exchange_order_cancelled',
       refId: 'exchange-order-1',
     });
@@ -157,6 +160,98 @@ describe('OrderReservationService', () => {
       assetId: 'USDT',
       amount: '25',
       applied: true,
+    });
+  });
+
+  it('scopes terminal release idempotency keys by order', async () => {
+    const service = new OrderReservationService(balanceLedgerService as any);
+
+    balanceLedgerService.getExistingBalance.mockResolvedValue({
+      locked: '25',
+    });
+
+    await service.releaseRemainingLimitOrderReservation({
+      orderId: 'order-1',
+      userId: 'user-1',
+      intentId: 'intent-cancel',
+      releaseId: 'exchange-order-1',
+      pair: 'BTC/USDT',
+      side: 'buy',
+      price: '100',
+      qty: '1.5',
+      filledQty: '0.4',
+      reason: 'exchange_order_cancelled',
+    });
+    await service.releaseRemainingLimitOrderReservation({
+      orderId: 'order-2',
+      userId: 'user-1',
+      intentId: 'intent-cancel',
+      releaseId: 'exchange-order-1',
+      pair: 'BTC/USDT',
+      side: 'buy',
+      price: '100',
+      qty: '1.5',
+      filledQty: '0.4',
+      reason: 'exchange_order_cancelled',
+    });
+
+    expect(balanceLedgerService.unlockFunds).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        orderId: 'order-1',
+        idempotencyKey:
+          'reserve-release:order-1:exchange-order-1:exchange_order_cancelled',
+      }),
+    );
+    expect(balanceLedgerService.unlockFunds).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        orderId: 'order-2',
+        idempotencyKey:
+          'reserve-release:order-2:exchange-order-1:exchange_order_cancelled',
+      }),
+    );
+  });
+
+  it('does not re-release a terminal exchange order that already has a ledger release', async () => {
+    const service = new OrderReservationService(
+      balanceLedgerService as any,
+      ledgerEntryRepository as any,
+    );
+
+    ledgerEntryRepository.findOneBy.mockResolvedValue({
+      amount: '1.0556',
+      idempotencyKey:
+        'reserve-release:order-1:exchange-order-1:exchange_order_cancelled',
+    });
+    balanceLedgerService.getExistingBalance.mockResolvedValue({
+      locked: '10',
+    });
+
+    const result = await service.releaseRemainingLimitOrderReservation({
+      orderId: 'order-1',
+      userId: 'user-1',
+      intentId: 'intent-cancel',
+      releaseId: 'exchange-order-1',
+      pair: 'BTC/USDT',
+      side: 'buy',
+      price: '100',
+      qty: '0.2',
+      filledQty: '0.1',
+      reason: 'exchange_order_cancelled',
+    });
+
+    expect(ledgerEntryRepository.findOneBy).toHaveBeenCalledWith({
+      idempotencyKey:
+        'reserve-release:order-1:exchange-order-1:exchange_order_cancelled',
+    });
+    expect(balanceLedgerService.getExistingBalance).not.toHaveBeenCalled();
+    expect(balanceLedgerService.unlockFunds).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      orderId: 'order-1',
+      assetId: 'USDT',
+      amount: '1.0556',
+      applied: false,
     });
   });
 
@@ -289,7 +384,9 @@ describe('OrderReservationService', () => {
       userId: 'user-1',
       assetId: 'USDT',
       amount: '75',
-      idempotencyKey: 'reservation-recovery:order-1:USDT',
+      idempotencyKey: expect.stringMatching(
+        /^reservation-recovery:order-1:USDT:[a-f0-9]{16}$/,
+      ),
       refType: 'reservation_recovery',
       refId: 'order-1',
     });
@@ -369,10 +466,84 @@ describe('OrderReservationService', () => {
       userId: 'user-1',
       assetId: 'USDT',
       amount: '100',
-      idempotencyKey: 'reservation-recovery:order-1:USDT',
+      idempotencyKey: expect.stringMatching(
+        /^reservation-recovery:order-1:USDT:[a-f0-9]{16}$/,
+      ),
       refType: 'reservation_recovery',
       refId: 'order-1',
     });
+  });
+
+  it('uses different recovery keys when the residual amount changes', async () => {
+    const service = new OrderReservationService(
+      balanceLedgerService as any,
+      ledgerEntryRepository as any,
+    );
+
+    ledgerEntryRepository.find
+      .mockResolvedValueOnce([
+        {
+          orderId: 'order-1',
+          userId: 'user-1',
+          assetId: 'USDT',
+          amount: '100',
+          type: 'reserve_lock',
+          refId: 'intent-1',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          orderId: 'order-1',
+          userId: 'user-1',
+          assetId: 'USDT',
+          amount: '100',
+          type: 'reserve_lock',
+          refId: 'intent-1',
+        },
+        {
+          orderId: 'order-1',
+          userId: 'user-1',
+          assetId: 'USDT',
+          amount: '-25',
+          type: 'fill_settle',
+        },
+      ]);
+
+    await service.recoverDanglingReservationsForOrder({
+      orderId: 'order-1',
+      liveIntentIds: [],
+      hasOpenOrder: false,
+    });
+    await service.recoverDanglingReservationsForOrder({
+      orderId: 'order-1',
+      liveIntentIds: [],
+      hasOpenOrder: false,
+    });
+
+    const firstKey = balanceLedgerService.unlockFunds.mock.calls[0][0]
+      .idempotencyKey;
+    const secondKey = balanceLedgerService.unlockFunds.mock.calls[1][0]
+      .idempotencyKey;
+
+    expect(balanceLedgerService.unlockFunds).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        amount: '100',
+        idempotencyKey: expect.stringMatching(
+          /^reservation-recovery:order-1:USDT:[a-f0-9]{16}$/,
+        ),
+      }),
+    );
+    expect(balanceLedgerService.unlockFunds).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        amount: '75',
+        idempotencyKey: expect.stringMatching(
+          /^reservation-recovery:order-1:USDT:[a-f0-9]{16}$/,
+        ),
+      }),
+    );
+    expect(firstKey).not.toBe(secondKey);
   });
 
   it('does not recover order-scoped reservations while an open order remains', async () => {

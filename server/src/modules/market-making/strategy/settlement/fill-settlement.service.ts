@@ -284,7 +284,7 @@ export class FillSettlementService {
 
   pauseFillSettlementReservations(
     session: FillSettlementSessionContext,
-    fill: Pick<SettlementFill, 'side'>,
+    fill: Pick<SettlementFill, 'side' | 'accountLabel'>,
   ): void {
     if (!this.balanceLedgerService || !fill.side) {
       return;
@@ -298,11 +298,13 @@ export class FillSettlementService {
     }
 
     const assetId = fill.side === 'buy' ? assets.quote : assets.base;
+    const accountLabel = this.readString(fill.accountLabel);
+    const baseOrderId = session.marketMakingOrderId || session.clientId;
+    const orderId = accountLabel
+      ? `${baseOrderId}:${accountLabel}`
+      : baseOrderId;
 
-    this.balanceLedgerService.pauseReservations(
-      session.marketMakingOrderId || session.clientId,
-      assetId,
-    );
+    this.balanceLedgerService.pauseReservations(orderId, assetId);
   }
 
   async settleFillForSession(
@@ -315,9 +317,15 @@ export class FillSettlementService {
       return false;
     }
 
+    const accountLabel = this.readString(fill.accountLabel);
+    const baseOrderId = session.marketMakingOrderId || session.clientId;
+    const orderId = accountLabel
+      ? `${baseOrderId}:${accountLabel}`
+      : baseOrderId;
+
     return await this.settleFill({
       strategyKey: session.strategyKey,
-      orderId: session.marketMakingOrderId || session.clientId,
+      orderId,
       userId: session.userId,
       pair,
       fill,

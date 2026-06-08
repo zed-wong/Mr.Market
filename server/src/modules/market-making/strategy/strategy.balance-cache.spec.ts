@@ -390,6 +390,14 @@ describe('StrategyService balance cache helpers', () => {
               BTC: { available: '0.1' },
               USDT: { available: '1000' },
             },
+            'order-1:maker': {
+              BTC: { available: '0.1' },
+              USDT: { available: '1000' },
+            },
+            'order-1:taker': {
+              BTC: { available: '10' },
+              USDT: { available: '1000' },
+            },
           };
 
           return balances[orderId]?.[assetId] || null;
@@ -465,7 +473,7 @@ describe('StrategyService balance cache helpers', () => {
         qty: '0.1',
         accountLabel: 'maker',
         metadata: expect.objectContaining({
-          orderId: 'order-1',
+          orderId: 'order-1:maker',
           requestedQty: '1',
           effectiveQty: '0.1',
           selectedSideCapacity: '0.1',

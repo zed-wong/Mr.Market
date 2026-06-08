@@ -1,6 +1,7 @@
 import { Injectable, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
+import { createHash } from 'crypto';
 import { LedgerEntry } from 'src/common/entities/ledger/ledger-entry.entity';
 import { Repository } from 'typeorm';
 
@@ -70,14 +71,23 @@ export class OrderReservationService {
       return { ...reservation, applied: false };
     }
 
+    const idempotencyKey = this.buildReservationReleaseIdempotencyKey(command);
+    const existingRelease = await this.findExistingLedgerEntry(idempotencyKey);
+
+    if (existingRelease) {
+      return {
+        ...reservation,
+        amount: existingRelease.amount,
+        applied: false,
+      };
+    }
+
     const result = await this.balanceLedgerService.unlockFunds({
       orderId: command.orderId,
       userId: command.userId,
       assetId: reservation.assetId,
       amount: reservation.amount,
-      idempotencyKey: `reserve-release:${
-        command.releaseId || command.intentId
-      }:${command.reason}`,
+      idempotencyKey,
       refType: command.reason,
       refId: command.releaseId || command.intentId,
     });
@@ -100,6 +110,17 @@ export class OrderReservationService {
       reservation = this.calculateReservation(normalizedCommand);
     } catch {
       reservation = fallbackReservation;
+    }
+
+    const idempotencyKey = this.buildReservationReleaseIdempotencyKey(command);
+    const existingRelease = await this.findExistingLedgerEntry(idempotencyKey);
+
+    if (existingRelease) {
+      return {
+        ...reservation,
+        amount: existingRelease.amount,
+        applied: false,
+      };
     }
 
     const existingBalance = await this.balanceLedgerService.getExistingBalance(
@@ -136,9 +157,7 @@ export class OrderReservationService {
       userId: command.userId,
       assetId: reservation.assetId,
       amount: releaseAmount.toFixed(),
-      idempotencyKey: `reserve-release:${
-        command.releaseId || command.intentId
-      }:${command.reason}`,
+      idempotencyKey,
       refType: command.reason,
       refId: command.releaseId || command.intentId,
     });
@@ -181,7 +200,7 @@ export class OrderReservationService {
         userId: candidate.userId,
         assetId: candidate.assetId,
         amount: candidate.amount,
-        idempotencyKey: `reservation-recovery:${candidate.orderId}:${candidate.assetId}`,
+        idempotencyKey: this.buildReservationRecoveryIdempotencyKey(candidate),
         refType: 'reservation_recovery',
         refId: candidate.orderId,
       });
@@ -222,7 +241,7 @@ export class OrderReservationService {
         userId: candidate.userId,
         assetId: candidate.assetId,
         amount: candidate.amount,
-        idempotencyKey: `reservation-recovery:${candidate.orderId}:${candidate.assetId}`,
+        idempotencyKey: this.buildReservationRecoveryIdempotencyKey(candidate),
         refType: 'reservation_recovery',
         refId: candidate.orderId,
       });
@@ -267,6 +286,45 @@ export class OrderReservationService {
       ...command,
       filledQty: command.qty,
     };
+  }
+
+  private buildReservationReleaseIdempotencyKey(
+    command: Pick<LimitOrderReservationCommand, 'orderId' | 'intentId'> & {
+      reason: string;
+      releaseId?: string;
+    },
+  ): string {
+    return `reserve-release:${command.orderId}:${
+      command.releaseId || command.intentId
+    }:${command.reason}`;
+  }
+
+  private buildReservationRecoveryIdempotencyKey(
+    candidate: ReservationRecoveryCandidate,
+  ): string {
+    const contentHash = createHash('sha256')
+      .update(
+        JSON.stringify({
+          orderId: candidate.orderId,
+          assetId: candidate.assetId,
+          amount: new BigNumber(candidate.amount).toFixed(),
+          liveIntentIds: [...candidate.liveIntentIds].sort(),
+        }),
+      )
+      .digest('hex')
+      .slice(0, 16);
+
+    return `reservation-recovery:${candidate.orderId}:${candidate.assetId}:${contentHash}`;
+  }
+
+  private async findExistingLedgerEntry(
+    idempotencyKey: string,
+  ): Promise<LedgerEntry | null> {
+    if (!this.ledgerEntryRepository) {
+      return null;
+    }
+
+    return await this.ledgerEntryRepository.findOneBy({ idempotencyKey });
   }
 
   private calculateReservation(
