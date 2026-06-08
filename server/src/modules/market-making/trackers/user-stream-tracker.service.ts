@@ -284,15 +284,18 @@ export class UserStreamTrackerService
     }
 
     if (trackedOrder && fill.status) {
-      this.exchangeOrderTrackerService?.upsertOrder({
-        ...trackedOrder,
-        clientOrderId: fill.clientOrderId || trackedOrder.clientOrderId,
-        cumulativeFilledQty:
-          fill.cumulativeQty || trackedOrder.cumulativeFilledQty,
-        status: fill.status,
-        createdAt: trackedOrder.createdAt,
-        updatedAt: fill.receivedAt,
-      });
+      this.exchangeOrderTrackerService?.upsertOrder(
+        {
+          ...trackedOrder,
+          clientOrderId: fill.clientOrderId || trackedOrder.clientOrderId,
+          cumulativeFilledQty:
+            fill.cumulativeQty || trackedOrder.cumulativeFilledQty,
+          status: fill.status,
+          createdAt: trackedOrder.createdAt,
+          updatedAt: fill.receivedAt,
+        },
+        { settleFill: false },
+      );
     }
 
     const routedFill = this.normalizeFillForDispatch(fill, trackedOrder);

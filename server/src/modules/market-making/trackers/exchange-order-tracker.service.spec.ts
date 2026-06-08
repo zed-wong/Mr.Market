@@ -778,6 +778,127 @@ describe('ExchangeOrderTrackerService', () => {
     );
   });
 
+  it('routes directly observed unsettled fill progress through the executor', async () => {
+    const onFill = jest.fn().mockResolvedValue(undefined);
+    const executorRegistry = {
+      getExecutor: jest.fn().mockReturnValue({
+        onFill,
+      }),
+    };
+    const service = new ExchangeOrderTrackerService(
+      undefined,
+      executorRegistry as any,
+    );
+
+    service.upsertOrder({
+      orderId: 'order-1:2',
+      strategyKey: 'strategy-1',
+      exchange: 'mexc',
+      accountLabel: '2',
+      pair: 'XIN/USDT',
+      exchangeOrderId: 'ex-1',
+      clientOrderId: 'client-1',
+      side: 'buy',
+      price: '53.84',
+      qty: '0.1',
+      cumulativeFilledQty: '0',
+      settledFilledQty: '0',
+      status: 'open',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:00.000Z',
+    });
+
+    service.upsertOrder({
+      orderId: 'order-1:2',
+      strategyKey: 'strategy-1',
+      exchange: 'mexc',
+      accountLabel: '2',
+      pair: 'XIN/USDT',
+      exchangeOrderId: 'ex-1',
+      clientOrderId: 'client-1',
+      side: 'buy',
+      price: '53.84',
+      qty: '0.1',
+      cumulativeFilledQty: '0.1',
+      settledFilledQty: '0',
+      status: 'filled',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:01.000Z',
+    });
+
+    await flushPromises();
+
+    expect(onFill).toHaveBeenCalledTimes(1);
+    expect(onFill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'order-1:2',
+        exchangeOrderId: 'ex-1',
+        clientOrderId: 'client-1',
+        accountLabel: '2',
+        qty: '0.1',
+        cumulativeQty: '0.1',
+      }),
+    );
+  });
+
+  it('repairs stored filled but unsettled tracked orders on tick', async () => {
+    const onFill = jest.fn().mockResolvedValue(undefined);
+    const executorRegistry = {
+      getExecutor: jest.fn().mockReturnValue({
+        onFill,
+      }),
+    };
+    const service = new ExchangeOrderTrackerService(
+      undefined,
+      executorRegistry as any,
+    );
+
+    service.upsertOrder(
+      {
+        orderId: 'order-1:5',
+        strategyKey: 'strategy-1',
+        exchange: 'mexc',
+        accountLabel: '5',
+        pair: 'XIN/USDT',
+        exchangeOrderId: 'ex-2',
+        clientOrderId: 'client-2',
+        side: 'sell',
+        price: '53.84',
+        qty: '0.25',
+        cumulativeFilledQty: '0.25',
+        settledFilledQty: '0.1',
+        status: 'filled',
+        createdAt: '2026-02-11T00:00:00.000Z',
+        updatedAt: '2026-02-11T00:00:01.000Z',
+      },
+      { settleFill: false },
+    );
+
+    await service.onTick('2026-02-11T00:00:02.000Z');
+
+    expect(onFill).toHaveBeenCalledTimes(1);
+    expect(onFill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'order-1:5',
+        exchangeOrderId: 'ex-2',
+        accountLabel: '5',
+        qty: '0.15',
+        cumulativeQty: '0.25',
+      }),
+    );
+
+    service.markFillSettled({
+      exchange: 'mexc',
+      accountLabel: '5',
+      exchangeOrderId: 'ex-2',
+      cumulativeQty: '0.25',
+    });
+
+    await service.onTick('2026-02-11T00:00:03.000Z');
+
+    expect(onFill).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects illegal transitions and keeps cumulative fills monotonic', () => {
     const service = new ExchangeOrderTrackerService();
 

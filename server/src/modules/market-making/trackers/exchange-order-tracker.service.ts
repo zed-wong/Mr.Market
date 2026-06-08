@@ -59,6 +59,7 @@ export type TrackedOrderSummary = {
 
 export type UpsertTrackedOrderOptions = {
   releaseReservation?: boolean;
+  settleFill?: boolean;
 };
 
 type FillLogEntry = {
@@ -125,6 +126,7 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
   private readonly fillLog = new Map<string, FillLogEntry[]>();
   private readonly lastUserStreamActivityByKey = new Map<string, number>();
   private readonly lastPolledAtByOrderKey = new Map<string, number>();
+  private readonly fillSettlementDispatches = new Set<string>();
   private readonly trackedOrderStatusCounts = new Map<
     TrackedOrderState,
     number
@@ -190,6 +192,9 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
       if (options?.releaseReservation !== false) {
         this.releaseReservationForTerminalOrder(existingOrder, nextOrder);
       }
+      if (options?.settleFill !== false) {
+        this.dispatchUnsettledFillSettlement(nextOrder);
+      }
 
       return;
     }
@@ -210,6 +215,9 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
     void this.persistOrder(createdOrder, key).catch(() => {});
     if (options?.releaseReservation !== false) {
       this.releaseReservationForTerminalOrder(undefined, createdOrder);
+    }
+    if (options?.settleFill !== false) {
+      this.dispatchUnsettledFillSettlement(createdOrder);
     }
   }
 
@@ -464,8 +472,9 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
     );
   }
 
-  async onTick(_: string): Promise<void> {
+  async onTick(ts: string): Promise<void> {
     this.prunePollingState();
+    await this.dispatchStoredUnsettledFillSettlements(ts);
   }
 
   async pollDueOrders(
@@ -574,7 +583,7 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
 
       const fillDelta = this.recordFill(order, nextOrder, ts);
 
-      this.upsertOrder(nextOrder);
+      this.upsertOrder(nextOrder, { settleFill: false });
 
       if (ExchangeOrderTrackerService.terminalStates.has(normalizedStatus)) {
         this.lastPolledAtByOrderKey.delete(orderKey);
@@ -892,6 +901,108 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
     this.fillLog.set(strategyKey, fills);
 
     return fills;
+  }
+
+  private async dispatchStoredUnsettledFillSettlements(
+    ts: string,
+  ): Promise<void> {
+    const orders = [...this.orders.values()]
+      .filter((order) => this.computeUnsettledFillDelta(order) !== null)
+      .sort((left, right) => left.updatedAt.localeCompare(right.updatedAt))
+      .slice(0, ExchangeOrderTrackerService.DEFAULT_RECONCILIATION_BUDGET);
+
+    for (const order of orders) {
+      await this.dispatchUnsettledFillSettlementAsync(order, ts);
+    }
+  }
+
+  private dispatchUnsettledFillSettlement(order: TrackedOrder): void {
+    const fillDelta = this.computeUnsettledFillDelta(order);
+
+    if (!fillDelta) {
+      return;
+    }
+
+    void this.dispatchUnsettledFillSettlementAsync(
+      order,
+      order.updatedAt || getRFC3339Timestamp(),
+    ).catch((error) => {
+      this.logger.warn(
+        `Failed to dispatch unsettled tracked fill ${order.strategyKey}:${
+          order.exchangeOrderId
+        }: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    });
+  }
+
+  private async dispatchUnsettledFillSettlementAsync(
+    order: TrackedOrder,
+    ts: string,
+  ): Promise<void> {
+    const fillDelta = this.computeUnsettledFillDelta(order);
+
+    if (!fillDelta) {
+      return;
+    }
+
+    const dispatchKey = this.buildFillSettlementDispatchKey(
+      order,
+      fillDelta.cumulativeQty,
+    );
+
+    if (this.fillSettlementDispatches.has(dispatchKey)) {
+      return;
+    }
+
+    this.fillSettlementDispatches.add(dispatchKey);
+
+    try {
+      await this.routeRecoveredFill(order, order, fillDelta, ts);
+    } finally {
+      this.fillSettlementDispatches.delete(dispatchKey);
+    }
+  }
+
+  private computeUnsettledFillDelta(
+    order: TrackedOrder,
+  ): { qty: string; cumulativeQty: string } | null {
+    const cumulativeFilledQty = new BigNumber(order.cumulativeFilledQty || 0);
+    const settledFilledQty = new BigNumber(order.settledFilledQty || 0);
+
+    if (
+      !cumulativeFilledQty.isFinite() ||
+      !settledFilledQty.isFinite() ||
+      !cumulativeFilledQty.isGreaterThan(settledFilledQty)
+    ) {
+      return null;
+    }
+
+    if (!order.side || !this.isPositiveFinite(order.price)) {
+      return null;
+    }
+
+    const deltaQty = cumulativeFilledQty.minus(settledFilledQty);
+
+    if (!deltaQty.isFinite() || deltaQty.isLessThanOrEqualTo(0)) {
+      return null;
+    }
+
+    return {
+      qty: deltaQty.toFixed(),
+      cumulativeQty: cumulativeFilledQty.toFixed(),
+    };
+  }
+
+  private buildFillSettlementDispatchKey(
+    order: TrackedOrder,
+    cumulativeQty: string,
+  ): string {
+    return [
+      order.exchange,
+      order.accountLabel || 'default',
+      order.exchangeOrderId,
+      cumulativeQty,
+    ].join(':');
   }
 
   private adjustPartialFillStatus(
