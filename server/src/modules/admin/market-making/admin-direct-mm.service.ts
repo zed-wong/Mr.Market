@@ -320,14 +320,14 @@ export class AdminDirectMarketMakingService {
         this.normalizeEfficientDirectConfig(resolvedConfig.resolvedConfig),
       );
     }
-    await this.preloadDirectTradingRules(
-      dto.exchangeName,
-      dto.pair,
-      executionAccounts.primary.accountLabel,
-      capabilities.directExecutionMode === 'dual_account'
-        ? executionAccounts.secondary?.accountLabel
-        : undefined,
-    );
+    if (capabilities.directExecutionMode === 'dual_account') {
+      await this.preloadDirectTradingRules(
+        dto.exchangeName,
+        dto.pair,
+        executionAccounts.primary.accountLabel,
+        executionAccounts.secondary?.accountLabel,
+      );
+    }
     const primaryMarketSnapshot = await this.resolveDirectMarketSnapshot(
       dto.exchangeName,
       dto.pair,
@@ -481,14 +481,14 @@ export class AdminDirectMarketMakingService {
         this.normalizeEfficientDirectConfig(resolvedConfig),
       );
     }
-    await this.preloadDirectTradingRules(
-      order.exchangeName,
-      order.pair,
-      this.isDualAccountMode(order)
-        ? this.readMakerAccountLabel(order)
-        : this.readPrimaryAccountLabel(order),
-      this.isDualAccountMode(order) ? this.readTakerAccountLabel(order) : '',
-    );
+    if (this.isDualAccountMode(order)) {
+      await this.preloadDirectTradingRules(
+        order.exchangeName,
+        order.pair,
+        this.readMakerAccountLabel(order),
+        this.readTakerAccountLabel(order),
+      );
+    }
     const primaryAccountLabel = this.isDualAccountMode(order)
       ? this.readMakerAccountLabel(order)
       : this.readPrimaryAccountLabel(order);
@@ -1147,9 +1147,8 @@ export class AdminDirectMarketMakingService {
         privateKey,
       );
 
-      joinedKeys = await this.campaignService.getJoinedCampaignKeys(
-        accessToken,
-      );
+      joinedKeys =
+        await this.campaignService.getJoinedCampaignKeys(accessToken);
     } catch (error) {
       this.logger.warn(
         `Failed to fetch joined campaigns: ${
@@ -1331,9 +1330,8 @@ export class AdminDirectMarketMakingService {
     const definitions = await this.strategyDefinitionRepository.find({
       order: { updatedAt: 'DESC' },
     });
-    let backfilledDefinitions = await this.ensureEfficientDualAccountDefinition(
-      definitions,
-    );
+    let backfilledDefinitions =
+      await this.ensureEfficientDualAccountDefinition(definitions);
 
     backfilledDefinitions = await this.ensurePureMarketMakingDefinition(
       backfilledDefinitions,
@@ -1516,7 +1514,9 @@ export class AdminDirectMarketMakingService {
 
     const accountLabels = [primaryAccountLabel, secondaryAccountLabel]
       .map((value) => String(value || '').trim())
-      .filter((value, index, values) => value && values.indexOf(value) === index);
+      .filter(
+        (value, index, values) => value && values.indexOf(value) === index,
+      );
 
     for (const accountLabel of accountLabels) {
       await this.exchangeConnectorAdapterService.loadTradingRules(
@@ -1910,12 +1910,7 @@ export class AdminDirectMarketMakingService {
       metadata.takerAccountLabel,
     );
 
-    if (
-      !cycleId ||
-      cycleRole !== 'maker' ||
-      !makerSide ||
-      !takerAccountLabel
-    ) {
+    if (!cycleId || cycleRole !== 'maker' || !makerSide || !takerAccountLabel) {
       return null;
     }
 
@@ -2933,12 +2928,8 @@ export class AdminDirectMarketMakingService {
     }
 
     const config = order.strategySnapshot?.resolvedConfig || {};
-    const makerAccountLabel = String(
-      config.makerAccountLabel || '',
-    ).trim();
-    const takerAccountLabel = String(
-      config.takerAccountLabel || '',
-    ).trim();
+    const makerAccountLabel = String(config.makerAccountLabel || '').trim();
+    const takerAccountLabel = String(config.takerAccountLabel || '').trim();
 
     if (!makerAccountLabel || !takerAccountLabel) {
       return;

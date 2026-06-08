@@ -36,6 +36,7 @@ describe('AdminDirectMarketMakingService', () => {
     strategyOrderIntentRepository?: any;
     strategyExecutionHistoryRepository?: any;
     trackedOrderRepository?: any;
+    exchangeConnectorAdapterService?: any;
   }) => {
     const marketMakingRepository = {
       create: jest.fn((payload) => payload),
@@ -285,6 +286,15 @@ describe('AdminDirectMarketMakingService', () => {
         .fn()
         .mockResolvedValue(readyReadiness),
     };
+    const exchangeConnectorAdapterService =
+      options?.exchangeConnectorAdapterService || {
+        loadTradingRules: jest.fn().mockResolvedValue({
+          amountMin: 0.001,
+          costMin: 10,
+          makerFee: 0.001,
+          takerFee: 0.001,
+        }),
+      };
 
     const service = new AdminDirectMarketMakingService(
       marketMakingRepository as any,
@@ -312,6 +322,7 @@ describe('AdminDirectMarketMakingService', () => {
       balanceStateRefreshService as any,
       userStreamCapabilityService as any,
       dualAccountPlannerService as any,
+      exchangeConnectorAdapterService as any,
       strategyInstanceRepository as any,
       strategyOrderIntentRepository as any,
       strategyExecutionHistoryRepository as any,
@@ -346,6 +357,7 @@ describe('AdminDirectMarketMakingService', () => {
       balanceStateRefreshService,
       userStreamCapabilityService,
       dualAccountPlannerService,
+      exchangeConnectorAdapterService,
       readyReadiness,
       strategyInstanceRepository,
       strategyOrderIntentRepository,
@@ -1417,6 +1429,7 @@ describe('AdminDirectMarketMakingService', () => {
       strategyDefinitionRepository,
       strategyConfigResolver,
       userOrdersService,
+      exchangeConnectorAdapterService,
     } = buildService();
 
     strategyDefinitionRepository.findOne.mockResolvedValue({
@@ -1469,6 +1482,12 @@ describe('AdminDirectMarketMakingService', () => {
       state: 'running',
       warnings: [],
     });
+    expect(
+      exchangeConnectorAdapterService.loadTradingRules,
+    ).toHaveBeenCalledWith('binance', 'BTC/USDT', 'api-key-1');
+    expect(
+      exchangeConnectorAdapterService.loadTradingRules,
+    ).toHaveBeenCalledWith('binance', 'BTC/USDT', 'api-key-2');
     expect(userOrdersService.createMarketMaking).toHaveBeenCalledWith(
       expect.objectContaining({
         strategySnapshot: expect.objectContaining({
