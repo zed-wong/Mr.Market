@@ -17,6 +17,7 @@ import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
 
 import { TrackedOrderShutdownService } from '../../trackers/tracked-order-shutdown.service';
+import { ExchangeOrderTrackerService } from '../../trackers/exchange-order-tracker.service';
 import { ExecutorAction } from '../config/executor-action.types';
 import {
   ArbitrageStrategyDto,
@@ -78,6 +79,8 @@ export class StrategyInstanceLifecycleService {
     private readonly volumeStrategyController?: VolumeStrategyController,
     @Optional()
     private readonly strategyStartupRecoveryService?: StrategyStartupRecoveryService,
+    @Optional()
+    private readonly exchangeOrderTrackerService?: ExchangeOrderTrackerService,
   ) {}
 
   isStrategyStopping(strategyKey: string): boolean {
@@ -357,7 +360,6 @@ export class StrategyInstanceLifecycleService {
         setSession: runtime.setSession,
         getConnectorHealthStatus: runtime.getConnectorHealthStatus,
         setConnectorHealthStatus: runtime.setConnectorHealthStatus,
-        stopStrategyForUser: runtime.stopStrategyForUser,
         logger: runtime.logger,
       },
     );
@@ -835,6 +837,67 @@ export class StrategyInstanceLifecycleService {
       marketMakingOrderId,
       'pureMarketMaking',
       publishIntents,
+    );
+  }
+
+  async finalizeStoppingStrategies(): Promise<number> {
+    if (!this.strategySessionRegistryService) {
+      return 0;
+    }
+
+    const stoppingStrategies = await this.strategyInstanceRepository.find({
+      where: { status: 'stopping' },
+    });
+    let finalizedCount = 0;
+
+    for (const strategy of stoppingStrategies) {
+      if (!(await this.canFinalizeStoppingStrategy(strategy.strategyKey))) {
+        continue;
+      }
+
+      const session = this.strategySessionRegistry.sessions.get(
+        strategy.strategyKey,
+      );
+
+      await this.strategyInstanceRepository.update(
+        { strategyKey: strategy.strategyKey },
+        { status: 'stopped', updatedAt: getRFC3339Timestamp() },
+      );
+      await this.removeSession(strategy.strategyKey, session);
+      this.strategyIntentStoreService?.clearLatestIntentsForStrategy(
+        strategy.strategyKey,
+      );
+      finalizedCount += 1;
+    }
+
+    return finalizedCount;
+  }
+
+  private async canFinalizeStoppingStrategy(
+    strategyKey: string,
+  ): Promise<boolean> {
+    const trackedOrders =
+      this.exchangeOrderTrackerService?.getTrackedOrders(strategyKey) || [];
+    const hasActiveTrackedOrder = trackedOrders.some(
+      (order) =>
+        order.exchangeOrderId &&
+        !this.isTrackedOrderTerminalStatus(String(order.status || '')),
+    );
+
+    if (hasActiveTrackedOrder) {
+      return false;
+    }
+
+    const queueState = await this.strategyIntentStoreService?.getQueueState?.(
+      strategyKey,
+    );
+
+    return !queueState?.headIntentStatus;
+  }
+
+  private isTrackedOrderTerminalStatus(status: string): boolean {
+    return ['filled', 'cancelled', 'failed', 'external_missing'].includes(
+      String(status || '').toLowerCase(),
     );
   }
 

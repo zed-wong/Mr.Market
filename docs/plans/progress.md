@@ -1,5 +1,22 @@
 # Execution Flow Changelog
 
+## 2026-06-08
+
+- Scope reservation-release ledger idempotency keys by `orderId` so admin direct stop-all cleanup cannot collide across order-scoped balances that share an external/client order identifier.
+- Scope dangling reservation recovery idempotency keys by the residual recovery content so delete cleanup can safely retry after fills or prior releases change the remaining locked amount.
+- Update the admin direct market-making runtime panel for the latest efficient dual-account volume states: recognize efficient/optimal variants, surface latest cycle failures ahead of persisted lifecycle labels, and render newest cycles first.
+- Allow admin direct orders whose persisted state is still `running` but whose runtime executor is `gone` to be removed through the normal cleanup path, while still blocking removal when active tracked exchange orders remain.
+- Make terminal exchange-order reservation release cleanup skip already-recorded release events instead of recalculating a new amount for the same cancelled order id.
+- Harden the admin direct order detail UI: PnL chart now falls back to an empty state for fewer than two valid points, and latest-cycle summaries use compact wrapping labels so long runtime cycle ids do not overflow the card.
+- Show the planned inline taker leg in admin direct runtime cycles whenever efficient dual-account maker metadata is present but the taker IOC has not been dispatched yet.
+- Default efficient dual-account inline taker dispatch delay to `0ms` so maker-open acknowledgement is followed by the taker IOC without an artificial post-delay window.
+- Derive admin direct completed cycle count and traded quote volume from runtime cycle legs so the order details dialog does not keep showing stale `completedCycles=0` while maker/taker legs are actually filled.
+- Expose cached exchange trading rules to dual-account runtime planning and block efficient/best-capacity cycles when cached minimum amount/notional rules are missing or when capacity falls below exchange cost minimums, preventing sub-1 USDT MEXC intents from being generated after inventory drains.
+- Document the execution boundary cleanup plan and start restoring the intent-worker boundary for strategy-driven exchange cancellation.
+- Start the stop-state-machine cleanup: dual-account target completion now emits `STOP_CONTROLLER`, STOP execution marks strategies `stopping` and enqueues `CANCEL_ORDER` intents for live tracked orders, and the intent worker allows STOP/CANCEL while stopping.
+- Add the local stop finalizer: once a `stopping` strategy has no active tracked orders and no active intents, strategy tick finalizes it to `stopped` and detaches its session without exchange I/O.
+- Remove the strategy stop callback from controller tick context; volume and pure-PMM risk/target stops now emit `STOP_CONTROLLER` actions instead of directly invoking cleanup.
+
 ## 2026-06-07
 
 - Clarify the yellowpaper strategy model as the current source of truth: `StrategyDefinition` is the strategy class/product family, `StrategyTemplate` is the reusable parameter preset, and `strategySnapshot` is the immutable runtime config resolved from definition, template, overrides, and runtime fields.

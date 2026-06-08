@@ -39,7 +39,6 @@ export class DualAccountBestCapacityVolumeStrategyController
     return await this.getDualAccountVolumeStrategyController().buildDualAccountBestCapacityVolumeSessionActions(
       ctx.session,
       ctx.ts,
-      ctx.stopStrategyForUser,
     );
   }
 

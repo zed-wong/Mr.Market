@@ -226,6 +226,7 @@ export class StrategyService
 
   async onTick(ts: string): Promise<void> {
     await this.onTickForPooledExecutors(ts);
+    await this.strategyInstanceLifecycle.finalizeStoppingStrategies();
   }
 
   async routeFillForExchangePair(
@@ -655,8 +656,6 @@ export class StrategyService
         const actions = await controller.decideActions({
           session,
           ts,
-          stopStrategyForUser: (userId, clientId, strategyType) =>
-            this.stopStrategyForUser(userId, clientId, strategyType),
         });
 
         if (actions.length > 0) {
@@ -667,8 +666,6 @@ export class StrategyService
               {
                 session,
                 ts,
-                stopStrategyForUser: (userId, clientId, strategyType) =>
-                  this.stopStrategyForUser(userId, clientId, strategyType),
               },
               actions,
             );

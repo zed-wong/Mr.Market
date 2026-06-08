@@ -129,6 +129,8 @@ describe('StrategyIntentExecutionService', () => {
     updateIntentStatus: jest.fn().mockResolvedValue(undefined),
     attachMixinOrderId: jest.fn().mockResolvedValue(undefined),
     getMixinOrderId: jest.fn().mockResolvedValue(undefined),
+    batchUpsertIntents: jest.fn().mockResolvedValue(undefined),
+    cancelPendingRiskIncreasingIntents: jest.fn().mockResolvedValue(0),
   };
 
   const durabilityService = {
@@ -344,6 +346,12 @@ describe('StrategyIntentExecutionService', () => {
       validation_status: 'valid',
     });
     intentStoreService.getMixinOrderId.mockResolvedValue(undefined);
+    intentStoreService.batchUpsertIntents.mockReset().mockResolvedValue(
+      undefined,
+    );
+    intentStoreService.cancelPendingRiskIncreasingIntents
+      .mockReset()
+      .mockResolvedValue(0);
   });
 
   it('executes CREATE_LIMIT_ORDER intents once (idempotent)', async () => {
@@ -735,12 +743,7 @@ describe('StrategyIntentExecutionService', () => {
         status: 'closed',
         filled: '1',
       });
-    const service = createService(
-      true,
-      createConfigService(true, {
-        'strategy.dual_account_inline_taker_max_delay_ms': 0,
-      }),
-    );
+    const service = createService(true);
 
     await service.consumeIntents([
       {
@@ -1296,6 +1299,85 @@ describe('StrategyIntentExecutionService', () => {
       baseIntent.intentId,
       'FAILED',
       expect.anything(),
+    );
+  });
+
+  it('handles STOP_CONTROLLER by marking stopping and enqueueing cancel intents without exchange mutation', async () => {
+    trackedOrders.set('binance:maker:maker-ex-1', {
+      orderId: 'order-1',
+      strategyKey: baseIntent.strategyKey,
+      exchange: 'binance',
+      accountLabel: 'maker',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'maker-ex-1',
+      slotKey: 'cycle-1-maker',
+      role: 'maker',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      status: 'open',
+      createdAt: '2026-06-08T00:00:00.000Z',
+      updatedAt: '2026-06-08T00:00:00.000Z',
+    });
+    trackedOrders.set('binance:taker:taker-ex-1', {
+      orderId: 'order-1',
+      strategyKey: baseIntent.strategyKey,
+      exchange: 'binance',
+      accountLabel: 'taker',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'taker-ex-1',
+      role: 'taker',
+      side: 'sell',
+      price: '100',
+      qty: '1',
+      status: 'filled',
+      createdAt: '2026-06-08T00:00:00.000Z',
+      updatedAt: '2026-06-08T00:00:00.000Z',
+    });
+    const service = createService(true);
+
+    await service.consumeIntents([
+      {
+        ...baseIntent,
+        intentId: 'intent-stop',
+        type: 'STOP_CONTROLLER',
+        exchange: '',
+        pair: '',
+        price: '0',
+        qty: '0',
+      },
+    ]);
+
+    expect(strategyInstanceRepository.update).toHaveBeenCalledWith(
+      { strategyKey: baseIntent.strategyKey },
+      expect.objectContaining({ status: 'stopping' }),
+    );
+    expect(
+      intentStoreService.cancelPendingRiskIncreasingIntents,
+    ).toHaveBeenCalledWith(
+      baseIntent.strategyKey,
+      'strategy stopping before intent execution',
+    );
+    expect(intentStoreService.batchUpsertIntents).toHaveBeenCalledWith([
+      expect.objectContaining({
+        type: 'CANCEL_ORDER',
+        strategyKey: baseIntent.strategyKey,
+        exchange: 'binance',
+        accountLabel: 'maker',
+        pair: 'BTC/USDT',
+        mixinOrderId: 'maker-ex-1',
+        metadata: expect.objectContaining({
+          reason: 'strategy_stop',
+          stopIntentId: 'intent-stop',
+          orderId: 'order-1',
+          role: 'maker',
+        }),
+      }),
+    ]);
+    expect(exchangeConnectorAdapterService.cancelOrder).not.toHaveBeenCalled();
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      'intent-stop',
+      'DONE',
     );
   });
 

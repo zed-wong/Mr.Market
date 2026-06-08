@@ -6,7 +6,10 @@ import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
 
-import { TrackedOrderShutdownService } from '../../trackers/tracked-order-shutdown.service';
+import {
+  ExchangeOrderTrackerService,
+  TrackedOrder,
+} from '../../trackers/exchange-order-tracker.service';
 import { ExecutorAction } from '../config/executor-action.types';
 import { ExecuteDualAccountVolumeStrategyDto } from '../config/strategy.dto';
 import type {
@@ -36,7 +39,7 @@ export class DualAccountVolumeStrategyController implements StrategyController {
     @Optional()
     private readonly strategySessionRegistryService?: StrategySessionRegistryService,
     @Optional()
-    private readonly trackedOrderShutdownService?: TrackedOrderShutdownService,
+    private readonly exchangeOrderTrackerService?: ExchangeOrderTrackerService,
     @Optional()
     private readonly dualAccountPlannerService?: DualAccountPlannerService,
     @Optional()
@@ -57,11 +60,7 @@ export class DualAccountVolumeStrategyController implements StrategyController {
   }
 
   async decideActions(ctx: StrategyTickContext): Promise<ExecutorAction[]> {
-    return await this.buildDualAccountVolumeSessionActions(
-      ctx.session,
-      ctx.ts,
-      ctx.stopStrategyForUser,
-    );
+    return await this.buildDualAccountVolumeSessionActions(ctx.session, ctx.ts);
   }
 
   async onActionsPublished(
@@ -85,26 +84,110 @@ export class DualAccountVolumeStrategyController implements StrategyController {
   async buildDualAccountVolumeSessionActions(
     session: StrategyRuntimeSession,
     ts: string,
-    stopStrategyForUser: StrategyTickContext['stopStrategyForUser'],
   ): Promise<ExecutorAction[]> {
     return await this.buildDualAccountSessionActions(
       session,
       ts,
       'classic',
-      stopStrategyForUser,
     );
   }
 
   async buildDualAccountBestCapacityVolumeSessionActions(
     session: StrategyRuntimeSession,
     ts: string,
-    stopStrategyForUser: StrategyTickContext['stopStrategyForUser'],
   ): Promise<ExecutorAction[]> {
     return await this.buildDualAccountSessionActions(
       session,
       ts,
       'best_capacity',
-      stopStrategyForUser,
+    );
+  }
+
+  async buildOptimalDualAccountVolumeSessionActions(
+    session: StrategyRuntimeSession,
+    ts: string,
+  ): Promise<ExecutorAction[]> {
+    const activeSession = this.getActiveSession(session.strategyKey);
+    const persistedParams = (
+      await this.getStrategyInstanceRepository().findOne({
+        where: { strategyKey: session.strategyKey },
+      })
+    )?.parameters as Partial<DualAccountVolumeStrategyParams> | undefined;
+    const runtimeParams =
+      (activeSession?.params as DualAccountVolumeStrategyParams) ||
+      (session.params as DualAccountVolumeStrategyParams);
+    let latestParams = dualAccountConfig.mergeDualAccountConfigIntoRuntime(
+      runtimeParams,
+      persistedParams,
+    );
+
+    if (!latestParams.marketMakingOrderId && session.marketMakingOrderId) {
+      latestParams = {
+        ...latestParams,
+        marketMakingOrderId: session.marketMakingOrderId,
+      };
+    }
+
+    const activeTrackedOrders = this.getCancelableTrackedOrders(
+      session.strategyKey,
+    );
+
+    if (activeTrackedOrders.length === 0) {
+      latestParams = await this.finalizeSettledDualAccountCycle(
+        session,
+        latestParams,
+      );
+    }
+
+    if (this.isSameActiveSession(activeSession, session) && activeSession) {
+      activeSession.params = latestParams;
+      activeSession.cadenceMs =
+        dualAccountConfig.resolveNextDualAccountCadenceMs(latestParams);
+      this.setActiveSession(session.strategyKey, activeSession);
+    }
+
+    const tradedQuoteVolume = Number(
+      latestParams.tradedQuoteVolume || activeSession?.tradedQuoteVolume || 0,
+    );
+    const targetQuoteVolume = Number(latestParams.targetQuoteVolume || 0);
+
+    if (targetQuoteVolume > 0 && tradedQuoteVolume >= targetQuoteVolume) {
+      const activeBeforeStop = this.getActiveSession(session.strategyKey);
+
+      if (!this.isSameActiveSession(activeBeforeStop, session)) {
+        return [];
+      }
+
+      return [
+        this.buildStopControllerAction(session, ts, 'target_volume_reached'),
+      ];
+    }
+
+    if (activeTrackedOrders.length > 0) {
+      const oldestOrder = activeTrackedOrders[0];
+      const orderAge =
+        Date.now() - new Date(oldestOrder.createdAt).getTime();
+
+      if (orderAge < dualAccountConfig.OPTIMAL_MAKER_TIMEOUT_MS) {
+        return [];
+      }
+
+      this.logger.warn(
+        `Optimal dual-account volume ${session.strategyKey}: publishing cancel intent for timed-out maker order ${oldestOrder.orderId} age=${orderAge}ms`,
+      );
+
+      return [
+        this.buildCancelTrackedOrderAction(session, oldestOrder, ts, {
+          reason: 'maker_timeout',
+          orderAgeMs: orderAge,
+        }),
+      ];
+    }
+
+    return await this.getDualAccountPlanner().buildOptimalDualAccountVolumeActions(
+      session.strategyKey,
+      latestParams,
+      ts,
     );
   }
 
@@ -226,7 +309,6 @@ export class DualAccountVolumeStrategyController implements StrategyController {
     session: StrategyRuntimeSession,
     ts: string,
     selectionModel: 'classic' | 'best_capacity',
-    stopStrategyForUser: StrategyTickContext['stopStrategyForUser'],
   ): Promise<ExecutorAction[]> {
     const activeSession = this.getActiveSession(session.strategyKey);
     const persistedParams = (
@@ -249,10 +331,9 @@ export class DualAccountVolumeStrategyController implements StrategyController {
       };
     }
 
-    const activeTrackedOrders =
-      this.getTrackedOrderShutdown().getCancelableTrackedOrders(
-        session.strategyKey,
-      );
+    const activeTrackedOrders = this.getCancelableTrackedOrders(
+      session.strategyKey,
+    );
 
     if (activeTrackedOrders.length === 0) {
       latestParams = await this.finalizeSettledDualAccountCycle(
@@ -307,13 +388,9 @@ export class DualAccountVolumeStrategyController implements StrategyController {
         return [];
       }
 
-      await stopStrategyForUser(
-        session.userId,
-        session.clientId,
-        session.strategyType,
-      );
-
-      return [];
+      return [
+        this.buildStopControllerAction(session, ts, 'completed_cycles_reached'),
+      ];
     }
 
     if (targetQuoteVolume > 0 && tradedQuoteVolume >= targetQuoteVolume) {
@@ -327,13 +404,9 @@ export class DualAccountVolumeStrategyController implements StrategyController {
         return [];
       }
 
-      await stopStrategyForUser(
-        session.userId,
-        session.clientId,
-        session.strategyType,
-      );
-
-      return [];
+      return [
+        this.buildStopControllerAction(session, ts, 'target_volume_reached'),
+      ];
     }
 
     if (activeTrackedOrders.length > 0) {
@@ -405,12 +478,80 @@ export class DualAccountVolumeStrategyController implements StrategyController {
     return this.strategySessionRegistryService;
   }
 
-  private getTrackedOrderShutdown(): TrackedOrderShutdownService {
-    if (!this.trackedOrderShutdownService) {
-      throw new Error('TrackedOrderShutdownService is not available');
+  private getCancelableTrackedOrders(strategyKey: string): TrackedOrder[] {
+    if (!this.exchangeOrderTrackerService) {
+      throw new Error('ExchangeOrderTrackerService is not available');
     }
 
-    return this.trackedOrderShutdownService;
+    const trackedOrders =
+      this.exchangeOrderTrackerService.getTrackedOrders?.(strategyKey) ||
+      this.exchangeOrderTrackerService.getOpenOrders(strategyKey) ||
+      [];
+
+    return trackedOrders.filter(
+      (order) =>
+        order?.exchangeOrderId &&
+        !this.isTrackedOrderTerminal(String(order.status || '')),
+    );
+  }
+
+  private buildCancelTrackedOrderAction(
+    session: StrategyRuntimeSession,
+    order: TrackedOrder,
+    ts: string,
+    metadata: Record<string, unknown>,
+  ): ExecutorAction {
+    return {
+      type: 'CANCEL_ORDER',
+      intentId: `${session.strategyKey}:${ts}:cancel-${metadata.reason}-${order.exchangeOrderId}`,
+      runtimeInstanceKey: session.strategyKey,
+      strategyKey: session.strategyKey,
+      userId: session.userId,
+      clientId: session.clientId,
+      exchange: order.exchange,
+      accountLabel: order.accountLabel,
+      pair: order.pair,
+      side: order.side,
+      price: order.price,
+      qty: order.qty,
+      mixinOrderId: order.exchangeOrderId,
+      slotKey: order.slotKey,
+      metadata: {
+        ...metadata,
+        role: order.role,
+        exchangeOrderId: order.exchangeOrderId,
+        orderId: order.orderId,
+      },
+      createdAt: ts,
+    };
+  }
+
+  private buildStopControllerAction(
+    session: StrategyRuntimeSession,
+    ts: string,
+    reason: string,
+  ): ExecutorAction {
+    return {
+      type: 'STOP_CONTROLLER',
+      intentId: `${session.strategyKey}:${ts}:stop-${reason}`,
+      runtimeInstanceKey: session.strategyKey,
+      strategyKey: session.strategyKey,
+      userId: session.userId,
+      clientId: session.clientId,
+      exchange: '',
+      pair: '',
+      side: 'buy',
+      price: '0',
+      qty: '0',
+      metadata: { reason },
+      createdAt: ts,
+    };
+  }
+
+  private isTrackedOrderTerminal(status: string): boolean {
+    return ['filled', 'cancelled', 'failed'].includes(
+      String(status || '').toLowerCase(),
+    );
   }
 
   private getDualAccountPlanner(): DualAccountPlannerService {

@@ -38,10 +38,9 @@ export class EfficientDualAccountVolumeStrategyController
   }
 
   async decideActions(ctx: StrategyTickContext): Promise<ExecutorAction[]> {
-    return await this.getDualAccountVolumeStrategyController().buildDualAccountBestCapacityVolumeSessionActions(
+    return await this.getDualAccountVolumeStrategyController().buildOptimalDualAccountVolumeSessionActions(
       ctx.session,
       ctx.ts,
-      ctx.stopStrategyForUser,
     );
   }
 

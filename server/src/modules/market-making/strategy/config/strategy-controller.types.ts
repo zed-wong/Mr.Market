@@ -42,11 +42,6 @@ export type StrategyRuntimeSession = {
 export type StrategyTickContext = {
   session: StrategyRuntimeSession;
   ts: string;
-  stopStrategyForUser: (
-    userId: string,
-    clientId: string,
-    strategyType: StrategyType,
-  ) => Promise<void>;
 };
 
 export type StrategyControllerFacade = {

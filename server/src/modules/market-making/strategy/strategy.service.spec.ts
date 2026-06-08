@@ -111,6 +111,7 @@ describe('StrategyService', () => {
     listAll: jest.Mock;
     listInterruptedCreateIntents: jest.Mock;
     listInterruptedCancelIntents: jest.Mock;
+    getQueueState: jest.Mock;
     attachMixinOrderId: jest.Mock;
     updateIntentStatus: jest.Mock;
   };
@@ -404,6 +405,10 @@ describe('StrategyService', () => {
       listAll: jest.fn().mockResolvedValue([]),
       listInterruptedCreateIntents: jest.fn().mockResolvedValue([]),
       listInterruptedCancelIntents: jest.fn().mockResolvedValue([]),
+      getQueueState: jest.fn().mockResolvedValue({
+        blockedByFailure: false,
+        headIntentStatus: null,
+      }),
       attachMixinOrderId: jest.fn().mockResolvedValue(undefined),
       updateIntentStatus: jest.fn().mockResolvedValue(undefined),
     };
@@ -596,14 +601,6 @@ describe('StrategyService', () => {
     jest.clearAllMocks();
   });
 
-  const stopStrategyForUser = async (
-    userId: string,
-    clientId: string,
-    strategyType: any,
-  ) => {
-    await service.stopStrategyForUser(userId, clientId, strategyType);
-  };
-
   const pureMarketMakingCoordinator = () => ({
     getSession: (key: string) =>
       strategySessionRegistryService.sessions.get(key),
@@ -613,7 +610,6 @@ describe('StrategyService', () => {
       strategySessionRegistryService.getConnectorHealthStatus(exchange),
     setConnectorHealthStatus: (exchange: string, status: any) =>
       strategySessionRegistryService.setConnectorHealthStatus(exchange, status),
-    stopStrategyForUser,
     logger: (service as any).logger,
   });
 
@@ -1808,7 +1804,6 @@ describe('StrategyService', () => {
     await dualAccountVolumeStrategyController.buildDualAccountVolumeSessionActions(
       session as any,
       '2026-04-16T00:00:05.000Z',
-      stopStrategyForUser,
     );
 
     expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
@@ -1895,7 +1890,6 @@ describe('StrategyService', () => {
       expect.objectContaining({
         session: expect.objectContaining({ strategyKey }),
         ts: '2026-03-04T00:00:00.000Z',
-        stopStrategyForUser: expect.any(Function),
       }),
     );
 
@@ -2028,6 +2022,51 @@ describe('StrategyService', () => {
       'order-1-pureMarketMaking',
       expect.stringContaining('SIGTERM'),
     );
+  });
+
+  it('finalizes stopping strategies once tracked orders and intents are drained', async () => {
+    const strategyKey = 'user1-client1-dualAccountVolume';
+
+    (service as any).sessions.set(strategyKey, {
+      runId: 'run-stopping',
+      strategyKey,
+      strategyType: 'dualAccountVolume',
+      userId: 'user1',
+      clientId: 'client1',
+      cadenceMs: 1000,
+      nextRunAtMs: 0,
+      params: {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        pair: 'BTC/USDT',
+      },
+    });
+    mockStrategyInstanceRepository.find.mockResolvedValueOnce([
+      {
+        strategyKey,
+        userId: 'user1',
+        clientId: 'client1',
+        strategyType: 'dualAccountVolume',
+        status: 'stopping',
+        parameters: {},
+      },
+    ]);
+    exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([]);
+    strategyIntentStoreService.getQueueState.mockResolvedValueOnce({
+      blockedByFailure: false,
+      headIntentStatus: null,
+    });
+
+    await service.onTick('2026-06-08T00:00:00.000Z');
+
+    expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
+      { strategyKey },
+      expect.objectContaining({ status: 'stopped' }),
+    );
+    expect((service as any).sessions.has(strategyKey)).toBe(false);
+    expect(
+      strategyIntentStoreService.clearLatestIntentsForStrategy,
+    ).toHaveBeenCalledWith(strategyKey);
   });
 
   it('removes pooled executor session when stopping a strategy', async () => {
@@ -2568,7 +2607,6 @@ describe('StrategyService', () => {
       await dualAccountVolumeStrategyController.buildDualAccountVolumeSessionActions(
         session as any,
         '2026-03-11T00:00:00.000Z',
-        stopStrategyForUser,
       );
 
     expect(actions).toEqual([
@@ -2595,6 +2633,143 @@ describe('StrategyService', () => {
         parameters: expect.objectContaining({ publishedCycles: 1 }),
       }),
     );
+  });
+
+  it('returns a cancel intent instead of directly cancelling timed-out optimal dual-account maker orders', async () => {
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(20_000);
+    const session = {
+      runId: 'run-dual-timeout',
+      strategyKey: 'user1-client1-efficientDualAccountVolume',
+      strategyType: 'efficientDualAccountVolume',
+      userId: 'user1',
+      clientId: 'client1',
+      cadenceMs: 1000,
+      nextRunAtMs: 0,
+      marketMakingOrderId: 'mm-order-1',
+      params: {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        pair: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 1,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        targetQuoteVolume: 0,
+        publishedCycles: 1,
+        completedCycles: 0,
+      },
+    };
+
+    mockStrategyInstanceRepository.findOne.mockResolvedValue({
+      strategyKey: session.strategyKey,
+      parameters: session.params,
+    });
+    exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([
+      {
+        orderId: 'mm-order-1',
+        strategyKey: session.strategyKey,
+        exchange: 'binance',
+        accountLabel: 'maker',
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'maker-ex-1',
+        clientOrderId: 'client-maker-1',
+        slotKey: 'cycle-1-maker',
+        role: 'maker',
+        side: 'buy',
+        price: '100',
+        qty: '1',
+        cumulativeFilledQty: '0',
+        status: 'open',
+        createdAt: '1970-01-01T00:00:00.000Z',
+        updatedAt: '1970-01-01T00:00:00.000Z',
+      },
+    ]);
+
+    const actions =
+      await dualAccountVolumeStrategyController.buildOptimalDualAccountVolumeSessionActions(
+        session as any,
+        '2026-06-08T00:00:00.000Z',
+      );
+
+    expect(exchangeConnectorAdapterService.cancelOrder).not.toHaveBeenCalled();
+    expect(actions).toEqual([
+      expect.objectContaining({
+        type: 'CANCEL_ORDER',
+        intentId:
+          'user1-client1-efficientDualAccountVolume:2026-06-08T00:00:00.000Z:cancel-maker_timeout-maker-ex-1',
+        exchange: 'binance',
+        accountLabel: 'maker',
+        pair: 'BTC/USDT',
+        mixinOrderId: 'maker-ex-1',
+        metadata: expect.objectContaining({
+          reason: 'maker_timeout',
+          role: 'maker',
+          exchangeOrderId: 'maker-ex-1',
+          orderId: 'mm-order-1',
+        }),
+      }),
+    ]);
+
+    nowSpy.mockRestore();
+  });
+
+  it('returns a stop intent instead of directly stopping completed dual-account strategies', async () => {
+    const params = {
+      exchangeName: 'binance',
+      symbol: 'BTC/USDT',
+      pair: 'BTC/USDT',
+      baseIncrementPercentage: 0.1,
+      baseIntervalTime: 10,
+      baseTradeAmount: 1,
+      numTrades: 2,
+      userId: 'user1',
+      clientId: 'client1',
+      pricePushRate: 0,
+      executionCategory: 'clob_cex' as const,
+      executionVenue: 'cex' as const,
+      makerAccountLabel: 'maker',
+      takerAccountLabel: 'taker',
+      targetQuoteVolume: 0,
+      publishedCycles: 2,
+      completedCycles: 2,
+    };
+    const session = await registerPooledSession({
+      strategyKey: 'user1-client1-dualAccountVolume',
+      strategyType: 'dualAccountVolume',
+      userId: 'user1',
+      clientId: 'client1',
+      cadenceMs: 1000,
+      nextRunAtMs: 0,
+      params,
+    });
+
+    mockStrategyInstanceRepository.findOne.mockResolvedValue({
+      strategyKey: session.strategyKey,
+      parameters: params,
+    });
+    exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([]);
+
+    const actions =
+      await dualAccountVolumeStrategyController.buildDualAccountVolumeSessionActions(
+        session as any,
+        '2026-06-08T00:00:00.000Z',
+      );
+
+    expect(actions).toEqual([
+      expect.objectContaining({
+        type: 'STOP_CONTROLLER',
+        intentId:
+          'user1-client1-dualAccountVolume:2026-06-08T00:00:00.000Z:stop-completed_cycles_reached',
+        metadata: { reason: 'completed_cycles_reached' },
+      }),
+    ]);
   });
 
   it('preserves only hot-config fields while keeping runtime dual-account counters', async () => {
@@ -4062,22 +4237,16 @@ describe('StrategyService', () => {
       '2026-03-11T00:00:00.000Z',
     );
 
-    expect(actions).toEqual([]);
+    expect(actions).toEqual([
+      expect.objectContaining({
+        type: 'STOP_CONTROLLER',
+        metadata: { reason: 'runtime_reject_threshold' },
+      }),
+    ]);
     expect(buildQuotes).not.toHaveBeenCalled();
     expect(
       strategyIntentStoreService.cancelPendingIntents,
-    ).toHaveBeenCalledWith(
-      'order-1-pureMarketMaking',
-      'strategy stopped before intent execution',
-    );
-    expect(executorOrchestratorService.dispatchActions).toHaveBeenCalledWith(
-      'order-1-pureMarketMaking',
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: 'STOP_CONTROLLER',
-        }),
-      ]),
-    );
+    ).not.toHaveBeenCalled();
   });
 
   it('persists adaptive PMM decision snapshot metadata to execution history', async () => {
@@ -4616,26 +4785,20 @@ describe('StrategyService', () => {
         },
         '2026-03-11T00:00:00.000Z',
       ),
-    ).resolves.toEqual([]);
+    ).resolves.toEqual([
+      expect.objectContaining({
+        type: 'STOP_CONTROLLER',
+        metadata: { reason: 'realizedPnl=-25 threshold=10' },
+      }),
+    ]);
 
-    expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
+    expect(mockStrategyInstanceRepository.update).not.toHaveBeenCalledWith(
       { strategyKey: 'order-1-pureMarketMaking' },
       expect.objectContaining({ status: 'stopped' }),
     );
     expect(
       strategyIntentStoreService.cancelPendingIntents,
-    ).toHaveBeenCalledWith(
-      'order-1-pureMarketMaking',
-      'strategy stopped before intent execution',
-    );
-    expect(executorOrchestratorService.dispatchActions).toHaveBeenCalledWith(
-      'order-1-pureMarketMaking',
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: 'STOP_CONTROLLER',
-        }),
-      ]),
-    );
+    ).not.toHaveBeenCalled();
   });
 
   it('emits cancel actions for stale or far-drifted PMM orders', async () => {

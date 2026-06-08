@@ -57,11 +57,7 @@ export class VolumeStrategyController implements StrategyController {
   }
 
   async decideActions(ctx: StrategyTickContext): Promise<ExecutorAction[]> {
-    return await this.buildVolumeSessionActions(
-      ctx.session,
-      ctx.ts,
-      ctx.stopStrategyForUser,
-    );
+    return await this.buildVolumeSessionActions(ctx.session, ctx.ts);
   }
 
   async onActionsPublished(
@@ -139,7 +135,6 @@ export class VolumeStrategyController implements StrategyController {
   async buildVolumeSessionActions(
     session: StrategyRuntimeSession,
     ts: string,
-    stopStrategyForUser: StrategyTickContext['stopStrategyForUser'],
   ): Promise<ExecutorAction[]> {
     const params = session.params as VolumeStrategyParams;
     const executedTrades = Number(params.executedTrades || 0);
@@ -155,13 +150,9 @@ export class VolumeStrategyController implements StrategyController {
         return [];
       }
 
-      await stopStrategyForUser(
-        session.userId,
-        session.clientId,
-        session.strategyType,
-      );
-
-      return [];
+      return [
+        this.buildStopControllerAction(session, ts, 'completed_trades_reached'),
+      ];
     }
 
     if (params.executionCategory === 'amm_dex') {
@@ -617,6 +608,28 @@ export class VolumeStrategyController implements StrategyController {
     }
 
     return this.strategyInstanceRepository;
+  }
+
+  private buildStopControllerAction(
+    session: StrategyRuntimeSession,
+    ts: string,
+    reason: string,
+  ): ExecutorAction {
+    return {
+      type: 'STOP_CONTROLLER',
+      intentId: `${session.strategyKey}:${ts}:stop-${reason}`,
+      runtimeInstanceKey: session.strategyKey,
+      strategyKey: session.strategyKey,
+      userId: session.userId,
+      clientId: session.clientId,
+      exchange: '',
+      pair: '',
+      side: 'buy',
+      price: '0',
+      qty: '0',
+      metadata: { reason },
+      createdAt: ts,
+    };
   }
 
   private getStrategySessionRegistry(): StrategySessionRegistryService {

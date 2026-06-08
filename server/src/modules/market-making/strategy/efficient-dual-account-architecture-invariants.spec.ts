@@ -24,10 +24,20 @@ describe('Efficient Dual Account Volume architecture invariants', () => {
     ];
 
     for (const source of controllerSources) {
+      expect(source).not.toContain('TrackedOrderShutdownService');
+      expect(source).not.toContain('trackedOrderShutdownService');
+      expect(source).not.toContain('stopStrategyForUser');
+
       for (const forbiddenCall of forbiddenControllerCalls) {
         expect(source).not.toContain(forbiddenCall);
       }
     }
+
+    expect(
+      readSource(
+        'modules/market-making/strategy/config/strategy-controller.types.ts',
+      ),
+    ).not.toContain('stopStrategyForUser');
   });
 
   it('keeps direct exchange reads out of dual-account tick planning', () => {

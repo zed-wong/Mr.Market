@@ -328,6 +328,42 @@ export class StrategyIntentStoreService {
     return pendingIntents.length;
   }
 
+  async cancelPendingRiskIncreasingIntents(
+    strategyKey: string,
+    errorReason: string,
+  ): Promise<number> {
+    const pendingIntents = await this.strategyOrderIntentRepository.find({
+      where: {
+        strategyKey,
+        status: In(CANCELLABLE_INTENT_STATUSES),
+      },
+      order: {
+        createdAt: 'ASC',
+        intentId: 'ASC',
+      },
+    });
+    const cancellableIntents = pendingIntents.filter(
+      (intent) =>
+        intent.type !== 'STOP_CONTROLLER' && intent.type !== 'CANCEL_ORDER',
+    );
+
+    if (cancellableIntents.length === 0) {
+      return 0;
+    }
+
+    const updatedAt = getRFC3339Timestamp();
+
+    for (const intent of cancellableIntents) {
+      intent.status = 'CANCELLED';
+      intent.errorReason = errorReason;
+      intent.updatedAt = updatedAt;
+    }
+
+    await this.strategyOrderIntentRepository.save(cancellableIntents);
+
+    return cancellableIntents.length;
+  }
+
   private toIntentEntity(
     intent: StrategyOrderIntent,
     existingCreatedAt?: string,

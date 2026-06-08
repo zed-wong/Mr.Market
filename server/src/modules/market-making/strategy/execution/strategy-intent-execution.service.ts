@@ -131,7 +131,7 @@ export class StrategyIntentExecutionService {
     const parsedDualAccountInlineTakerMaxDelayMs = Number(
       this.configService.get(
         'strategy.dual_account_inline_taker_max_delay_ms',
-        1_000,
+        0,
       ),
     );
 
@@ -139,7 +139,7 @@ export class StrategyIntentExecutionService {
       Number.isFinite(parsedDualAccountInlineTakerMaxDelayMs) &&
       parsedDualAccountInlineTakerMaxDelayMs >= 0
         ? Math.floor(parsedDualAccountInlineTakerMaxDelayMs)
-        : 1_000;
+        : 0;
     if (
       this.dualAccountInlineTakerMaxDelayMs !==
       parsedDualAccountInlineTakerMaxDelayMs
@@ -649,6 +649,7 @@ export class StrategyIntentExecutionService {
         intent.type === 'STOP_EXECUTOR'
       ) {
         this.logger.log(`Received ${intent.type} for ${intent.strategyKey}`);
+        await this.handleStopControllerIntent(intent);
       }
 
       await this.strategyIntentStoreService?.updateIntentStatus(
@@ -844,6 +845,74 @@ export class StrategyIntentExecutionService {
     }
   }
 
+  private async handleStopControllerIntent(
+    intent: StrategyOrderIntent,
+  ): Promise<void> {
+    await this.strategyInstanceRepository?.update(
+      { strategyKey: intent.strategyKey },
+      { status: 'stopping', updatedAt: getRFC3339Timestamp() },
+    );
+
+    await this.strategyIntentStoreService?.cancelPendingRiskIncreasingIntents?.(
+      intent.strategyKey,
+      'strategy stopping before intent execution',
+    );
+
+    const cancelIntents = this.buildStopCancelIntents(intent);
+
+    if (cancelIntents.length > 0) {
+      await this.strategyIntentStoreService?.batchUpsertIntents(cancelIntents);
+    }
+  }
+
+  private buildStopCancelIntents(
+    intent: StrategyOrderIntent,
+  ): StrategyOrderIntent[] {
+    const trackedOrders =
+      this.exchangeOrderTrackerService?.getTrackedOrders(intent.strategyKey) ||
+      this.exchangeOrderTrackerService?.getOpenOrders(intent.strategyKey) ||
+      [];
+    const createdAt = getRFC3339Timestamp();
+
+    return trackedOrders
+      .filter(
+        (order) =>
+          order.exchangeOrderId &&
+          !this.isTrackedOrderTerminalStatus(String(order.status || '')),
+      )
+      .map((order) => ({
+        type: 'CANCEL_ORDER' as const,
+        intentId: `${intent.strategyKey}:${createdAt}:stop-cancel-${order.exchangeOrderId}`,
+        runtimeInstanceKey: intent.runtimeInstanceKey || intent.strategyKey,
+        strategyKey: intent.strategyKey,
+        userId: intent.userId,
+        clientId: intent.clientId,
+        exchange: order.exchange,
+        accountLabel: order.accountLabel,
+        pair: order.pair,
+        side: order.side,
+        price: order.price,
+        qty: order.qty,
+        mixinOrderId: order.exchangeOrderId,
+        slotKey: order.slotKey,
+        executionCategory: intent.executionCategory,
+        metadata: {
+          reason: 'strategy_stop',
+          stopIntentId: intent.intentId,
+          orderId: order.orderId,
+          role: order.role,
+        },
+        createdAt,
+        status: 'NEW' as const,
+      }));
+  }
+
+  private isTrackedOrderTerminalStatus(status: string): boolean {
+    return ['filled', 'cancelled', 'failed', 'external_missing'].includes(
+      String(status || '').toLowerCase(),
+    );
+  }
+
   private resolveApiKeyIdForIntent(
     intent: StrategyOrderIntent,
     order?: MarketMakingOrder,
@@ -1035,6 +1104,9 @@ export class StrategyIntentExecutionService {
       metadata: {
         ...metadata,
         role: 'taker',
+        orderId: metadata.baseOrderId
+          ? `${metadata.baseOrderId}:${takerAccountLabel}`
+          : metadata.orderId,
         makerOrderId: makerExchangeOrderId,
         makerIntentId: intent.intentId,
         trigger: 'maker_ack',
@@ -1727,6 +1799,13 @@ export class StrategyIntentExecutionService {
     });
 
     if (!strategyInstance || strategyInstance.status === 'running') {
+      return true;
+    }
+
+    if (
+      strategyInstance.status === 'stopping' &&
+      (intent.type === 'STOP_CONTROLLER' || intent.type === 'CANCEL_ORDER')
+    ) {
       return true;
     }
 

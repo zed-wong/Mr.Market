@@ -132,16 +132,6 @@ export class StrategyIntentWorkerService
         continue;
       }
 
-      const isStrategyRunning = await this.isStrategyRunning(strategyKey);
-
-      if (!isStrategyRunning) {
-        await this.strategyIntentStoreService.cancelPendingIntents(
-          strategyKey,
-          'strategy stopped before intent execution',
-        );
-        continue;
-      }
-
       const headIntent = await this.strategyIntentStoreService.getNextNewIntent(
         strategyKey,
       );
@@ -151,6 +141,16 @@ export class StrategyIntentWorkerService
       }
 
       if (this.inFlightIntentIds.has(headIntent.intentId)) {
+        continue;
+      }
+
+      const isIntentAllowed = await this.isIntentAllowedForStrategy(headIntent);
+
+      if (!isIntentAllowed) {
+        await this.strategyIntentStoreService.cancelPendingIntents(
+          strategyKey,
+          'strategy stopped before intent execution',
+        );
         continue;
       }
 
@@ -282,19 +282,28 @@ export class StrategyIntentWorkerService
     await new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  private async isStrategyRunning(strategyKey: string): Promise<boolean> {
+  private async isIntentAllowedForStrategy(
+    intent: StrategyOrderIntentEntity,
+  ): Promise<boolean> {
     if (!this.strategyInstanceRepository) {
       return true;
     }
 
     const strategyInstance = await this.strategyInstanceRepository.findOne({
-      where: { strategyKey },
+      where: { strategyKey: intent.strategyKey },
     });
 
     if (!strategyInstance) {
       return true;
     }
 
-    return strategyInstance.status === 'running';
+    if (strategyInstance.status === 'running') {
+      return true;
+    }
+
+    return (
+      strategyInstance.status === 'stopping' &&
+      (intent.type === 'STOP_CONTROLLER' || intent.type === 'CANCEL_ORDER')
+    );
   }
 }

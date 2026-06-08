@@ -562,7 +562,7 @@ describe('StrategyIntentWorkerService', () => {
   it('cancels pending intents for stopped strategies before dispatch', async () => {
     const strategyIntentStoreService = {
       listStrategyKeysWithNewIntents: jest.fn().mockResolvedValue(['s1']),
-      getNextNewIntent: jest.fn(),
+      getNextNewIntent: jest.fn().mockResolvedValue(createHeadIntent('s1', 'i1')),
       cancelPendingIntents: jest.fn().mockResolvedValue(2),
     };
     const strategyIntentExecutionService = {
@@ -592,5 +592,47 @@ describe('StrategyIntentWorkerService', () => {
     expect(
       strategyIntentExecutionService.consumeIntents,
     ).not.toHaveBeenCalled();
+  });
+
+  it('dispatches stop and cancel intents while a strategy is stopping', async () => {
+    const cancelIntent = {
+      ...createHeadIntent('s1', 'cancel-1'),
+      type: 'CANCEL_ORDER',
+      mixinOrderId: 'ex-1',
+    };
+    const strategyIntentStoreService = {
+      listStrategyKeysWithNewIntents: jest.fn().mockResolvedValue(['s1']),
+      getNextNewIntent: jest.fn().mockResolvedValue(cancelIntent),
+      cancelPendingIntents: jest.fn().mockResolvedValue(0),
+    };
+    const strategyIntentExecutionService = {
+      hasProcessedIntent: jest.fn().mockReturnValue(false),
+      consumeIntents: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const service = new StrategyIntentWorkerService(
+      createConfigService(),
+      {
+        findOne: jest.fn().mockResolvedValue({
+          strategyKey: 's1',
+          status: 'stopping',
+        }),
+      } as any,
+      strategyIntentStoreService as any,
+      strategyIntentExecutionService as any,
+    );
+
+    await service.onModuleInit();
+    await waitFor(
+      () => strategyIntentExecutionService.consumeIntents.mock.calls.length > 0,
+    );
+    await service.onModuleDestroy();
+
+    expect(
+      strategyIntentStoreService.cancelPendingIntents,
+    ).not.toHaveBeenCalled();
+    expect(strategyIntentExecutionService.consumeIntents).toHaveBeenCalledWith([
+      expect.objectContaining({ type: 'CANCEL_ORDER', intentId: 'cancel-1' }),
+    ]);
   });
 });

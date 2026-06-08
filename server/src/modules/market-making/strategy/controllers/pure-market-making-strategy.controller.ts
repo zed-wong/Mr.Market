@@ -44,11 +44,6 @@ export type PureMarketMakingCoordinator = {
     exchange: string,
     status: ConnectorHealthStatus,
   ): void;
-  stopStrategyForUser(
-    userId: string,
-    clientId: string,
-    strategyType: StrategyRuntimeSession['strategyType'],
-  ): Promise<void>;
   logger: Pick<CustomLogger, 'log' | 'warn'>;
 };
 
@@ -106,7 +101,7 @@ export class PureMarketMakingStrategyController implements StrategyController {
       ctx.session.strategyKey,
       ctx.session.params as unknown as PureMarketMakingStrategyDto,
       ctx.ts,
-      this.createCoordinator(ctx.stopStrategyForUser),
+      this.createCoordinator(),
     );
   }
 
@@ -131,8 +126,15 @@ export class PureMarketMakingStrategyController implements StrategyController {
       ? params.oracleExchangeName
       : params.exchangeName;
 
-    if (await this.shouldTriggerKillSwitch(strategyKey, params, coordinator)) {
-      return [];
+    const killSwitchStopAction = await this.maybeBuildKillSwitchStopAction(
+      strategyKey,
+      params,
+      ts,
+      coordinator,
+    );
+
+    if (killSwitchStopAction) {
+      return [killSwitchStopAction];
     }
 
     if (
@@ -159,11 +161,13 @@ export class PureMarketMakingStrategyController implements StrategyController {
         const session = coordinator.getSession(strategyKey);
 
         if (session) {
-          await coordinator.stopStrategyForUser(
-            session.userId,
-            session.clientId,
-            session.strategyType,
-          );
+          return [
+            this.buildStopControllerAction(
+              session,
+              ts,
+              'runtime_reject_threshold',
+            ),
+          ];
         }
 
         return [];
@@ -776,11 +780,12 @@ export class PureMarketMakingStrategyController implements StrategyController {
     return this.adaptivePmmStateService;
   }
 
-  private async shouldTriggerKillSwitch(
+  private async maybeBuildKillSwitchStopAction(
     strategyKey: string,
     params: PureMarketMakingStrategyDto,
+    ts: string,
     coordinator: PureMarketMakingCoordinator,
-  ): Promise<boolean> {
+  ): Promise<ExecutorAction | null> {
     const session = coordinator.getSession(strategyKey);
     const decision = this.killSwitchService?.evaluatePureMarketMaking(
       session,
@@ -788,19 +793,14 @@ export class PureMarketMakingStrategyController implements StrategyController {
     );
 
     if (!session || !decision?.triggered) {
-      return false;
+      return null;
     }
 
     coordinator.logger.warn(
       `Kill switch triggered for ${strategyKey}: ${decision.reason}`,
     );
-    await coordinator.stopStrategyForUser(
-      session.userId,
-      session.clientId,
-      session.strategyType,
-    );
 
-    return true;
+    return this.buildStopControllerAction(session, ts, decision.reason);
   }
 
   private async resolveOrderScopedInventoryRatio(
@@ -1097,9 +1097,29 @@ export class PureMarketMakingStrategyController implements StrategyController {
     );
   }
 
-  private createCoordinator(
-    stopStrategyForUser: StrategyTickContext['stopStrategyForUser'],
-  ): PureMarketMakingCoordinator {
+  private buildStopControllerAction(
+    session: StrategyRuntimeSession,
+    ts: string,
+    reason: string,
+  ): ExecutorAction {
+    return {
+      type: 'STOP_CONTROLLER',
+      intentId: `${session.strategyKey}:${ts}:stop-${reason}`,
+      runtimeInstanceKey: session.strategyKey,
+      strategyKey: session.strategyKey,
+      userId: session.userId,
+      clientId: session.clientId,
+      exchange: '',
+      pair: '',
+      side: 'buy',
+      price: '0',
+      qty: '0',
+      metadata: { reason },
+      createdAt: ts,
+    };
+  }
+
+  private createCoordinator(): PureMarketMakingCoordinator {
     const registry = this.getStrategySessionRegistry();
 
     return {
@@ -1109,7 +1129,6 @@ export class PureMarketMakingStrategyController implements StrategyController {
         registry.getConnectorHealthStatus(exchange),
       setConnectorHealthStatus: (exchange, status) =>
         registry.setConnectorHealthStatus(exchange, status),
-      stopStrategyForUser,
       logger: this.logger,
     };
   }
