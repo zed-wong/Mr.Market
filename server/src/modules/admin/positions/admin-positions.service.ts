@@ -15,11 +15,7 @@ const MAX_PAGE = 1000;
 const MAX_QUERY_LENGTH = 100;
 const MAX_TOKEN_LENGTH = 64;
 const METADATA_SCAN_LIMIT = 500;
-const ACTIVE_MARKET_MAKING_ORDER_STATES = new Set([
-  'created',
-  'running',
-  'paused',
-]);
+const ACTIVE_MARKET_MAKING_ORDER_STATES = new Set(['running']);
 const RISK_RELEVANT_TRACKED_ORDER_STATUSES = new Set([
   'pending_create',
   'open',

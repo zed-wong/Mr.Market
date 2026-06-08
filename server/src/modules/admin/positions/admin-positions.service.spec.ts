@@ -369,7 +369,7 @@ describe('AdminPositionsService', () => {
         updatedAt: ts(2),
       },
       {
-        orderId: 'deleted-order',
+        orderId: 'created-order',
         userId: 'user-1',
         assetId: 'USDT',
         available: '100',
@@ -378,13 +378,22 @@ describe('AdminPositionsService', () => {
         updatedAt: ts(3),
       },
       {
+        orderId: 'paused-order',
+        userId: 'user-1',
+        assetId: 'USDT',
+        available: '12',
+        locked: '1',
+        total: '13',
+        updatedAt: ts(4),
+      },
+      {
         orderId: 'terminal-tracked',
         userId: 'user-1',
         assetId: 'USDT',
         available: '30',
         locked: '20',
         total: '50',
-        updatedAt: ts(4),
+        updatedAt: ts(5),
       },
       {
         orderId: 'unmapped-orphan',
@@ -393,7 +402,7 @@ describe('AdminPositionsService', () => {
         available: '40',
         locked: '0',
         total: '40',
-        updatedAt: ts(5),
+        updatedAt: ts(6),
       },
     ];
     const { service, marketMakingOrders, trackedOrders } = buildService(
@@ -403,7 +412,8 @@ describe('AdminPositionsService', () => {
 
     marketMakingOrders.find.mockResolvedValueOnce([
       { orderId: 'active-order', state: 'running' },
-      { orderId: 'deleted-order', state: 'deleted' },
+      { orderId: 'created-order', state: 'created' },
+      { orderId: 'paused-order', state: 'paused' },
     ]);
     trackedOrders.find.mockImplementation(async (options?: any) => {
       if (options?.select?.includes('status')) {
@@ -415,7 +425,7 @@ describe('AdminPositionsService', () => {
             accountLabel: 'maker',
             pair: 'XIN/USDT',
             status: 'open',
-            updatedAt: ts(6),
+            updatedAt: ts(7),
           },
           {
             orderId: 'terminal-tracked',
@@ -424,7 +434,7 @@ describe('AdminPositionsService', () => {
             accountLabel: 'maker',
             pair: 'XIN/USDT',
             status: 'filled',
-            updatedAt: ts(7),
+            updatedAt: ts(8),
           },
         ];
       }
