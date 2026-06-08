@@ -35,6 +35,7 @@ import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { BalanceStateCacheService } from 'src/modules/market-making/balance-state/balance-state-cache.service';
 import { BalanceStateRefreshService } from 'src/modules/market-making/balance-state/balance-state-refresh.service';
 import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
+import { ExchangeConnectorAdapterService } from 'src/modules/market-making/execution/exchange-connector-adapter.service';
 import { BalanceLedgerService } from 'src/modules/market-making/ledger/balance-ledger.service';
 import { OrderReservationService } from 'src/modules/market-making/ledger/order-reservation.service';
 import { assertStrategyConfigOverridesSafe } from 'src/modules/market-making/strategy/config/strategy-config-override.guard';
@@ -226,6 +227,8 @@ export class AdminDirectMarketMakingService {
     @Optional()
     private readonly dualAccountPlannerService?: DualAccountPlannerService,
     @Optional()
+    private readonly exchangeConnectorAdapterService?: ExchangeConnectorAdapterService,
+    @Optional()
     @InjectRepository(StrategyInstance)
     private readonly strategyInstanceRepository?: Repository<StrategyInstance>,
     @Optional()
@@ -317,6 +320,14 @@ export class AdminDirectMarketMakingService {
         this.normalizeEfficientDirectConfig(resolvedConfig.resolvedConfig),
       );
     }
+    await this.preloadDirectTradingRules(
+      dto.exchangeName,
+      dto.pair,
+      executionAccounts.primary.accountLabel,
+      capabilities.directExecutionMode === 'dual_account'
+        ? executionAccounts.secondary?.accountLabel
+        : undefined,
+    );
     const primaryMarketSnapshot = await this.resolveDirectMarketSnapshot(
       dto.exchangeName,
       dto.pair,
@@ -470,6 +481,14 @@ export class AdminDirectMarketMakingService {
         this.normalizeEfficientDirectConfig(resolvedConfig),
       );
     }
+    await this.preloadDirectTradingRules(
+      order.exchangeName,
+      order.pair,
+      this.isDualAccountMode(order)
+        ? this.readMakerAccountLabel(order)
+        : this.readPrimaryAccountLabel(order),
+      this.isDualAccountMode(order) ? this.readTakerAccountLabel(order) : '',
+    );
     const primaryAccountLabel = this.isDualAccountMode(order)
       ? this.readMakerAccountLabel(order)
       : this.readPrimaryAccountLabel(order);
@@ -1483,6 +1502,29 @@ export class AdminDirectMarketMakingService {
     return this.dualAccountPlannerService.evaluateEfficientDualAccountReadiness(
       config as DualAccountVolumeStrategyParams,
     );
+  }
+
+  private async preloadDirectTradingRules(
+    exchangeName: string,
+    pair: string,
+    primaryAccountLabel: string,
+    secondaryAccountLabel?: string,
+  ): Promise<void> {
+    if (!this.exchangeConnectorAdapterService) {
+      return;
+    }
+
+    const accountLabels = [primaryAccountLabel, secondaryAccountLabel]
+      .map((value) => String(value || '').trim())
+      .filter((value, index, values) => value && values.indexOf(value) === index);
+
+    for (const accountLabel of accountLabels) {
+      await this.exchangeConnectorAdapterService.loadTradingRules(
+        exchangeName,
+        pair,
+        accountLabel,
+      );
+    }
   }
 
   private mapCampaignJoinError(error: unknown): HttpException {
