@@ -2001,7 +2001,7 @@ export class AdminDirectMarketMakingService {
     const cycleId =
       this.readTrimmedString(metadata.cycleId) ||
       (activeCycle &&
-      trackedOrder.orderId === activeCycle.orderId &&
+      this.isTrackedOrderInActiveCycle(trackedOrder, activeCycle) &&
       trackedOrder.role &&
       (trackedOrder.accountLabel === activeCycle.makerAccountLabel ||
         trackedOrder.accountLabel === activeCycle.takerAccountLabel)
@@ -2340,6 +2340,47 @@ export class AdminDirectMarketMakingService {
       makerFilledQty: this.readTrimmedString(cycle.makerFilledQty) || '0',
       takerFilledQty: this.readTrimmedString(cycle.takerFilledQty) || '0',
     };
+  }
+
+  private isTrackedOrderInActiveCycle(
+    trackedOrder: TrackedOrder,
+    activeCycle: NonNullable<ReturnType<AdminDirectMarketMakingService['readActiveCycle']>>,
+  ): boolean {
+    if (trackedOrder.orderId === activeCycle.orderId) {
+      return true;
+    }
+
+    const activeBaseOrderId = this.stripKnownAccountScope(
+      activeCycle.orderId,
+      [activeCycle.makerAccountLabel, activeCycle.takerAccountLabel],
+    );
+    const trackedBaseOrderId = this.stripKnownAccountScope(
+      trackedOrder.orderId,
+      [activeCycle.makerAccountLabel, activeCycle.takerAccountLabel],
+    );
+
+    return Boolean(
+      activeBaseOrderId &&
+        trackedBaseOrderId &&
+        activeBaseOrderId !== activeCycle.orderId &&
+        trackedBaseOrderId !== trackedOrder.orderId &&
+        activeBaseOrderId === trackedBaseOrderId,
+    );
+  }
+
+  private stripKnownAccountScope(
+    orderId: string,
+    accountLabels: Array<string | undefined>,
+  ): string {
+    const matchedAccountLabel = accountLabels.find(
+      (accountLabel) => accountLabel && orderId.endsWith(`:${accountLabel}`),
+    );
+
+    if (!matchedAccountLabel) {
+      return orderId;
+    }
+
+    return orderId.slice(0, -1 * (`:${matchedAccountLabel}`.length));
   }
 
   private readCycleMetadata(value: unknown): Record<string, unknown> {
@@ -2940,6 +2981,13 @@ export class AdminDirectMarketMakingService {
 
     for (const accountLabel of accountLabels) {
       const scopedOrderId = `${order.orderId}:${accountLabel}`;
+      const existingScopedEntries =
+        await this.balanceLedgerService.findByOrderId(scopedOrderId);
+
+      if (existingScopedEntries.length > 0) {
+        continue;
+      }
+
       const snapshot = await this.resolveDirectMarketSnapshot(
         order.exchangeName,
         order.pair,

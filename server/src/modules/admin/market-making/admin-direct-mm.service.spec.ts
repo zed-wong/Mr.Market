@@ -223,6 +223,7 @@ describe('AdminDirectMarketMakingService', () => {
     };
     const balanceLedgerService = options?.balanceLedgerService || {
       hasDepositCredit: jest.fn().mockResolvedValue(false),
+      findByOrderId: jest.fn().mockResolvedValue([]),
       creditDeposit: jest.fn().mockResolvedValue({ applied: true }),
       getExistingBalance: jest.fn().mockResolvedValue(null),
       unlockFunds: jest.fn().mockResolvedValue({ applied: true }),
@@ -374,6 +375,7 @@ describe('AdminDirectMarketMakingService', () => {
     const freshnessTimestamp = new Date().toISOString();
     const balanceLedgerService = {
       hasDepositCredit: jest.fn().mockResolvedValue(false),
+      findByOrderId: jest.fn().mockResolvedValue([]),
       creditDeposit: jest.fn().mockResolvedValue({ applied: true }),
       getExistingBalance: jest.fn().mockResolvedValue(null),
       unlockFunds: jest.fn().mockResolvedValue({ applied: true }),
