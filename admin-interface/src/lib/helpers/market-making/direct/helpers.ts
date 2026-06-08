@@ -148,6 +148,8 @@ export function getDirectOrderActionAvailability(
   const isPersistedStopped = persistedState === "stopped";
   const isPersistedPaused = persistedState === "paused";
   const isPersistedFailed = persistedState === "failed";
+  const isGoneRunningOrder =
+    persistedState === "running" && effectiveRuntimeState === "gone";
   const canStop =
     !isPersistedPaused &&
     !isPersistedStopped &&
@@ -157,7 +159,7 @@ export function getDirectOrderActionAvailability(
   return {
     canStop,
     canResume: isPersistedStopped || isPersistedPaused,
-    canRemove: isPersistedStopped || isPersistedFailed,
+    canRemove: isPersistedStopped || isPersistedFailed || isGoneRunningOrder,
   };
 }
 
@@ -288,6 +290,19 @@ export const EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE =
 export const EFFICIENT_DUAL_ACCOUNT_STRATEGY_KEY =
   "efficient-dual-account-volume";
 
+const EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPES = new Set([
+  EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE,
+  "optimalDualAccountVolume",
+]);
+
+const EFFICIENT_DUAL_ACCOUNT_STRATEGY_KEYS = new Set([
+  EFFICIENT_DUAL_ACCOUNT_STRATEGY_KEY,
+  "efficient-dual-account-volume",
+  "efficient_dual_account_volume",
+  "optimal-dual-account-volume",
+  "optimal_dual_account_volume",
+]);
+
 const LEGACY_DUAL_ACCOUNT_CONTROLLER_TYPES = new Set([
   "dualAccountVolume",
   "dualAccountBestCapacityVolume",
@@ -372,7 +387,9 @@ export function buildDirectReadinessRefreshKey(
 export function isEfficientDualAccountControllerType(
   controllerType: unknown,
 ): boolean {
-  return controllerType === EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE;
+  return EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPES.has(
+    String(controllerType || ""),
+  );
 }
 
 export function isLegacyDualAccountControllerType(
@@ -385,11 +402,17 @@ export function isEfficientDualAccountStrategy(
   strategy: DirectStrategyOptionLike | null | undefined,
 ): boolean {
   if (!strategy) return false;
-  const key = normalizeDirectStrategyText(strategy.key).replace(/\s+/g, "-");
+  const key = String(strategy.key || "").trim();
+  const normalizedKey = normalizeDirectStrategyText(strategy.key).replace(
+    /\s+/g,
+    "-",
+  );
+  const name = normalizeDirectStrategyText(strategy.name);
   return (
-    strategy.controllerType === EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE ||
-    key === EFFICIENT_DUAL_ACCOUNT_STRATEGY_KEY ||
-    /efficient\s+dual\s+account\s+volume/i.test(strategy.name || "")
+    isEfficientDualAccountControllerType(strategy.controllerType) ||
+    EFFICIENT_DUAL_ACCOUNT_STRATEGY_KEYS.has(key) ||
+    EFFICIENT_DUAL_ACCOUNT_STRATEGY_KEYS.has(normalizedKey) ||
+    /(?:efficient|optimal)\s+dual\s+account\s+volume/i.test(name)
   );
 }
 
@@ -1354,5 +1377,3 @@ export function buildGenericSchemaConfigOverrides(
     {},
   );
 }
-
-

@@ -1151,6 +1151,31 @@ describe('AdminDirectMarketMakingService', () => {
     );
   });
 
+  it('removes a running direct order when its runtime executor is gone', async () => {
+    const { service, marketMakingRepository } = buildService();
+
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'order-1',
+      state: 'running',
+      source: 'admin_direct',
+      strategySnapshot: buildStrategySnapshot({}),
+    });
+
+    await expect(service.removeDirectOrder('order-1')).resolves.toEqual({
+      orderId: 'order-1',
+      state: 'removed',
+    });
+    expect(marketMakingRepository.update).toHaveBeenCalledWith(
+      {
+        orderId: 'order-1',
+        source: 'admin_direct',
+      },
+      {
+        state: 'deleted',
+      },
+    );
+  });
+
   it('cancels active tracked exchange orders before removing a stopped direct order', async () => {
     const {
       service,
@@ -1267,12 +1292,19 @@ describe('AdminDirectMarketMakingService', () => {
   });
 
   it('rejects removing a running direct order', async () => {
-    const { service, marketMakingRepository } = buildService();
+    const { service, marketMakingRepository, executorRegistry } =
+      buildService();
 
     marketMakingRepository.findOne.mockResolvedValue({
       orderId: 'order-1',
       state: 'running',
       source: 'admin_direct',
+    });
+    executorRegistry.findExecutorByOrderId.mockReturnValue({
+      getSession: jest.fn().mockReturnValue({
+        lastTickStartedAt: new Date().toISOString(),
+        cadenceMs: 1000,
+      }),
     });
 
     await expect(service.removeDirectOrder('order-1')).rejects.toThrow(
@@ -1628,11 +1660,19 @@ describe('AdminDirectMarketMakingService', () => {
       }),
     );
     expect(balanceLedgerService.getExistingBalance).toHaveBeenCalledWith(
-      'order-efficient',
+      'order-efficient:api-key-1',
       'BTC',
     );
     expect(balanceLedgerService.getExistingBalance).toHaveBeenCalledWith(
-      'order-efficient',
+      'order-efficient:api-key-1',
+      'USDT',
+    );
+    expect(balanceLedgerService.getExistingBalance).toHaveBeenCalledWith(
+      'order-efficient:api-key-2',
+      'BTC',
+    );
+    expect(balanceLedgerService.getExistingBalance).toHaveBeenCalledWith(
+      'order-efficient:api-key-2',
       'USDT',
     );
     expect(exchange.fetchBalance).not.toHaveBeenCalled();
@@ -1808,6 +1848,217 @@ describe('AdminDirectMarketMakingService', () => {
             linkedTrackedOrderId: 'taker-order',
           }),
         ]),
+      }),
+    ]);
+  });
+
+  it('shows planned taker leg from maker metadata before inline taker is dispatched', async () => {
+    const { service, marketMakingRepository, strategyService } = buildService();
+
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'order-planned-taker',
+      exchangeName: 'binance',
+      pair: 'BTC/USDT',
+      state: 'running',
+      source: 'admin_direct',
+      createdAt: '2026-04-01T00:00:00.000Z',
+      userId: 'admin-user',
+      apiKeyId: 'api-key-1',
+      strategySnapshot: buildStrategySnapshot(
+        {
+          exchangeName: 'binance',
+          symbol: 'BTC/USDT',
+          pair: 'BTC/USDT',
+          userId: 'admin-user',
+          clientId: 'order-planned-taker',
+          marketMakingOrderId: 'order-planned-taker',
+          makerAccountLabel: 'api-key-1',
+          takerAccountLabel: 'api-key-2',
+          makerApiKeyId: 'api-key-1',
+          takerApiKeyId: 'api-key-2',
+          mode: 'balanced',
+          strategyContract: 'efficientDualAccountVolume',
+        },
+        'efficientDualAccountVolume',
+      ),
+    });
+    strategyService.getLatestIntentsForStrategy.mockReturnValue([
+      {
+        intentId: 'maker-intent',
+        strategyKey: 'strategy-cycle',
+        accountLabel: 'api-key-1',
+        side: 'buy',
+        price: '100',
+        qty: '0.5',
+        status: 'SENT',
+        metadata: {
+          cycleId: 'cycle-runtime-1',
+          cycleRole: 'maker',
+          role: 'maker',
+          accountLabel: 'api-key-1',
+          side: 'buy',
+          plannedQty: '0.5',
+          plannedPrice: '100',
+          filledQty: '0',
+          notional: '50',
+          status: 'planned',
+          makerAccountLabel: 'api-key-1',
+          takerAccountLabel: 'api-key-2',
+        },
+      },
+    ]);
+
+    const result = await service.getDirectOrderStatus('order-planned-taker');
+
+    expect(result.cycles).toEqual([
+      expect.objectContaining({
+        cycleId: 'cycle-runtime-1',
+        aggregateStatus: 'pending',
+        legs: [
+          expect.objectContaining({
+            cycleRole: 'maker',
+            accountLabel: 'api-key-1',
+            side: 'buy',
+            plannedQty: '0.5',
+            plannedPrice: '100',
+          }),
+          expect.objectContaining({
+            cycleRole: 'taker',
+            accountLabel: 'api-key-2',
+            side: 'sell',
+            plannedQty: '0.5',
+            plannedPrice: '100',
+            filledQty: '0',
+            status: 'planned',
+            linkedIntentId: null,
+            linkedTrackedOrderId: null,
+          }),
+        ],
+      }),
+    ]);
+  });
+
+  it('derives completed cycle metrics from runtime legs for direct status', async () => {
+    const {
+      service,
+      marketMakingRepository,
+      strategyService,
+      exchangeOrderTrackerService,
+    } = buildService();
+
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'order-completed-cycle',
+      exchangeName: 'binance',
+      pair: 'BTC/USDT',
+      state: 'running',
+      source: 'admin_direct',
+      createdAt: '2026-04-01T00:00:00.000Z',
+      userId: 'admin-user',
+      apiKeyId: 'api-key-1',
+      strategySnapshot: buildStrategySnapshot(
+        {
+          exchangeName: 'binance',
+          symbol: 'BTC/USDT',
+          pair: 'BTC/USDT',
+          userId: 'admin-user',
+          clientId: 'order-completed-cycle',
+          marketMakingOrderId: 'order-completed-cycle',
+          makerAccountLabel: 'api-key-1',
+          takerAccountLabel: 'api-key-2',
+          makerApiKeyId: 'api-key-1',
+          takerApiKeyId: 'api-key-2',
+          maxOrderAmount: '0.5',
+          publishedCycles: 1,
+          completedCycles: 0,
+          tradedQuoteVolume: '0',
+          mode: 'balanced',
+          strategyContract: 'efficientDualAccountVolume',
+        },
+        'efficientDualAccountVolume',
+      ),
+    });
+    strategyService.getLatestIntentsForStrategy.mockReturnValue([
+      {
+        intentId: 'maker-intent',
+        strategyKey: 'strategy-cycle',
+        accountLabel: 'api-key-1',
+        side: 'buy',
+        price: '100',
+        qty: '0.5',
+        status: 'DONE',
+        metadata: {
+          cycleId: 'cycle-runtime-1',
+          cycleRole: 'maker',
+          role: 'maker',
+          accountLabel: 'api-key-1',
+          side: 'buy',
+          plannedQty: '0.5',
+          plannedPrice: '100',
+          takerAccountLabel: 'api-key-2',
+        },
+      },
+      {
+        intentId: 'maker-intent:inline-taker',
+        strategyKey: 'strategy-cycle',
+        accountLabel: 'api-key-2',
+        side: 'sell',
+        price: '100',
+        qty: '0.5',
+        status: 'DONE',
+        metadata: {
+          cycleId: 'cycle-runtime-1',
+          cycleRole: 'taker',
+          role: 'taker',
+          accountLabel: 'api-key-2',
+          side: 'sell',
+          plannedQty: '0.5',
+          plannedPrice: '100',
+        },
+      },
+    ]);
+    exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([
+      {
+        orderId: 'order-completed-cycle:api-key-1',
+        strategyKey: 'strategy-cycle',
+        exchange: 'binance',
+        accountLabel: 'api-key-1',
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'maker-order',
+        role: 'maker',
+        side: 'buy',
+        price: '100',
+        qty: '0.5',
+        cumulativeFilledQty: '0.5',
+        status: 'filled',
+        createdAt: '2026-04-01T00:00:01.000Z',
+        updatedAt: '2026-04-01T00:00:02.000Z',
+      },
+      {
+        orderId: 'order-completed-cycle:api-key-2',
+        strategyKey: 'strategy-cycle',
+        exchange: 'binance',
+        accountLabel: 'api-key-2',
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'taker-order',
+        role: 'taker',
+        side: 'sell',
+        price: '100',
+        qty: '0.5',
+        cumulativeFilledQty: '0.5',
+        status: 'filled',
+        createdAt: '2026-04-01T00:00:01.000Z',
+        updatedAt: '2026-04-01T00:00:03.000Z',
+      },
+    ]);
+
+    const result = await service.getDirectOrderStatus('order-completed-cycle');
+
+    expect(result.orderConfig.completedCycles).toBe(1);
+    expect(result.orderConfig.tradedQuoteVolume).toBe('50');
+    expect(result.cycles).toEqual([
+      expect.objectContaining({
+        cycleId: 'cycle-runtime-1',
+        aggregateStatus: 'completed',
       }),
     ]);
   });

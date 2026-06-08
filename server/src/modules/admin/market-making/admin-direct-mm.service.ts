@@ -560,7 +560,16 @@ export class AdminDirectMarketMakingService {
       throw new NotFoundException('Order not found');
     }
 
-    if (order.state !== 'stopped' && order.state !== 'failed') {
+    const canRemoveGoneRunningOrder =
+      order.state === 'running' &&
+      this.resolveExecutorHealth(this.getRuntimeSession(order.orderId)) ===
+        'gone';
+
+    if (
+      order.state !== 'stopped' &&
+      order.state !== 'failed' &&
+      !canRemoveGoneRunningOrder
+    ) {
       throw new BadRequestException(
         'Only stopped or failed orders can be removed',
       );
@@ -956,6 +965,23 @@ export class AdminDirectMarketMakingService {
       });
     }
 
+    const cycles = this.buildRuntimeCycleStatuses(
+      resolvedConfig,
+      intents,
+      trackedOrders,
+      durableRuntimeCycleSources.executionHistory,
+      queueState,
+    );
+    const runtimeCycleMetrics = this.computeRuntimeCycleMetrics(cycles);
+    const configuredPublishedCycles = this.readConfigNumber(
+      resolvedConfig.publishedCycles,
+    );
+    const configuredCompletedCycles = this.readConfigNumber(
+      resolvedConfig.completedCycles,
+    );
+    const configuredTradedQuoteVolume = this.readConfigString(
+      resolvedConfig.tradedQuoteVolume,
+    );
     const orderConfig = {
       orderAmount: this.readConfigString(
         resolvedConfig.orderAmount ??
@@ -988,11 +1014,20 @@ export class AdminDirectMarketMakingService {
       priceOffsetVariance: this.readConfigString(
         resolvedConfig.priceOffsetVariance,
       ),
-      publishedCycles: this.readConfigNumber(resolvedConfig.publishedCycles),
-      completedCycles: this.readConfigNumber(resolvedConfig.completedCycles),
-      tradedQuoteVolume: this.readConfigString(
-        resolvedConfig.tradedQuoteVolume,
-      ),
+      publishedCycles:
+        configuredPublishedCycles === null && cycles.length === 0
+          ? null
+          : Math.max(configuredPublishedCycles ?? 0, cycles.length),
+      completedCycles:
+        configuredCompletedCycles === null && cycles.length === 0
+          ? null
+          : Math.max(
+              configuredCompletedCycles ?? 0,
+              runtimeCycleMetrics.completedCycles,
+            ),
+      tradedQuoteVolume: runtimeCycleMetrics.tradedQuoteVolume.isGreaterThan(0)
+        ? runtimeCycleMetrics.tradedQuoteVolume.toFixed()
+        : configuredTradedQuoteVolume,
       realizedPnlQuote: this.readConfigString(resolvedConfig.realizedPnlQuote),
     };
 
@@ -1026,13 +1061,7 @@ export class AdminDirectMarketMakingService {
       recentErrors,
       orderConfig,
       readiness,
-      cycles: this.buildRuntimeCycleStatuses(
-        resolvedConfig,
-        intents,
-        trackedOrders,
-        durableRuntimeCycleSources.executionHistory,
-        queueState,
-      ),
+      cycles,
       spread,
       inventoryBalances,
       balanceCacheStatus,
@@ -1726,6 +1755,12 @@ export class AdminDirectMarketMakingService {
       if (leg) {
         this.upsertCycleLeg(groups, leg);
       }
+
+      const plannedTakerLeg = this.buildPlannedTakerLegFromMakerIntent(intent);
+
+      if (plannedTakerLeg) {
+        this.upsertCycleLeg(groups, plannedTakerLeg);
+      }
     }
 
     for (const trackedOrder of trackedOrders) {
@@ -1819,6 +1854,49 @@ export class AdminDirectMarketMakingService {
         intent.mixinOrderId ||
         this.readTrimmedString(metadata.linkedTrackedOrderId) ||
         null,
+    };
+  }
+
+  private buildPlannedTakerLegFromMakerIntent(
+    intent: StrategyOrderIntent,
+  ): DirectCycleLeg | null {
+    const metadata = this.readCycleMetadata(intent.metadata);
+    const cycleId = this.readTrimmedString(metadata.cycleId);
+    const cycleRole = this.readCycleRole(metadata.cycleRole || metadata.role);
+    const makerSide = this.readOrderSide(metadata.side || intent.side);
+    const takerAccountLabel = this.readTrimmedString(
+      metadata.takerAccountLabel,
+    );
+
+    if (
+      !cycleId ||
+      cycleRole !== 'maker' ||
+      !makerSide ||
+      !takerAccountLabel
+    ) {
+      return null;
+    }
+
+    const plannedQty =
+      this.readTrimmedString(metadata.plannedQty) || intent.qty || '0';
+    const plannedPrice =
+      this.readTrimmedString(metadata.plannedPrice) || intent.price || '0';
+
+    return {
+      cycleId,
+      cycleRole: 'taker',
+      accountLabel: takerAccountLabel,
+      side: makerSide === 'buy' ? 'sell' : 'buy',
+      plannedQty,
+      plannedPrice,
+      filledQty: '0',
+      notional:
+        this.readTrimmedString(metadata.notional) ||
+        this.computeCycleLegNotional(plannedQty, plannedPrice),
+      status: 'planned',
+      failureReason: null,
+      linkedIntentId: null,
+      linkedTrackedOrderId: null,
     };
   }
 
@@ -2124,6 +2202,54 @@ export class AdminDirectMarketMakingService {
     }
 
     return 'unknown';
+  }
+
+  private computeRuntimeCycleMetrics(cycles: DirectCycleStatus[]): {
+    completedCycles: number;
+    tradedQuoteVolume: BigNumber;
+  } {
+    let completedCycles = 0;
+    let tradedQuoteVolume = new BigNumber(0);
+
+    for (const cycle of cycles) {
+      if (cycle.aggregateStatus !== 'completed') {
+        continue;
+      }
+
+      const makerLeg = cycle.legs.find((leg) => leg.cycleRole === 'maker');
+      const takerLeg = cycle.legs.find((leg) => leg.cycleRole === 'taker');
+
+      if (!makerLeg || !takerLeg) {
+        continue;
+      }
+
+      completedCycles += 1;
+
+      const makerFilledQty = new BigNumber(makerLeg.filledQty || 0);
+      const takerFilledQty = new BigNumber(takerLeg.filledQty || 0);
+      const price = new BigNumber(
+        makerLeg.plannedPrice || takerLeg.plannedPrice || 0,
+      );
+
+      if (
+        !makerFilledQty.isFinite() ||
+        !takerFilledQty.isFinite() ||
+        !price.isFinite() ||
+        price.isLessThanOrEqualTo(0)
+      ) {
+        continue;
+      }
+
+      const matchedQty = BigNumber.min(makerFilledQty, takerFilledQty);
+
+      if (matchedQty.isGreaterThan(0)) {
+        tradedQuoteVolume = tradedQuoteVolume.plus(
+          matchedQty.multipliedBy(price),
+        );
+      }
+    }
+
+    return { completedCycles, tradedQuoteVolume };
   }
 
   private readActiveCycle(value: unknown): {
@@ -2752,6 +2878,70 @@ export class AdminDirectMarketMakingService {
       throw new BadRequestException(
         'Admin direct order requires available base or quote balance to seed ledger',
       );
+    }
+
+    await this.seedDualAccountScopedBalances(order);
+  }
+
+  private async seedDualAccountScopedBalances(
+    order: MarketMakingOrder,
+  ): Promise<void> {
+    if (!this.isDualAccountMode(order)) {
+      return;
+    }
+
+    const config = order.strategySnapshot?.resolvedConfig || {};
+    const makerAccountLabel = String(
+      config.makerAccountLabel || '',
+    ).trim();
+    const takerAccountLabel = String(
+      config.takerAccountLabel || '',
+    ).trim();
+
+    if (!makerAccountLabel || !takerAccountLabel) {
+      return;
+    }
+
+    const [baseAsset, quoteAsset] = this.parsePair(order.pair);
+    const accountLabels = [makerAccountLabel, takerAccountLabel];
+
+    for (const accountLabel of accountLabels) {
+      const scopedOrderId = `${order.orderId}:${accountLabel}`;
+      const snapshot = await this.resolveDirectMarketSnapshot(
+        order.exchangeName,
+        order.pair,
+        accountLabel,
+      );
+      const balance = snapshot.balance;
+      const baseFree = new BigNumber(balance?.free?.[baseAsset] ?? 0);
+      const quoteFree = new BigNumber(balance?.free?.[quoteAsset] ?? 0);
+      const allocations = [
+        { assetId: baseAsset, amount: baseFree },
+        { assetId: quoteAsset, amount: quoteFree },
+      ].filter(
+        (a) => a.assetId && a.amount.isFinite() && a.amount.isGreaterThan(0),
+      );
+
+      for (const allocation of allocations) {
+        const alreadyFunded = await this.balanceLedgerService.hasDepositCredit(
+          scopedOrderId,
+          allocation.assetId,
+        );
+
+        if (alreadyFunded) {
+          continue;
+        }
+
+        await this.balanceLedgerService.creditDeposit({
+          orderId: scopedOrderId,
+          userId: order.userId,
+          assetId: allocation.assetId,
+          amount: allocation.amount.toFixed(),
+          idempotencyKey: `admin-direct-seed:${scopedOrderId}:${allocation.assetId}`,
+          refType: 'admin_direct_seed',
+          refId: order.orderId,
+        });
+      }
     }
   }
 

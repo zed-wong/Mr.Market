@@ -139,7 +139,8 @@
     $: isBestCapacityStrategy =
         isBestCapacityDirectOrderControllerType(resolvedControllerType);
     $: isEfficientDualAccountStrategy =
-        isEfficientDualAccountControllerType(resolvedControllerType);
+        isEfficientDualAccountControllerType(resolvedControllerType) ||
+        Boolean(data?.cycles?.length && isDualAccountStrategy);
     $: isKnownStrategy = isKnownDirectStrategyControllerType(resolvedControllerType);
     $: skewBalances = data
         ? isDualAccountStrategy

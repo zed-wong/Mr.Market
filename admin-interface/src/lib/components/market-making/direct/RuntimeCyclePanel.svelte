@@ -41,6 +41,46 @@
         return "bg-base-content/5 text-base-content/70 border-base-300";
     }
 
+    function cycleHasFailure(cycle: DirectRuntimeCycle | null): boolean {
+        return Boolean(
+            cycle?.aggregateStatus?.toLowerCase() === "failed" ||
+                cycle?.failureReason ||
+                cycle?.legs?.some(
+                    (leg) =>
+                        leg.failureReason ||
+                        leg.status?.toLowerCase() === "failed",
+                ),
+        );
+    }
+
+    function compactCycleId(cycleId: string): string {
+        const parts = cycleId.split(":cycle:");
+
+        if (parts.length === 2) {
+            const [counter, ...rest] = parts[1].split(":");
+            const timestamp = rest.join(":");
+            const time = timestamp ? Date.parse(timestamp) : Number.NaN;
+
+            if (Number.isFinite(time)) {
+                return `cycle ${counter} · ${new Date(time).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                })}`;
+            }
+
+            return `cycle ${counter || parts[1]}`;
+        }
+
+        return cycleId;
+    }
+
+    function latestCycleLabel(cycle: DirectRuntimeCycle | null): string {
+        if (!cycle) return "No cycle metadata yet";
+
+        return `${compactCycleId(cycle.cycleId)} · ${cycle.aggregateStatus}`;
+    }
+
     function roleBadgeClass(role: DirectRuntimeCycleLeg["cycleRole"]): string {
         return role === "maker"
             ? "bg-primary/10 text-primary border-primary/20"
@@ -57,13 +97,26 @@
 
     $: cycles = normalizeDirectRuntimeCycles(data?.cycles ?? []);
     $: latestCycle = getLatestDirectRuntimeCycle(cycles);
+    $: newestFirstCycles = [...cycles].reverse();
     $: lifecycle = getDirectRuntimeLifecycleView({
         state: data?.state,
         runtimeState: data?.runtimeState,
         readiness: null,
         warnings,
     });
+    $: effectiveLifecycle = cycleHasFailure(latestCycle)
+        ? {
+              label: "Cycle failed",
+              tone: "error",
+              summary:
+                  latestCycle?.failureReason ||
+                  latestCycle?.legs?.find((leg) => leg.failureReason)
+                      ?.failureReason ||
+                  "The latest efficient volume cycle failed and needs operator attention.",
+          }
+        : lifecycle;
     $: cycleSizeLabel = data?.orderConfig?.orderAmount || "Not provided";
+    $: failedCycleCount = cycles.filter(cycleHasFailure).length;
 </script>
 
 <div
@@ -80,20 +133,20 @@
             </span>
         </div>
         <span
-            class="w-fit rounded-full border px-2 py-0.5 text-[10px] font-semibold capitalize {lifecycleBadgeClass(lifecycle.tone)}"
+            class="w-fit rounded-full border px-2 py-0.5 text-[10px] font-semibold capitalize {lifecycleBadgeClass(effectiveLifecycle.tone)}"
             data-testid="efficient-runtime-lifecycle"
         >
-            {lifecycle.label}
+            {effectiveLifecycle.label}
         </span>
     </div>
 
     <div class="mt-3 rounded-lg bg-base-200/40 p-3">
         <span class="text-xs font-semibold text-base-content block">
-            {lifecycle.summary}
+            {effectiveLifecycle.summary}
         </span>
     </div>
 
-    <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+    <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-4">
         <div class="rounded-lg border border-base-300 p-3">
             <span class="text-[10px] font-semibold text-base-content/45 block">
                 Current mode
@@ -114,8 +167,20 @@
             <span class="text-[10px] font-semibold text-base-content/45 block">
                 Latest cycle
             </span>
-            <span class="mt-1 text-sm font-bold text-base-content block" data-testid="efficient-runtime-latest-cycle">
-                {latestCycle ? `${latestCycle.cycleId} · ${latestCycle.aggregateStatus}` : "No cycle metadata yet"}
+            <span
+                class="mt-1 block max-w-full whitespace-normal break-words text-sm font-bold leading-tight text-base-content"
+                title={latestCycle?.cycleId || ""}
+                data-testid="efficient-runtime-latest-cycle"
+            >
+                {latestCycleLabel(latestCycle)}
+            </span>
+        </div>
+        <div class="rounded-lg border border-base-300 p-3">
+            <span class="text-[10px] font-semibold text-base-content/45 block">
+                Failed cycles
+            </span>
+            <span class="mt-1 text-sm font-bold text-base-content block" data-testid="efficient-runtime-failed-cycles">
+                {failedCycleCount}
             </span>
         </div>
     </div>
@@ -128,7 +193,7 @@
                 </span>
             </div>
         {:else}
-            {#each cycles as cycle}
+            {#each newestFirstCycles as cycle}
                 <div
                     class="rounded-xl border border-base-300 p-3"
                     data-testid={`efficient-runtime-cycle-${cycle.cycleId}`}

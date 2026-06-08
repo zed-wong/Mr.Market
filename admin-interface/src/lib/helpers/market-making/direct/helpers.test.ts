@@ -343,7 +343,7 @@ describe('getDirectOrderActionAvailability', () => {
     });
   });
 
-  it('does not infer removal from a derived gone runtime state', () => {
+  it('allows removal when a persisted running order has a gone runtime executor', () => {
     expect(
       getDirectOrderActionAvailability({
         state: 'running',
@@ -352,7 +352,7 @@ describe('getDirectOrderActionAvailability', () => {
     ).toEqual({
       canStop: true,
       canResume: false,
-      canRemove: false,
+      canRemove: true,
     });
   });
 
@@ -528,7 +528,12 @@ describe('direct controller helpers', () => {
     expect(
       isDualDirectOrderControllerType('dualAccountBestCapacityVolume'),
     ).toBe(true);
-    expect(isDualDirectOrderControllerType(EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE)).toBe(true);
+    expect(
+      isDualDirectOrderControllerType(EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE),
+    ).toBe(true);
+    expect(isDualDirectOrderControllerType('optimalDualAccountVolume')).toBe(
+      true,
+    );
     expect(isDualDirectOrderControllerType('pureMarketMaking')).toBe(false);
   });
 
@@ -542,6 +547,9 @@ describe('direct controller helpers', () => {
       isBestCapacityDirectOrderControllerType(
         EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE,
       ),
+    ).toBe(true);
+    expect(
+      isBestCapacityDirectOrderControllerType('optimalDualAccountVolume'),
     ).toBe(true);
     expect(isBestCapacityDirectOrderControllerType('dualAccountVolume')).toBe(
       false,
@@ -566,6 +574,7 @@ describe('direct controller helpers', () => {
       { id: 'legacy-best', key: 'dual-account-best-capacity-volume', name: 'dual account volume best capacity', controllerType: 'dualAccountBestCapacityVolume' },
       { id: 'pmm', key: 'pure-market-making', name: 'Pure Market Making', controllerType: 'pureMarketMaking' },
       { id: 'efficient', key: 'efficient-dual-account-volume', name: 'Efficient Dual Account Volume', controllerType: EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE },
+      { id: 'optimal', key: 'optimal-dual-account-volume', name: 'Optimal Dual Account Volume', controllerType: 'optimalDualAccountVolume' },
     ];
 
     expect(filterDirectCreateStrategies(strategies).map((strategy) => strategy.id)).toEqual([
@@ -573,6 +582,7 @@ describe('direct controller helpers', () => {
       'legacy-best',
       'pmm',
       'efficient',
+      'optimal',
     ]);
   });
 
