@@ -28,6 +28,7 @@ export class BalanceRefreshScheduler implements OnModuleInit, OnModuleDestroy {
   private running = false;
   private stopped = false;
   private readonly logger = new CustomLogger(BalanceRefreshScheduler.name);
+  private readonly mmLog = this.logger.marketMaking();
   private readonly dueAtByKey = new Map<string, number>();
   private readonly detachListeners: Array<() => void> = [];
   private lastRegisteredSnapshot = '';
@@ -272,16 +273,19 @@ export class BalanceRefreshScheduler implements OnModuleInit, OnModuleDestroy {
     accounts: RegisteredBalanceAccount[],
     nowMs: number,
   ): void {
-    this.logger.log(
-      `registeredAccounts nowMs=${nowMs} accounts=${accounts
+    this.mmLog.debug('balance accounts registered', {
+      scope: 'balance_refresh_scheduler',
+      count: accounts.length,
+      nowMs,
+      accounts: accounts
         .map((account) => {
           const key = this.toKey(account.exchange, account.accountLabel);
           const dueAt = this.dueAtByKey.get(key);
 
           return `${key}(dueAt=${dueAt ?? 'unset'})`;
         })
-        .join(', ')}`,
-    );
+        .join(','),
+    });
   }
 
   private logDueSelection(
@@ -289,17 +293,20 @@ export class BalanceRefreshScheduler implements OnModuleInit, OnModuleDestroy {
     selected: RegisteredBalanceAccount[],
     nowMs: number,
   ): void {
-    this.logger.log(
-      `dueSelection nowMs=${nowMs} candidates=${dueCandidates
+    this.mmLog.debug('balance refresh due selection', {
+      scope: 'balance_refresh_scheduler',
+      candidates: dueCandidates
         .map((account) => {
           const key = this.toKey(account.exchange, account.accountLabel);
 
           return `${key}(dueAt=${this.dueAtByKey.get(key) ?? 'unset'})`;
         })
-        .join(', ')} selected=${selected
+        .join(','),
+      selected: selected
         .map((account) => this.toKey(account.exchange, account.accountLabel))
-        .join(', ')}`,
-    );
+        .join(','),
+      nowMs,
+    });
   }
 
   private logMarkDue(
@@ -307,10 +314,12 @@ export class BalanceRefreshScheduler implements OnModuleInit, OnModuleDestroy {
     existingDueAt: number | undefined,
     nowMs: number,
   ): void {
-    this.logger.log(
-      `markDue key=${key} existingDueAt=${existingDueAt ?? 'unset'} newDueAt=${
-        this.dueAtByKey.get(key) ?? 'unset'
-      } nowMs=${nowMs}`,
-    );
+    this.mmLog.debug('balance refresh marked due', {
+      scope: 'balance_refresh_scheduler',
+      key,
+      existingDueAt: existingDueAt ?? 'unset',
+      newDueAt: this.dueAtByKey.get(key) ?? 'unset',
+      nowMs,
+    });
   }
 }

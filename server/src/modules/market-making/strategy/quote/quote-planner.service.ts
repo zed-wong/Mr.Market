@@ -16,6 +16,7 @@ type QuotePlanBalance = {
 @Injectable()
 export class QuotePlannerService {
   private readonly logger = new CustomLogger(QuotePlannerService.name);
+  private readonly mmLog = this.logger.marketMaking();
   private readonly cancelBudgetUsageByStrategySecond = new Map<
     string,
     number
@@ -123,10 +124,21 @@ export class QuotePlannerService {
         minByAmount.isFinite() ? minByAmount : 0,
       );
     } catch (error) {
-      this.logger.warn(
-        `Cannot resolve min order notional for ${exchangeName} ${pair}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+      this.mmLog.warn(
+        'quote blocked',
+        {
+          reason: 'trading_rules_unavailable',
+          exchange: exchangeName,
+          pair,
+          account: accountLabel || 'default',
+          error: error instanceof Error ? error.message : String(error),
+        },
+        {
+          onceKey: `quote-min-notional:${exchangeName}:${pair}:${
+            accountLabel || 'default'
+          }`,
+          windowMs: 60_000,
+        },
       );
 
       return new BigNumber(0);
@@ -232,9 +244,11 @@ export class QuotePlannerService {
       Number(cancelBudgetPerSec) > 0 &&
       !this.consumeCancelBudget(strategyKey, ts, Number(cancelBudgetPerSec))
     ) {
-      this.logger.log(
-        `[${strategyKey}] reason=cancel_budget_exhausted mixinOrderId=${action.mixinOrderId}`,
-      );
+      this.mmLog.debug('quote skipped', {
+        reason: 'cancel_budget_exhausted',
+        strategy: strategyKey,
+        order: action.mixinOrderId,
+      });
 
       return;
     }
@@ -311,8 +325,22 @@ export class QuotePlannerService {
     }
 
     if (!availableBalances) {
-      this.logger.warn(
-        `[${strategyKey}] reason=insufficient_balance slotKey=${slotKey} ${side} ${rawQty.toFixed()}@${rawPrice.toFixed()}: available balances unavailable for ${exchangeName} ${pair}`,
+      this.mmLog.warn(
+        'quote blocked',
+        {
+          reason: 'balance_unavailable',
+          strategy: strategyKey,
+          exchange: exchangeName,
+          pair,
+          account: accountLabel || 'default',
+          side,
+          slot: slotKey,
+          required: rawQty.multipliedBy(rawPrice).toFixed(),
+        },
+        {
+          onceKey: `quote-balance-unavailable:${strategyKey}:${slotKey}`,
+          windowMs: 60_000,
+        },
       );
 
       return null;
@@ -362,11 +390,18 @@ export class QuotePlannerService {
           }`,
         );
       }
-      this.logger.warn(
-        `[${strategyKey}] reason=insufficient_balance slotKey=${slotKey} ${side} ${rawQty.toFixed()}@${rawPrice.toFixed()}: ${rejectionReasons.join(
-          '; ',
-        )}`,
-      );
+      this.mmLog.debug('quote filtered', {
+        reason: 'min_order_rejected',
+        strategy: strategyKey,
+        exchange: exchangeName,
+        pair,
+        account: accountLabel || 'default',
+        side,
+        slot: slotKey,
+        required: rawNotional.toFixed(),
+        asset: availableBalances.assets.quote,
+        details: rejectionReasons.join('; '),
+      });
 
       return null;
     }
@@ -382,11 +417,17 @@ export class QuotePlannerService {
         accountLabel,
       );
     } catch (error) {
-      this.logger.warn(
-        `[${strategyKey}] reason=quantization_rejected slotKey=${slotKey} ${side} ${rawQty.toFixed()}@${rawPrice.toFixed()}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      this.mmLog.debug('quote filtered', {
+        reason: 'quantization_rejected',
+        strategy: strategyKey,
+        exchange: exchangeName,
+        pair,
+        account: accountLabel || 'default',
+        side,
+        slot: slotKey,
+        required: rawQty.multipliedBy(rawPrice).toFixed(),
+        error: error instanceof Error ? error.message : String(error),
+      });
 
       return null;
     }
@@ -434,11 +475,18 @@ export class QuotePlannerService {
           }`,
         );
       }
-      this.logger.warn(
-        `[${strategyKey}] reason=insufficient_balance slotKey=${slotKey} ${side} ${rawQty.toFixed()}@${rawPrice.toFixed()}: ${rejectionReasons.join(
-          '; ',
-        )}`,
-      );
+      this.mmLog.debug('quote filtered', {
+        reason: 'min_order_rejected',
+        strategy: strategyKey,
+        exchange: exchangeName,
+        pair,
+        account: accountLabel || 'default',
+        side,
+        slot: slotKey,
+        required: qty.multipliedBy(price).toFixed(),
+        asset: availableBalances.assets.quote,
+        details: rejectionReasons.join('; '),
+      });
 
       return null;
     }
@@ -446,19 +494,47 @@ export class QuotePlannerService {
     const notional = qty.multipliedBy(price);
 
     if (side === 'buy' && quote.isLessThan(notional)) {
-      this.logger.warn(
-        `[${strategyKey}] reason=insufficient_balance slotKey=${slotKey} ${side} ${qty.toFixed()}@${price.toFixed()}: insufficient quote balance ${quote.toFixed()} ${
-          availableBalances.assets.quote
-        } < required ${notional.toFixed()}`,
+      this.mmLog.warn(
+        'quote blocked',
+        {
+          reason: 'insufficient_balance',
+          strategy: strategyKey,
+          exchange: exchangeName,
+          pair,
+          account: accountLabel || 'default',
+          side,
+          slot: slotKey,
+          required: notional.toFixed(),
+          available: quote.toFixed(),
+          asset: availableBalances.assets.quote,
+        },
+        {
+          onceKey: `quote-insufficient-balance:${strategyKey}:${slotKey}:buy`,
+          windowMs: 60_000,
+        },
       );
 
       return null;
     }
     if (side === 'sell' && base.isLessThan(qty)) {
-      this.logger.warn(
-        `[${strategyKey}] reason=insufficient_balance slotKey=${slotKey} ${side} ${qty.toFixed()}@${price.toFixed()}: insufficient base balance ${base.toFixed()} ${
-          availableBalances.assets.base
-        } < required ${qty.toFixed()}`,
+      this.mmLog.warn(
+        'quote blocked',
+        {
+          reason: 'insufficient_balance',
+          strategy: strategyKey,
+          exchange: exchangeName,
+          pair,
+          account: accountLabel || 'default',
+          side,
+          slot: slotKey,
+          required: qty.toFixed(),
+          available: base.toFixed(),
+          asset: availableBalances.assets.base,
+        },
+        {
+          onceKey: `quote-insufficient-balance:${strategyKey}:${slotKey}:sell`,
+          windowMs: 60_000,
+        },
       );
 
       return null;

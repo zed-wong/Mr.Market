@@ -8,6 +8,7 @@ import { StrategyIntentStoreService } from '../execution/strategy-intent-store.s
 @Injectable()
 export class ExecutorOrchestratorService {
   private readonly logger = new CustomLogger(ExecutorOrchestratorService.name);
+  private readonly mmLog = this.logger.marketMaking();
 
   constructor(
     @Optional()
@@ -31,33 +32,35 @@ export class ExecutorOrchestratorService {
       const role = this.readMetadataString(intent, 'role') || 'unknown';
       const tickId = this.readMetadataString(intent, 'tickId') || 'n/a';
 
-      this.logger.log(
-        [
-          'Intent published',
-          `type=${intent.type}`,
-          `strategy=${strategyKey}`,
-          `cycle=${cycleId}`,
-          `tick=${tickId}`,
-          `role=${role}`,
-          `side=${intent.side}`,
-          `qty=${intent.qty}`,
-          `price=${intent.price}`,
-          `exchange=${intent.exchange}`,
-          `pair=${intent.pair}`,
-          `account=${intent.accountLabel || 'default'}`,
-          'driver=worker',
-        ].join(' | '),
-      );
+      this.mmLog.debug('intent published', {
+        strategy: strategyKey,
+        exchange: intent.exchange,
+        pair: intent.pair,
+        account: intent.accountLabel || 'default',
+        side: intent.side,
+        driver: 'worker',
+        type: intent.type,
+        cycle: cycleId,
+        tick: tickId,
+        role,
+        qty: intent.qty,
+        price: intent.price,
+      });
     }
 
-    this.logger.log(
-      [
-        'Intent batch published',
-        `strategy=${strategyKey}`,
-        `count=${intents.length}`,
-        'driver=worker',
-      ].join(' | '),
-    );
+    const firstIntent = intents[0];
+
+    this.mmLog.info('intents published', {
+      strategy: strategyKey,
+      exchange: firstIntent?.exchange,
+      pair: firstIntent?.pair,
+      account: firstIntent?.accountLabel || 'default',
+      creates: intents.filter((intent) => intent.type === 'CREATE_LIMIT_ORDER')
+        .length,
+      cancels: intents.filter((intent) => intent.type === 'CANCEL_ORDER').length,
+      actions: intents.length,
+      driver: 'worker',
+    });
 
     return intents;
   }

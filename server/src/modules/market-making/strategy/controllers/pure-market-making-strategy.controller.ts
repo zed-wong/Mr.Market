@@ -1,7 +1,10 @@
 import { Injectable, Optional } from '@nestjs/common';
 import BigNumber from 'bignumber.js';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
-import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+import {
+  CustomLogger,
+  MarketMakingLogger,
+} from 'src/modules/infrastructure/logger/logger.service';
 
 import { OrderScopedBalanceQueryService } from '../../balance-state/order-scoped-balance-query.service';
 import { KillSwitchService } from '../../risk/kill-switch.service';
@@ -44,7 +47,7 @@ export type PureMarketMakingCoordinator = {
     exchange: string,
     status: ConnectorHealthStatus,
   ): void;
-  logger: Pick<CustomLogger, 'log' | 'warn'>;
+  logger: Pick<CustomLogger, 'log' | 'warn' | 'marketMaking'>;
 };
 
 @Injectable()
@@ -120,6 +123,7 @@ export class PureMarketMakingStrategyController implements StrategyController {
     ts: string,
     coordinator: PureMarketMakingCoordinator,
   ): Promise<ExecutorAction[]> {
+    const mmLog = this.getCoordinatorMmLog(coordinator);
     const actions: ExecutorAction[] = [];
     const cancelledExchangeOrderIds = new Set<string>();
     const priceExchange = params.oracleExchangeName
@@ -155,9 +159,15 @@ export class PureMarketMakingStrategyController implements StrategyController {
         maxConsecutiveRejects > 0 &&
         pressure.rejectCount >= maxConsecutiveRejects
       ) {
-        coordinator.logger.warn(
-          `Kill switch triggered for ${strategyKey}: ${pressure.rejectCount} recent intent failures within observation window (threshold ${maxConsecutiveRejects})`,
-        );
+        mmLog.error('strategy stopped', {
+          reason: 'runtime_reject_threshold',
+          strategy: strategyKey,
+          exchange: params.exchangeName,
+          pair: params.pair,
+          account: params.accountLabel || 'default',
+          count: pressure.rejectCount,
+          threshold: maxConsecutiveRejects,
+        });
         const session = coordinator.getSession(strategyKey);
 
         if (session) {
@@ -202,8 +212,21 @@ export class PureMarketMakingStrategyController implements StrategyController {
         ts,
         liveOrders,
       );
-      coordinator.logger.warn(
-        `Skipping creates for ${strategyKey}: tracked price source unavailable for ${priceExchange} ${params.pair}; emitted ${actions.length} cancel action(s)`,
+      mmLog.warn(
+        'strategy blocked',
+        {
+          reason: 'price_source_unavailable',
+          strategy: strategyKey,
+          exchange: params.exchangeName,
+          pair: params.pair,
+          account: params.accountLabel || 'default',
+          actions: actions.length,
+          referenceExchange: priceExchange,
+        },
+        {
+          onceKey: `pmm-price-source-unavailable:${strategyKey}`,
+          windowMs: 60_000,
+        },
       );
 
       return actions;
@@ -224,8 +247,21 @@ export class PureMarketMakingStrategyController implements StrategyController {
         ts,
         liveOrders,
       );
-      coordinator.logger.warn(
-        `Skipping creates for ${strategyKey}: stale tracked market data for reference=${priceExchange} execution=${params.exchangeName} ${params.pair}; emitted ${actions.length} cancel action(s)`,
+      mmLog.warn(
+        'strategy blocked',
+        {
+          reason: 'order_book_stale',
+          strategy: strategyKey,
+          exchange: params.exchangeName,
+          pair: params.pair,
+          account: params.accountLabel || 'default',
+          actions: actions.length,
+          referenceExchange: priceExchange,
+        },
+        {
+          onceKey: `pmm-order-book-stale:${strategyKey}`,
+          windowMs: 60_000,
+        },
       );
 
       return actions;
@@ -479,15 +515,19 @@ export class PureMarketMakingStrategyController implements StrategyController {
         })
       : this.getQuotePlanner().buildLegacyQuotes(params, priceSource);
 
-    coordinator.logger.log(
-      `[${strategyKey}] midPrice=${priceSource.toFixed()} bidSpread=${
-        warmupState.bidSpread
-      } pressureWiden=${runtimePressureWiden} askSpread=${
-        warmupState.askSpread
-      } layers=${effectiveNumberOfLayers} liveBuys=${
-        liveOrdersBySide.buy
-      } liveSells=${liveOrdersBySide.sell}`,
-    );
+    mmLog.debug('strategy decision', {
+      strategy: strategyKey,
+      exchange: params.exchangeName,
+      pair: params.pair,
+      account: params.accountLabel || 'default',
+      layers: effectiveNumberOfLayers,
+      midPrice: priceSource.toFixed(),
+      bidSpread: warmupState.bidSpread,
+      askSpread: warmupState.askSpread,
+      pressureWiden: runtimePressureWiden,
+      liveBuys: liveOrdersBySide.buy,
+      liveSells: liveOrdersBySide.sell,
+    });
     this.logAdaptivePmmDecisionSnapshot(strategyKey, {
       params,
       reason: 'quote_build',
@@ -509,10 +549,22 @@ export class PureMarketMakingStrategyController implements StrategyController {
     });
 
     if (quotes.length === 0) {
-      coordinator.logger.warn(
-        `[${strategyKey}] reason=no_quotes_after_filters layers=${effectiveNumberOfLayers} buyPaused=${Boolean(
-          toxicityState?.buyPausedUntilMs,
-        )} sellPaused=${Boolean(toxicityState?.sellPausedUntilMs)}`,
+      mmLog.warn(
+        'strategy skipped',
+        {
+          reason: 'no_quotes_after_filters',
+          strategy: strategyKey,
+          exchange: params.exchangeName,
+          pair: params.pair,
+          account: params.accountLabel || 'default',
+          layers: effectiveNumberOfLayers,
+          buyPaused: Boolean(toxicityState?.buyPausedUntilMs),
+          sellPaused: Boolean(toxicityState?.sellPausedUntilMs),
+        },
+        {
+          onceKey: `pmm-no-quotes:${strategyKey}`,
+          windowMs: 60_000,
+        },
       );
       this.logAdaptivePmmDecisionSnapshot(strategyKey, {
         params,
@@ -548,11 +600,17 @@ export class PureMarketMakingStrategyController implements StrategyController {
         params.ceilingPrice > 0 &&
         priceSource.isGreaterThan(params.ceilingPrice)
       ) {
-        coordinator.logger.log(
-          `[${strategyKey}] Skipped ${slotKey} buy: price ${priceSource.toFixed()} > ceilingPrice ${
-            params.ceilingPrice
-          }`,
-        );
+        mmLog.debug('quote filtered', {
+          reason: 'ceiling_price',
+          strategy: strategyKey,
+          exchange: params.exchangeName,
+          pair: params.pair,
+          account: params.accountLabel || 'default',
+          side: quote.side,
+          slot: slotKey,
+          price: priceSource.toFixed(),
+          ceilingPrice: params.ceilingPrice,
+        });
         continue;
       }
       if (
@@ -561,11 +619,17 @@ export class PureMarketMakingStrategyController implements StrategyController {
         params.floorPrice > 0 &&
         priceSource.isLessThan(params.floorPrice)
       ) {
-        coordinator.logger.log(
-          `[${strategyKey}] Skipped ${slotKey} sell: price ${priceSource.toFixed()} < floorPrice ${
-            params.floorPrice
-          }`,
-        );
+        mmLog.debug('quote filtered', {
+          reason: 'floor_price',
+          strategy: strategyKey,
+          exchange: params.exchangeName,
+          pair: params.pair,
+          account: params.accountLabel || 'default',
+          side: quote.side,
+          slot: slotKey,
+          price: priceSource.toFixed(),
+          floorPrice: params.floorPrice,
+        });
         continue;
       }
 
@@ -586,11 +650,17 @@ export class PureMarketMakingStrategyController implements StrategyController {
         effectiveMinimumSpread > 0 &&
         effectiveSpread.isLessThan(effectiveMinimumSpread)
       ) {
-        coordinator.logger.log(
-          `[${strategyKey}] Skipped ${slotKey} ${quote.qty}@${
-            quote.price
-          }: effective spread ${effectiveSpread.toFixed()} < effectiveMinimumSpread ${effectiveMinimumSpread}`,
-        );
+        mmLog.debug('quote filtered', {
+          reason: 'minimum_spread',
+          strategy: strategyKey,
+          exchange: params.exchangeName,
+          pair: params.pair,
+          account: params.accountLabel || 'default',
+          side: quote.side,
+          slot: slotKey,
+          required: effectiveMinimumSpread,
+          available: effectiveSpread.toFixed(),
+        });
         continue;
       }
 
@@ -665,9 +735,15 @@ export class PureMarketMakingStrategyController implements StrategyController {
         continue;
       }
       if (activeOrderBySlot.has(order.slotKey)) {
-        coordinator.logger.log(
-          `[${strategyKey}] reason=slot_occupied slotKey=${order.slotKey} exchangeOrderId=${order.exchangeOrderId}`,
-        );
+        mmLog.debug('quote skipped', {
+          reason: 'slot_occupied',
+          strategy: strategyKey,
+          exchange: params.exchangeName,
+          pair: params.pair,
+          account: params.accountLabel || 'default',
+          slot: order.slotKey,
+          order: order.exchangeOrderId,
+        });
         continue;
       }
       activeOrderBySlot.set(order.slotKey, order);
@@ -690,9 +766,14 @@ export class PureMarketMakingStrategyController implements StrategyController {
             slotKey,
           )
         ) {
-          coordinator.logger.log(
-            `[${strategyKey}] reason=cancel_cooldown slotKey=${slotKey}`,
-          );
+          mmLog.debug('quote skipped', {
+            reason: 'cancel_cooldown',
+            strategy: strategyKey,
+            exchange: params.exchangeName,
+            pair: params.pair,
+            account: params.accountLabel || 'default',
+            slot: slotKey,
+          });
           continue;
         }
 
@@ -726,9 +807,15 @@ export class PureMarketMakingStrategyController implements StrategyController {
         currentOrder.status === 'pending_create' ||
         currentOrder.status === 'pending_cancel'
       ) {
-        coordinator.logger.log(
-          `[${strategyKey}] reason=waiting_cancel slotKey=${slotKey} status=${currentOrder.status}`,
-        );
+        mmLog.debug('quote skipped', {
+          reason: 'waiting_cancel',
+          strategy: strategyKey,
+          exchange: params.exchangeName,
+          pair: params.pair,
+          account: params.accountLabel || 'default',
+          slot: slotKey,
+          status: currentOrder.status,
+        });
         continue;
       }
 
@@ -739,9 +826,15 @@ export class PureMarketMakingStrategyController implements StrategyController {
           tolerance,
         )
       ) {
-        coordinator.logger.log(
-          `[${strategyKey}] reason=within_tolerance slotKey=${slotKey} exchangeOrderId=${currentOrder.exchangeOrderId}`,
-        );
+        mmLog.debug('quote skipped', {
+          reason: 'within_tolerance',
+          strategy: strategyKey,
+          exchange: params.exchangeName,
+          pair: params.pair,
+          account: params.accountLabel || 'default',
+          slot: slotKey,
+          order: currentOrder.exchangeOrderId,
+        });
         continue;
       }
 
@@ -796,11 +889,21 @@ export class PureMarketMakingStrategyController implements StrategyController {
       return null;
     }
 
-    coordinator.logger.warn(
-      `Kill switch triggered for ${strategyKey}: ${decision.reason}`,
-    );
+    this.getCoordinatorMmLog(coordinator).error('strategy stopped', {
+      reason: decision.reason,
+      strategy: strategyKey,
+      exchange: params.exchangeName,
+      pair: params.pair,
+      account: params.accountLabel || 'default',
+    });
 
     return this.buildStopControllerAction(session, ts, decision.reason);
+  }
+
+  private getCoordinatorMmLog(
+    coordinator: PureMarketMakingCoordinator,
+  ): MarketMakingLogger {
+    return coordinator.logger.marketMaking();
   }
 
   private async resolveOrderScopedInventoryRatio(

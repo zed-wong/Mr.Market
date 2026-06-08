@@ -65,6 +65,7 @@ export type AdaptivePmmDecisionSnapshot = {
 @Injectable()
 export class AdaptivePmmStateService {
   private readonly logger = new CustomLogger(AdaptivePmmStateService.name);
+  private readonly mmLog = this.logger.marketMaking();
   private readonly warmupStartedAtByStrategy = new Map<string, number>();
   private readonly warmupTicksByStrategy = new Map<string, number>();
 
@@ -499,7 +500,32 @@ export class AdaptivePmmStateService {
       snapshot,
     );
 
-    this.logger.log(JSON.stringify(metadata));
+    const logFields = {
+      reason: snapshot.reason,
+      strategy: strategyKey,
+      exchange: snapshot.params.exchangeName,
+      pair: snapshot.params.pair,
+      account: snapshot.params.accountLabel || 'default',
+      actions: snapshot.actions,
+      layers: snapshot.layers,
+      status: metadata.freshness ? String(metadata.freshness) : undefined,
+      buyPaused: Boolean(snapshot.buyPaused),
+      sellPaused: Boolean(snapshot.sellPaused),
+      warmupActive: Boolean(snapshot.warmupActive),
+      softStale: Boolean(snapshot.softStale),
+      runtimeRejectCount: Number(metadata.runtimeRejectCount || 0),
+      runtimePressureWiden: Number(metadata.runtimePressureWiden || 0),
+    };
+
+    if (snapshot.reason === 'quote_build') {
+      this.mmLog.debug('adaptive decision', logFields);
+    } else {
+      this.mmLog.warn('adaptive decision blocked', logFields, {
+        onceKey: `adaptive-pmm:${strategyKey}:${snapshot.reason}`,
+        windowMs: 60_000,
+      });
+    }
+
     void this.persistAdaptivePmmDecisionSnapshot(snapshot.params, metadata);
   }
 
@@ -568,10 +594,20 @@ export class AdaptivePmmStateService {
         }),
       );
     } catch (error) {
-      this.logger.warn(
-        `Failed to persist adaptive PMM decision snapshot for ${
-          params.clientId
-        }: ${error instanceof Error ? error.message : String(error)}`,
+      this.mmLog.warn(
+        'adaptive decision persist failed',
+        {
+          reason: 'history_persist_failed',
+          strategy: String(metadata.strategyKey || ''),
+          exchange: params.exchangeName,
+          pair: params.pair,
+          account: params.accountLabel || 'default',
+          error: error instanceof Error ? error.message : String(error),
+        },
+        {
+          onceKey: `adaptive-pmm-persist:${params.clientId}`,
+          windowMs: 60_000,
+        },
       );
     }
   }

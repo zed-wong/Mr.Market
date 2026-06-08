@@ -34,6 +34,7 @@ export class MarketMakingRuntimeTimingService {
   private readonly logger = new CustomLogger(
     MarketMakingRuntimeTimingService.name,
   );
+  private readonly mmLog = this.logger.marketMaking();
   private readonly statsByScope = new Map<string, RuntimeTimingStats>();
   private readonly recentRecords: RuntimeTimingRecord[] = [];
 
@@ -85,13 +86,31 @@ export class MarketMakingRuntimeTimingService {
       options.warnThresholdMs !== undefined &&
       normalizedDurationMs >= options.warnThresholdMs
     ) {
-      this.logger.warn(
-        [
-          'Runtime timing threshold exceeded',
-          `scope=${scope}`,
-          `durationMs=${normalizedDurationMs}`,
-          ...this.toMetadataParts(sanitizedMetadata),
-        ].join(' | '),
+      const warningKey = this.toWarningKey(scope, sanitizedMetadata);
+
+      this.mmLog.warn(
+        'runtime slow',
+        {
+          scope,
+          exchange: this.readMetadataString(sanitizedMetadata.exchange),
+          pair: this.readMetadataString(sanitizedMetadata.pair),
+          account: this.readMetadataString(
+            sanitizedMetadata.accountLabel || sanitizedMetadata.account,
+          ),
+          durationMs: normalizedDurationMs,
+          thresholdMs: options.warnThresholdMs,
+          count,
+          maxMs: Math.max(
+            existingStats?.maxDurationMs || 0,
+            normalizedDurationMs,
+          ),
+          lastMs: normalizedDurationMs,
+          ...sanitizedMetadata,
+        },
+        {
+          onceKey: `runtime-slow:${warningKey}`,
+          windowMs: 60_000,
+        },
       );
     }
   }
@@ -150,10 +169,24 @@ export class MarketMakingRuntimeTimingService {
     return sanitized;
   }
 
-  private toMetadataParts(metadata: RuntimeTimingMetadata): string[] {
-    return Object.entries(metadata)
-      .filter(([, value]) => value !== undefined)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, value]) => `${key}=${value}`);
+  private toWarningKey(
+    scope: string,
+    metadata: RuntimeTimingMetadata,
+  ): string {
+    return [
+      scope,
+      this.readMetadataString(metadata.exchange) || 'unknown-exchange',
+      this.readMetadataString(metadata.pair) || 'unknown-pair',
+      this.readMetadataString(metadata.accountLabel || metadata.account) ||
+        'default',
+    ].join(':');
+  }
+
+  private readMetadataString(value: TimingMetadataValue): string | undefined {
+    if (value === undefined || value === null || value === '') {
+      return undefined;
+    }
+
+    return String(value);
   }
 }
