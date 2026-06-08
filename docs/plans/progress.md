@@ -2,6 +2,7 @@
 
 ## 2026-06-08
 
+- Execute the market-making logging normalization plan: add a `CustomLogger.marketMaking()` adapter with `[MM]` structured formatting and rate-limited warnings, then convert executor, balance scheduler, PMM/adaptive quote filtering, user-stream, order-book, runtime timing, and shutdown cleanup logs to the normalized levels.
 - Scope reservation-release ledger idempotency keys by `orderId` so admin direct stop-all cleanup cannot collide across order-scoped balances that share an external/client order identifier.
 - Scope dangling reservation recovery idempotency keys by the residual recovery content so delete cleanup can safely retry after fills or prior releases change the remaining locked amount.
 - Update the admin direct market-making runtime panel for the latest efficient dual-account volume states: recognize efficient/optimal variants, surface latest cycle failures ahead of persisted lifecycle labels, and render newest cycles first.
