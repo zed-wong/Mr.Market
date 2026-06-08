@@ -620,6 +620,12 @@ export class ReconciliationService {
       this.balanceLedgerService?.pauseReservations(
         entry.orderId,
         entry.assetId,
+        {
+          source: 'reconciliation',
+          reason,
+          refType: entry.refType || 'market_making_fill',
+          refId: entry.refId || entry.entryId,
+        },
       );
     }
 

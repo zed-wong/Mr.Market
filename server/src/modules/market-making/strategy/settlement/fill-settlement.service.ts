@@ -97,7 +97,7 @@ export class FillSettlementService {
     try {
       settled = await this.settleFillForSession(session, settlementFill);
     } catch (error) {
-      this.pauseFillSettlementReservations(session, settlementFill);
+      this.pauseFillSettlementReservations(session, settlementFill, error);
       throw error;
     }
 
@@ -284,7 +284,11 @@ export class FillSettlementService {
 
   pauseFillSettlementReservations(
     session: FillSettlementSessionContext,
-    fill: Pick<SettlementFill, 'side' | 'accountLabel'>,
+    fill: Pick<
+      SettlementFill,
+      'side' | 'accountLabel' | 'exchangeOrderId' | 'clientOrderId' | 'fillId'
+    >,
+    error?: unknown,
   ): void {
     if (!this.balanceLedgerService || !fill.side) {
       return;
@@ -304,7 +308,17 @@ export class FillSettlementService {
       ? `${baseOrderId}:${accountLabel}`
       : baseOrderId;
 
-    this.balanceLedgerService.pauseReservations(orderId, assetId);
+    this.balanceLedgerService.pauseReservations(orderId, assetId, {
+      source: 'fill_settlement',
+      reason: error instanceof Error ? error.message : 'settlement_failed',
+      strategyKey: session.strategyKey,
+      refType: 'market_making_fill',
+      refId:
+        this.readString(fill.exchangeOrderId) ||
+        this.readString(fill.clientOrderId) ||
+        this.readString(fill.fillId) ||
+        'unknown',
+    });
   }
 
   async settleFillForSession(

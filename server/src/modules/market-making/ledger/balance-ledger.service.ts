@@ -11,6 +11,7 @@ import {
   getRFC3339Timestamp,
   isUniqueConstraintViolation,
 } from 'src/common/helpers/utils';
+import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { DataSource, Repository } from 'typeorm';
 
 import { DurabilityService } from '../durability/durability.service';
@@ -32,6 +33,14 @@ type BalanceLedgerResult = {
   balance: MarketMakingOrderBalance;
 };
 
+type ReservationPauseMetadata = {
+  source?: string;
+  reason?: string;
+  strategyKey?: string;
+  refType?: string;
+  refId?: string;
+};
+
 export type LedgerRebuildResult = {
   expected: MarketMakingOrderBalance;
   actual: MarketMakingOrderBalance;
@@ -46,6 +55,7 @@ export class BalanceLedgerService {
     Promise<void>
   >();
 
+  private readonly logger = new CustomLogger(BalanceLedgerService.name);
   private readonly balanceMutationLocks = new Map<string, Promise<void>>();
   private readonly reservationPausedBalances = new Set<string>();
 
@@ -149,9 +159,28 @@ export class BalanceLedgerService {
       .toFixed();
   }
 
-  pauseReservations(orderId: string, assetId: string): void {
-    this.reservationPausedBalances.add(
-      this.getBalanceLockKey(orderId, assetId),
+  pauseReservations(
+    orderId: string,
+    assetId: string,
+    metadata: ReservationPauseMetadata = {},
+  ): void {
+    const lockKey = this.getBalanceLockKey(orderId, assetId);
+    const alreadyPaused = this.reservationPausedBalances.has(lockKey);
+
+    this.reservationPausedBalances.add(lockKey);
+
+    this.logger.warn(
+      [
+        'reservation_pause',
+        `orderId=${orderId}`,
+        `assetId=${assetId}`,
+        `alreadyPaused=${alreadyPaused}`,
+        `source=${metadata.source || 'unknown'}`,
+        `reason=${metadata.reason || 'unknown'}`,
+        `strategy=${metadata.strategyKey || 'unknown'}`,
+        `refType=${metadata.refType || 'unknown'}`,
+        `refId=${metadata.refId || 'unknown'}`,
+      ].join(' | '),
     );
   }
 
