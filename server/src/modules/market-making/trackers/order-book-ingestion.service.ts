@@ -9,6 +9,7 @@ import { OrderBookTrackerService } from './order-book-tracker.service';
 @Injectable()
 export class OrderBookIngestionService implements OnModuleDestroy {
   private readonly logger = new CustomLogger(OrderBookIngestionService.name);
+  private readonly mmLog = this.logger.marketMaking();
   private readonly consumerIdByKey = new Map<string, string>();
   private readonly refCountByKey = new Map<string, number>();
 
@@ -41,8 +42,19 @@ export class OrderBookIngestionService implements OnModuleDestroy {
         const asks = this.asBookLevels(orderBook?.asks);
 
         if (bids.length === 0 || asks.length === 0) {
-          this.logger.warn(
-            `Received unusable streamed order book for ${exchange} ${pair} bids=${bids.length} asks=${asks.length}`,
+          this.mmLog.warn(
+            'order book stream unusable',
+            {
+              reason: 'unusable_streamed_order_book',
+              exchange,
+              pair,
+              bids: bids.length,
+              asks: asks.length,
+            },
+            {
+              onceKey: `order-book-stream-unusable:${exchange}:${pair}`,
+              windowMs: 60_000,
+            },
           );
         }
 
@@ -54,7 +66,7 @@ export class OrderBookIngestionService implements OnModuleDestroy {
       },
     );
 
-    this.logger.log(`Subscribed market-making order book stream ${key}`);
+    this.mmLog.info('order book subscribed', { exchange, pair });
   }
 
   releaseSubscription(exchange: string, pair: string): void {
@@ -70,7 +82,7 @@ export class OrderBookIngestionService implements OnModuleDestroy {
       }
 
       this.consumerIdByKey.delete(key);
-      this.logger.log(`Released market-making order book stream ${key}`);
+      this.mmLog.info('order book released', { exchange, pair });
 
       return;
     }
@@ -103,9 +115,11 @@ export class OrderBookIngestionService implements OnModuleDestroy {
         );
 
       if (this.orderBookTrackerService.getOrderBook(exchange, pair)) {
-        this.logger.log(
-          `Skipping REST seed for ${exchange}:${pair} because live book already exists`,
-        );
+        this.mmLog.debug('order book seed skipped', {
+          reason: 'live_book_exists',
+          exchange,
+          pair,
+        });
 
         return;
       }
@@ -114,8 +128,19 @@ export class OrderBookIngestionService implements OnModuleDestroy {
       const asks = this.asBookLevels(orderBook?.asks);
 
       if (bids.length === 0 || asks.length === 0) {
-        this.logger.warn(
-          `REST seed returned unusable order book for ${exchange} ${pair} bids=${bids.length} asks=${asks.length}`,
+        this.mmLog.warn(
+          'order book seed unusable',
+          {
+            reason: 'unusable_rest_order_book',
+            exchange,
+            pair,
+            bids: bids.length,
+            asks: asks.length,
+          },
+          {
+            onceKey: `order-book-seed-unusable:${exchange}:${pair}`,
+            windowMs: 60_000,
+          },
         );
       }
 
@@ -124,14 +149,20 @@ export class OrderBookIngestionService implements OnModuleDestroy {
         asks,
         sequence: this.resolveSequence(orderBook),
       });
-      this.logger.log(
-        `Seeded market-making order book snapshot ${exchange}:${pair}`,
-      );
+      this.mmLog.info('order book seeded', { exchange, pair });
     } catch (error) {
-      this.logger.warn(
-        `Failed to seed market-making order book for ${exchange} ${pair}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+      this.mmLog.warn(
+        'order book seed failed',
+        {
+          reason: 'rest_seed_failed',
+          exchange,
+          pair,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        {
+          onceKey: `order-book-seed-failed:${exchange}:${pair}`,
+          windowMs: 60_000,
+        },
       );
     }
   }

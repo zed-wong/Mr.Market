@@ -324,9 +324,8 @@ describe('UserStreamIngestionService', () => {
     expect(queueAccountEvent).not.toHaveBeenCalled();
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining(
-        'Initial fetchBalance failed for binance:maker: seed failed',
+        '[MM] balance seed failed | reason=initial_fetch_balance_failed exchange=binance account=maker | error=seed failed',
       ),
-      expect.any(String),
     );
   });
 

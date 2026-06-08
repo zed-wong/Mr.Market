@@ -15,6 +15,7 @@ import {
 @Injectable()
 export class TrackedOrderShutdownService {
   private readonly logger = new CustomLogger(TrackedOrderShutdownService.name);
+  private readonly mmLog = this.logger.marketMaking();
 
   constructor(
     @Optional()
@@ -59,10 +60,31 @@ export class TrackedOrderShutdownService {
                 },
           );
         } catch (error) {
-          this.logger.warn(
-            `Failed cancel-all order cleanup for ${strategyKey}:${
-              order.exchangeOrderId
-            }: ${error instanceof Error ? error.message : String(error)}`,
+          if (this.isIdempotentCancelError(error)) {
+            this.exchangeOrderTrackerService?.upsertOrder({
+              ...order,
+              status: 'cancelled',
+              updatedAt: getRFC3339Timestamp(),
+            });
+
+            return;
+          }
+
+          this.mmLog.warn(
+            'order cleanup failed',
+            {
+              reason: 'cancel_all_failed',
+              strategy: strategyKey,
+              exchange: order.exchange,
+              pair: order.pair,
+              account: order.accountLabel || 'default',
+              order: order.exchangeOrderId,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            {
+              onceKey: `shutdown-cancel:${strategyKey}:${order.exchangeOrderId}`,
+              windowMs: 60_000,
+            },
           );
         }
       }),
@@ -266,12 +288,61 @@ export class TrackedOrderShutdownService {
         updatedAt: getRFC3339Timestamp(),
       });
     } catch (error) {
+      if (this.isIdempotentCancelError(error)) {
+        this.exchangeOrderTrackerService?.upsertOrder({
+          orderId: this.readString(
+            strategy.marketMakingOrderId,
+            strategy.clientId,
+          ),
+          strategyKey: strategy.strategyKey,
+          exchange,
+          accountLabel,
+          pair,
+          exchangeOrderId,
+          clientOrderId: clientOrderId || undefined,
+          side: openOrder?.side === 'sell' ? 'sell' : 'buy',
+          price: this.readString(openOrder?.price, '0'),
+          qty: this.readString(openOrder?.amount || openOrder?.qty, '0'),
+          cumulativeFilledQty: this.readString(openOrder?.filled, '0'),
+          status: 'cancelled',
+          createdAt: getRFC3339Timestamp(),
+          updatedAt: getRFC3339Timestamp(),
+        });
+
+        return;
+      }
+
       const message = error instanceof Error ? error.message : String(error);
 
-      this.logger.warn(
-        `Failed startup orphan cleanup for ${strategy.strategyKey}:${exchangeOrderId}: ${message}`,
+      this.mmLog.warn(
+        'order cleanup failed',
+        {
+          reason: 'startup_orphan_cancel_failed',
+          strategy: strategy.strategyKey,
+          exchange,
+          pair,
+          account: accountLabel || 'default',
+          order: exchangeOrderId,
+          error: message,
+        },
+        {
+          onceKey: `startup-orphan-cancel:${strategy.strategyKey}:${exchangeOrderId}`,
+          windowMs: 60_000,
+        },
       );
     }
+  }
+
+  private isIdempotentCancelError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error || '');
+    const normalized = message.toLowerCase();
+
+    return (
+      normalized.includes('unknown order id') ||
+      normalized.includes('order cancelled') ||
+      normalized.includes('already cancelled') ||
+      normalized.includes('order not found')
+    );
   }
 
   isTrackedOrderTerminal(status: string): boolean {

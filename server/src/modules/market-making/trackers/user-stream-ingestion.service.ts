@@ -40,6 +40,7 @@ type OrderWatcherState = {
 @Injectable()
 export class UserStreamIngestionService implements OnModuleDestroy {
   private readonly logger = new CustomLogger(UserStreamIngestionService.name);
+  private readonly mmLog = this.logger.marketMaking();
   private readonly activeWatchers = new Map<string, OrderWatcherState>();
   private readonly activeTradeWatchers = new Map<string, OrderWatcherState>();
   private readonly activeBalanceWatchers = new Map<string, OrderWatcherState>();
@@ -130,11 +131,12 @@ export class UserStreamIngestionService implements OnModuleDestroy {
 
     if (state) {
       state.refCount += 1;
-      this.logger.log(
-        `Reusing balance watcher for ${params.exchange}:${
-          params.accountLabel || 'default'
-        } refCount=${state.refCount} generation=${state.generation}`,
-      );
+      this.mmLog.info('balance watcher reused', {
+        exchange: params.exchange,
+        account: params.accountLabel || 'default',
+        count: state.refCount,
+        generation: state.generation,
+      });
 
       return;
     }
@@ -142,21 +144,29 @@ export class UserStreamIngestionService implements OnModuleDestroy {
     const generation = ++this.generationCounter;
 
     this.activeBalanceWatchers.set(key, { refCount: 1, generation });
-    this.logger.log(
-      `Starting balance watcher for ${params.exchange}:${
-        params.accountLabel || 'default'
-      } generation=${generation}`,
-    );
+    this.mmLog.info('balance watcher started', {
+      exchange: params.exchange,
+      account: params.accountLabel || 'default',
+      generation,
+    });
     void this.seedBalanceSnapshot(params)
       .catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
-        const trace = error instanceof Error ? error.stack : undefined;
 
-        this.logger.warn(
-          `Initial fetchBalance failed for ${params.exchange}:${
-            params.accountLabel || 'default'
-          }: ${message}`,
-          trace,
+        this.mmLog.warn(
+          'balance seed failed',
+          {
+            reason: 'initial_fetch_balance_failed',
+            exchange: params.exchange,
+            account: params.accountLabel || 'default',
+            error: message,
+          },
+          {
+            onceKey: `balance-seed:${params.exchange}:${
+              params.accountLabel || 'default'
+            }`,
+            windowMs: 60_000,
+          },
         );
       })
       .finally(() => {
@@ -258,12 +268,20 @@ export class UserStreamIngestionService implements OnModuleDestroy {
         ) as WatchOrdersCapableExchange;
 
         if (typeof exchange.watchOrders !== 'function') {
-          this.logger.warn(
-            `Exchange ${
-              params.exchange
-            } does not support watchOrders() for account ${
-              params.accountLabel || 'default'
-            }`,
+          this.mmLog.warn(
+            'user stream unsupported',
+            {
+              reason: 'watch_orders_unsupported',
+              exchange: params.exchange,
+              pair: params.symbol,
+              account: params.accountLabel || 'default',
+            },
+            {
+              onceKey: `watch-orders-unsupported:${params.exchange}:${
+                params.accountLabel || 'default'
+              }:${params.symbol || 'all'}`,
+              windowMs: 60_000,
+            },
           );
           this.activeWatchers.delete(key);
 
@@ -302,13 +320,23 @@ export class UserStreamIngestionService implements OnModuleDestroy {
         }
 
         const message = error instanceof Error ? error.message : String(error);
-        const trace = error instanceof Error ? error.stack : undefined;
 
-        this.logger.warn(
-          `watchOrders loop failed for ${params.exchange}:${
-            params.accountLabel || 'default'
-          }${params.symbol ? `:${params.symbol}` : ''}: ${message}`,
-          trace,
+        this.mmLog.warn(
+          'user stream failed',
+          {
+            reason: 'watch_orders_failed',
+            exchange: params.exchange,
+            pair: params.symbol,
+            account: params.accountLabel || 'default',
+            error: message,
+            repeat: consecutiveFailures + 1,
+          },
+          {
+            onceKey: `watch-orders-failed:${params.exchange}:${
+              params.accountLabel || 'default'
+            }:${params.symbol || 'all'}`,
+            windowMs: 60_000,
+          },
         );
 
         consecutiveFailures += 1;
@@ -336,12 +364,20 @@ export class UserStreamIngestionService implements OnModuleDestroy {
         ) as WatchOrdersCapableExchange;
 
         if (typeof exchange.watchMyTrades !== 'function') {
-          this.logger.warn(
-            `Exchange ${
-              params.exchange
-            } does not support watchMyTrades() for account ${
-              params.accountLabel || 'default'
-            }`,
+          this.mmLog.warn(
+            'user stream unsupported',
+            {
+              reason: 'watch_trades_unsupported',
+              exchange: params.exchange,
+              pair: params.symbol,
+              account: params.accountLabel || 'default',
+            },
+            {
+              onceKey: `watch-trades-unsupported:${params.exchange}:${
+                params.accountLabel || 'default'
+              }:${params.symbol || 'all'}`,
+              windowMs: 60_000,
+            },
           );
           this.activeTradeWatchers.delete(key);
 
@@ -380,13 +416,23 @@ export class UserStreamIngestionService implements OnModuleDestroy {
         }
 
         const message = error instanceof Error ? error.message : String(error);
-        const trace = error instanceof Error ? error.stack : undefined;
 
-        this.logger.warn(
-          `watchMyTrades loop failed for ${params.exchange}:${
-            params.accountLabel || 'default'
-          }${params.symbol ? `:${params.symbol}` : ''}: ${message}`,
-          trace,
+        this.mmLog.warn(
+          'user stream failed',
+          {
+            reason: 'watch_trades_failed',
+            exchange: params.exchange,
+            pair: params.symbol,
+            account: params.accountLabel || 'default',
+            error: message,
+            repeat: consecutiveFailures + 1,
+          },
+          {
+            onceKey: `watch-trades-failed:${params.exchange}:${
+              params.accountLabel || 'default'
+            }:${params.symbol || 'all'}`,
+            windowMs: 60_000,
+          },
         );
 
         consecutiveFailures += 1;
@@ -416,12 +462,19 @@ export class UserStreamIngestionService implements OnModuleDestroy {
         };
 
         if (typeof exchange.watchBalance !== 'function') {
-          this.logger.warn(
-            `Exchange ${
-              params.exchange
-            } does not support watchBalance() for account ${
-              params.accountLabel || 'default'
-            }`,
+          this.mmLog.warn(
+            'balance watcher unsupported',
+            {
+              reason: 'watch_balance_unsupported',
+              exchange: params.exchange,
+              account: params.accountLabel || 'default',
+            },
+            {
+              onceKey: `watch-balance-unsupported:${params.exchange}:${
+                params.accountLabel || 'default'
+              }`,
+              windowMs: 60_000,
+            },
           );
           this.activeBalanceWatchers.delete(key);
 
@@ -446,13 +499,14 @@ export class UserStreamIngestionService implements OnModuleDestroy {
           );
         }
 
-        this.logger.log(
-          `watchBalance received payload for ${params.exchange}:${
-            params.accountLabel || 'default'
-          } appliedSnapshot=${
+        this.mmLog.debug('balance watcher payload', {
+          exchange: params.exchange,
+          account: params.accountLabel || 'default',
+          status:
             watchedBalance && typeof watchedBalance === 'object'
-          }`,
-        );
+              ? 'applied'
+              : 'ignored',
+        });
 
         consecutiveFailures = 0;
       } catch (error) {
@@ -461,13 +515,22 @@ export class UserStreamIngestionService implements OnModuleDestroy {
         }
 
         const message = error instanceof Error ? error.message : String(error);
-        const trace = error instanceof Error ? error.stack : undefined;
 
-        this.logger.warn(
-          `watchBalance loop failed for ${params.exchange}:${
-            params.accountLabel || 'default'
-          }: ${message}`,
-          trace,
+        this.mmLog.warn(
+          'balance watcher failed',
+          {
+            reason: 'watch_balance_failed',
+            exchange: params.exchange,
+            account: params.accountLabel || 'default',
+            error: message,
+            repeat: consecutiveFailures + 1,
+          },
+          {
+            onceKey: `watch-balance-failed:${params.exchange}:${
+              params.accountLabel || 'default'
+            }`,
+            windowMs: 60_000,
+          },
         );
 
         consecutiveFailures += 1;
@@ -507,11 +570,11 @@ export class UserStreamIngestionService implements OnModuleDestroy {
       getRFC3339Timestamp(),
       'rest',
     );
-    this.logger.log(
-      `Seeded balance cache from fetchBalance for ${params.exchange}:${
-        params.accountLabel || 'default'
-      }`,
-    );
+    this.mmLog.info('balance cache seeded', {
+      exchange: params.exchange,
+      account: params.accountLabel || 'default',
+      driver: 'rest',
+    });
   }
 
   private normalizeObjects(value: unknown): Array<Record<string, unknown>> {
