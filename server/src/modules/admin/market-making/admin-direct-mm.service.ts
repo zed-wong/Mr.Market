@@ -2794,7 +2794,7 @@ export class AdminDirectMarketMakingService {
         exchangeName,
         apiKeyId,
         source: 'admin_direct',
-        state: In(['running', 'stopped']),
+        state: In(['running', 'paused']),
       },
       select: ['orderId'],
     });

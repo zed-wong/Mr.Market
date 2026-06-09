@@ -1141,6 +1141,135 @@ describe('AdminDirectMarketMakingService', () => {
     expect(exchange.fetchTicker).toHaveBeenCalledTimes(1);
   });
 
+  it('allows direct resume when only stopped sibling orders exceed exchange free balance', async () => {
+    const {
+      service,
+      marketMakingRepository,
+      marketMakingRuntimeService,
+      orderBalanceRepository,
+      exchange,
+    } = buildService();
+
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'resume-order',
+      userId: 'admin-user',
+      source: 'admin_direct',
+      state: 'stopped',
+      pair: 'BTC/USDT',
+      exchangeName: 'binance',
+      apiKeyId: 'api-key-1',
+      strategyDefinitionId: 'strategy-1',
+      strategySnapshot: buildStrategySnapshot({
+        exchangeName: 'binance',
+        pair: 'BTC/USDT',
+        symbol: 'BTC/USDT',
+        userId: 'admin-user',
+        clientId: 'resume-order',
+        marketMakingOrderId: 'resume-order',
+        accountLabel: 'api-key-1',
+        bidSpread: 0.004,
+        askSpread: 0.005,
+        orderAmount: 0.1,
+        orderRefreshTime: 2500,
+        numberOfLayers: 1,
+        priceSourceType: 'last_trade',
+        amountChangePerLayer: 0,
+        amountChangeType: 'fixed',
+        ceilingPrice: 0,
+        floorPrice: 0,
+        balanceA: '0.1',
+        balanceB: '10',
+      }),
+      balanceA: '0.1',
+      balanceB: '10',
+    });
+    marketMakingRepository.find.mockImplementation(async (query) => {
+      expect((query.where.state as any)._value).toEqual([
+        'running',
+        'paused',
+      ]);
+
+      return [];
+    });
+    exchange.fetchBalance.mockResolvedValue({
+      free: { BTC: 1, USDT: 15 },
+      used: {},
+      total: {},
+    });
+
+    await expect(service.directResume('resume-order')).resolves.toEqual({
+      orderId: 'resume-order',
+      state: 'running',
+      warnings: expect.any(Array),
+    });
+    expect(orderBalanceRepository.find).not.toHaveBeenCalled();
+    expect(marketMakingRuntimeService.startOrder).toHaveBeenCalled();
+  });
+
+  it('rejects direct resume when running sibling allocations exceed exchange free balance', async () => {
+    const {
+      service,
+      marketMakingRepository,
+      marketMakingRuntimeService,
+      orderBalanceRepository,
+      exchange,
+    } = buildService();
+
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'resume-order',
+      userId: 'admin-user',
+      source: 'admin_direct',
+      state: 'stopped',
+      pair: 'BTC/USDT',
+      exchangeName: 'binance',
+      apiKeyId: 'api-key-1',
+      strategyDefinitionId: 'strategy-1',
+      strategySnapshot: buildStrategySnapshot({
+        exchangeName: 'binance',
+        pair: 'BTC/USDT',
+        symbol: 'BTC/USDT',
+        userId: 'admin-user',
+        clientId: 'resume-order',
+        marketMakingOrderId: 'resume-order',
+        accountLabel: 'api-key-1',
+        bidSpread: 0.004,
+        askSpread: 0.005,
+        orderAmount: 0.1,
+        orderRefreshTime: 2500,
+        numberOfLayers: 1,
+        priceSourceType: 'last_trade',
+        amountChangePerLayer: 0,
+        amountChangeType: 'fixed',
+        ceilingPrice: 0,
+        floorPrice: 0,
+        balanceA: '0.1',
+        balanceB: '10',
+      }),
+      balanceA: '0.1',
+      balanceB: '10',
+    });
+    marketMakingRepository.find.mockResolvedValue([
+      { orderId: 'running-order' },
+    ]);
+    orderBalanceRepository.find.mockResolvedValue([
+      {
+        orderId: 'running-order',
+        assetId: 'USDT',
+        total: '10',
+      },
+    ]);
+    exchange.fetchBalance.mockResolvedValue({
+      free: { BTC: 1, USDT: 15 },
+      used: {},
+      total: {},
+    });
+
+    await expect(service.directResume('resume-order')).rejects.toThrow(
+      'Account overlap',
+    );
+    expect(marketMakingRuntimeService.startOrder).not.toHaveBeenCalled();
+  });
+
   it('removes a stopped direct order', async () => {
     const { service, marketMakingRepository } = buildService();
 
