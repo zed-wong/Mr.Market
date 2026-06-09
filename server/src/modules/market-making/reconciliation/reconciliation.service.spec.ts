@@ -602,6 +602,99 @@ describe('ReconciliationService', () => {
     expect(balanceLedgerService.pauseReservations).not.toHaveBeenCalled();
   });
 
+  it('reconciles partial fill ledger entries against aggregate exchange trade evidence', async () => {
+    const ledgerEntryRepository = {
+      find: jest.fn().mockResolvedValue([
+        {
+          entryId: 'quote-fill-part-1',
+          orderId: 'order-1:maker',
+          userId: 'user-1',
+          assetId: 'USDT',
+          amount: '-2',
+          type: 'fill_settle',
+          refType: 'market_making_fill',
+          refId: 'exchange-order-1',
+        },
+        {
+          entryId: 'quote-fill-part-2',
+          orderId: 'order-1:maker',
+          userId: 'user-1',
+          assetId: 'USDT',
+          amount: '-3.385',
+          type: 'fill_settle',
+          refType: 'market_making_fill',
+          refId: 'exchange-order-1',
+        },
+        {
+          entryId: 'base-fill-part-1',
+          orderId: 'order-1:maker',
+          userId: 'user-1',
+          assetId: 'BTC',
+          amount: '0.04',
+          type: 'fill_settle',
+          refType: 'market_making_fill',
+          refId: 'exchange-order-1',
+        },
+        {
+          entryId: 'base-fill-part-2',
+          orderId: 'order-1:maker',
+          userId: 'user-1',
+          assetId: 'BTC',
+          amount: '0.06',
+          type: 'fill_settle',
+          refType: 'market_making_fill',
+          refId: 'exchange-order-1',
+        },
+      ]),
+    };
+    const exchangeConnectorAdapterService = {
+      fetchMyTrades: jest.fn().mockResolvedValue([
+        {
+          id: 'trade-1',
+          order: 'exchange-order-1',
+          amount: '0.04',
+          cost: '2',
+        },
+        {
+          id: 'trade-2',
+          order: 'exchange-order-1',
+          amount: '0.06',
+          cost: '3.385',
+        },
+      ]),
+    };
+    const balanceLedgerService = {
+      pauseReservations: jest.fn(),
+    };
+    const service = new ReconciliationService(
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      {
+        getOpenOrders: jest.fn().mockReturnValue([]),
+        getAllTrackedOrders: jest.fn().mockReturnValue([
+          {
+            orderId: 'order-1:maker',
+            exchange: 'binance',
+            accountLabel: 'maker',
+            pair: 'BTC/USDT',
+            exchangeOrderId: 'exchange-order-1',
+          },
+        ]),
+      } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      ledgerEntryRepository as any,
+      balanceLedgerService as any,
+      { emitReconciliationAudit: jest.fn() } as any,
+      exchangeConnectorAdapterService as any,
+    );
+
+    const report = await service.reconcileFillsAgainstExchangeTrades();
+
+    expect(report).toEqual({ checked: 4, violations: 0 });
+    expect(balanceLedgerService.pauseReservations).not.toHaveBeenCalled();
+  });
+
   it('still pauses reservations for material quote fill evidence mismatches', async () => {
     const ledgerEntryRepository = {
       find: jest.fn().mockResolvedValue([

@@ -298,6 +298,7 @@ export class ReconciliationService {
       trackedOrders,
       this.getOldestFillCreatedAt(fillEntries),
     );
+    const fillEntriesByRef = new Map<string, LedgerEntry[]>();
     let checked = 0;
     let violations = 0;
 
@@ -309,6 +310,29 @@ export class ReconciliationService {
       }
 
       checked += 1;
+
+      const groupKey = this.buildFillEvidenceGroupKey(
+        entry.orderId,
+        entry.assetId,
+        entry.refId,
+      );
+
+      if (!groupKey) {
+        if (!tradeEvidenceRefs.has(entry.refId)) {
+          violations += 1;
+          this.auditFillMismatch(entry, 'missing_exchange_trade');
+        }
+
+        continue;
+      }
+
+      const group = fillEntriesByRef.get(groupKey) || [];
+      group.push(entry);
+      fillEntriesByRef.set(groupKey, group);
+    }
+
+    for (const entries of fillEntriesByRef.values()) {
+      const entry = entries[0];
 
       if (!tradeEvidenceRefs.has(entry.refId)) {
         violations += 1;
@@ -322,8 +346,8 @@ export class ReconciliationService {
 
       if (
         trackedOrder &&
-        !this.fillAmountMatchesTradeEvidence(
-          entry,
+        !this.fillEntriesAmountMatchesTradeEvidence(
+          entries,
           trackedOrder,
           tradeEvidenceRefs.get(entry.refId) || [],
         )
@@ -456,6 +480,18 @@ export class ReconciliationService {
     return `${orderId}:${assetId}:${refId}`;
   }
 
+  private buildFillEvidenceGroupKey(
+    orderId?: string,
+    assetId?: string,
+    refId?: string | null,
+  ): string {
+    if (!orderId || !assetId || !refId) {
+      return '';
+    }
+
+    return `${orderId}:${assetId}:${refId}`;
+  }
+
   private async fetchTradeEvidenceRefs(
     trackedOrders: TrackedOrder[],
     since?: number,
@@ -519,11 +555,12 @@ export class ReconciliationService {
     refs.set(ref, trades);
   }
 
-  private fillAmountMatchesTradeEvidence(
-    entry: LedgerEntry,
+  private fillEntriesAmountMatchesTradeEvidence(
+    entries: LedgerEntry[],
     trackedOrder: TrackedOrder,
     trades: Record<string, unknown>[],
   ): boolean {
+    const entry = entries[0];
     const expectedAmount = this.getExpectedFillAmountForAsset(
       entry.assetId,
       trackedOrder.pair,
@@ -537,7 +574,10 @@ export class ReconciliationService {
     return this.fillAmountsMatch(
       entry.assetId,
       trackedOrder.pair,
-      new BigNumber(entry.amount),
+      entries.reduce(
+        (total, fillEntry) => total.plus(fillEntry.amount),
+        new BigNumber(0),
+      ),
       expectedAmount,
     );
   }
