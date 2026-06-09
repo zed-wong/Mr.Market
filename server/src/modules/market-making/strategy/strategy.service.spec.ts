@@ -2995,7 +2995,7 @@ describe('StrategyService', () => {
       maker: { BTC: 10, USDT: 100.2 },
       taker: { BTC: 10, USDT: 1000 },
     });
-    jest.spyOn(Math, 'random').mockReturnValue(0);
+    jest.spyOn(Math, 'random').mockReturnValue(0.5);
 
     const actions =
       await dualAccountVolumeStrategyController.buildDualAccountVolumeActions(
@@ -3026,12 +3026,12 @@ describe('StrategyService', () => {
     expect(actions[0]).toEqual(
       expect.objectContaining({
         accountLabel: 'maker',
-        qty: '1.000998',
+        qty: '0.99601791044776119403164',
         metadata: expect.objectContaining({
           makerAccountLabel: 'maker',
           takerAccountLabel: 'taker',
           requestedQty: '2',
-          effectiveQty: '1.000998',
+          effectiveQty: '0.99601791044776119403164',
         }),
       }),
     );
