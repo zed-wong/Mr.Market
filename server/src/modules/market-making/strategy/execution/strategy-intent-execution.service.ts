@@ -1035,7 +1035,8 @@ export class StrategyIntentExecutionService {
     if (
       !normalized.includes('oversold') &&
       !normalized.includes('insufficient balance') &&
-      !normalized.includes('insufficient available')
+      !normalized.includes('insufficient available') &&
+      !normalized.includes('insufficient position')
     ) {
       return;
     }

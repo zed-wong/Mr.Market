@@ -698,6 +698,44 @@ describe('StrategyIntentExecutionService', () => {
     );
   });
 
+  it('pauses reservation when MEXC rejects create for insufficient position', async () => {
+    const service = createService(
+      true,
+      createConfigService(true, { 'strategy.intent_max_retries': 0 }),
+      createExecutionHistoryRepository(),
+      orderReservationService,
+    );
+
+    exchangeConnectorAdapterService.placeLimitOrder.mockRejectedValue(
+      new Error('mexc {"msg":"Insufficient position","code":30004}'),
+    );
+
+    await expect(service.consumeIntents([baseIntent])).rejects.toThrow(
+      'Insufficient position',
+    );
+
+    expect(
+      orderReservationService.pauseReservationForLimitOrder,
+    ).toHaveBeenCalledWith(
+      {
+        orderId: 'c1',
+        userId: 'u1',
+        intentId: 'intent-1',
+        pair: 'BTC/USDT',
+        side: 'buy',
+        price: '100',
+        qty: '1',
+      },
+      {
+        source: 'exchange_create_failed',
+        reason: 'exchange_balance_rejected',
+        strategyKey: 'u1-c1-pureMarketMaking',
+        refType: 'strategy_order_intent',
+        refId: 'intent-1',
+      },
+    );
+  });
+
   it('blocks dual-account maker create when inline taker reservation is paused', async () => {
     const service = createService(
       true,

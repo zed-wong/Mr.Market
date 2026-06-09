@@ -2353,12 +2353,15 @@ export class DualAccountPlannerService {
       return new BigNumber(0);
     }
 
+    const feeBufferRate = makerFeeRate.plus(takerFeeRate);
+
     if (side === 'buy') {
       // Maker buy: maker spends quote, receives base (makerFee on received base)
       // Taker sell: taker spends base, receives quote (takerFee on received quote)
       // Post-cycle:
       //   maker.base' = maker.base + qty × (1 - makerFeeRate)
-      //   maker.quote' = maker.quote - qty × price
+      //   maker.quote' = maker.quote - qty × price, with a quote-side
+      //     fee buffer retained for exchanges that debit buy fees from quote
       //   taker.base' = taker.base - qty
       //   taker.quote' = taker.quote + qty × price × (1 - takerFeeRate)
       //
@@ -2375,10 +2378,13 @@ export class DualAccountPlannerService {
       // direction has NO upper sustainable constraint from reverse feasibility.
       //
       // The real constraints are just capacity:
-      //   qty <= maker.quote / price  (maker has enough quote)
+      //   qty <= maker.quote / price × retainFactor (maker has enough quote)
       //   qty <= taker.base           (taker has enough base to sell)
 
-      const maxByMakerQuote = makerBalances.quote.dividedBy(price);
+      const retainFactor = this.resolveRetainFactor(feeBufferRate);
+      const maxByMakerQuote = makerBalances.quote
+        .dividedBy(price)
+        .multipliedBy(retainFactor);
       const maxByTakerBase = takerBalances.base;
       const maxQty = BigNumber.min(maxByMakerQuote, maxByTakerBase);
 
@@ -2431,7 +2437,8 @@ export class DualAccountPlannerService {
     //   maker.base' = maker.base - qty
     //   maker.quote' = maker.quote + qty × price × (1 - makerFeeRate)
     //   taker.base' = taker.base + qty × (1 - takerFeeRate)
-    //   taker.quote' = taker.quote - qty × price
+    //   taker.quote' = taker.quote - qty × price, with a quote-side fee
+    //     buffer retained for exchanges that debit buy fees from quote
     //
     // Reverse (buy) feasibility:
     //   maker buys: needs maker.quote' for quote → maker.quote + qty×price×(1-makerFee) → increases ✓
@@ -2441,10 +2448,13 @@ export class DualAccountPlannerService {
     // Same analysis: sell always makes the reverse (buy) more feasible.
     // Constraints are just capacity:
     //   qty <= maker.base          (maker has enough base to sell)
-    //   qty <= taker.quote / price (taker has enough quote to buy)
+    //   qty <= taker.quote / price × retainFactor (taker has enough quote)
 
+    const retainFactor = this.resolveRetainFactor(feeBufferRate);
     const maxByMakerBase = makerBalances.base;
-    const maxByTakerQuote = takerBalances.quote.dividedBy(price);
+    const maxByTakerQuote = takerBalances.quote
+      .dividedBy(price)
+      .multipliedBy(retainFactor);
     const maxQty = BigNumber.min(maxByMakerBase, maxByTakerQuote);
 
     // Verify reverse (buy) feasibility

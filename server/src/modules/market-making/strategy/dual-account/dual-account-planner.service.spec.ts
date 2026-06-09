@@ -312,6 +312,45 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
     ).toBe(true);
   });
 
+  it('keeps a fee buffer when computing optimal quote-limited sustainable quantity', () => {
+    const { planner } = buildPlanner();
+    const price = new BigNumber(100);
+    const feeBufferRate = new BigNumber(0.002);
+    const costMin = new BigNumber(10);
+    const amountMin = new BigNumber('0.001');
+
+    expect(
+      planner
+        .computeSustainableQty(
+          'buy',
+          buildBalances(10, 100),
+          buildBalances(10, 1000),
+          price,
+          new BigNumber('0.001'),
+          new BigNumber('0.001'),
+          costMin,
+          amountMin,
+          costMin,
+        )
+        .toFixed(),
+    ).toBe('0.998');
+    expect(
+      planner
+        .computeSustainableQty(
+          'sell',
+          buildBalances(10, 1000),
+          buildBalances(10, 100),
+          price,
+          new BigNumber('0.001'),
+          new BigNumber('0.001'),
+          costMin,
+          amountMin,
+          costMin,
+        )
+        .toFixed(),
+    ).toBe('0.998');
+  });
+
   it('computes deterministic spread cost and lets spread penalties affect ranking', () => {
     const { planner } = buildPlanner();
     const price = new BigNumber(100);
