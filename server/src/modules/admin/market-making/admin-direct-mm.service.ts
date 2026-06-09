@@ -2852,9 +2852,10 @@ export class AdminDirectMarketMakingService {
       ));
 
     for (const assetId of relevantAssets) {
-      const allocated = (
-        alreadyAllocated.get(assetId) || new BigNumber(0)
-      ).plus(currentAllocations.get(assetId) || 0);
+      const siblingAllocated = alreadyAllocated.get(assetId) || new BigNumber(0);
+      const currentOrderAllocated =
+        currentAllocations.get(assetId) || new BigNumber(0);
+      const allocated = siblingAllocated.plus(currentOrderAllocated);
 
       if (allocated.isLessThanOrEqualTo(0)) {
         continue;
@@ -2866,9 +2867,11 @@ export class AdminDirectMarketMakingService {
 
       if (allocated.isGreaterThan(exchangeFree)) {
         throw new BadRequestException(
-          `Account overlap: ${
-            overlappingOrderIds.length
-          } active order(s) already allocate ${allocated.toFixed()} ${assetId}, but exchange free balance is only ${exchangeFree.toFixed()} ${assetId}. Reduce order amount or stop conflicting orders first.`,
+          overlappingOrderIds.length > 0
+            ? `Account overlap: current order allocates ${currentOrderAllocated.toFixed()} ${assetId} and ${
+                overlappingOrderIds.length
+              } active order(s) allocate ${siblingAllocated.toFixed()} ${assetId}, but exchange free balance is only ${exchangeFree.toFixed()} ${assetId}. Reduce order amount or stop conflicting orders first.`
+            : `Account allocation exceeds exchange free balance: current order allocates ${currentOrderAllocated.toFixed()} ${assetId}, but exchange free balance is only ${exchangeFree.toFixed()} ${assetId}. Reduce order amount or add funds before resuming.`,
         );
       }
     }

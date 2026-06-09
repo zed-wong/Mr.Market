@@ -1270,6 +1270,60 @@ describe('AdminDirectMarketMakingService', () => {
     expect(marketMakingRuntimeService.startOrder).not.toHaveBeenCalled();
   });
 
+  it('rejects direct resume with clear copy when only the current order exceeds exchange free balance', async () => {
+    const {
+      service,
+      marketMakingRepository,
+      marketMakingRuntimeService,
+      exchange,
+    } = buildService();
+
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'resume-order',
+      userId: 'admin-user',
+      source: 'admin_direct',
+      state: 'stopped',
+      pair: 'BTC/USDT',
+      exchangeName: 'binance',
+      apiKeyId: 'api-key-1',
+      strategyDefinitionId: 'strategy-1',
+      strategySnapshot: buildStrategySnapshot({
+        exchangeName: 'binance',
+        pair: 'BTC/USDT',
+        symbol: 'BTC/USDT',
+        userId: 'admin-user',
+        clientId: 'resume-order',
+        marketMakingOrderId: 'resume-order',
+        accountLabel: 'api-key-1',
+        bidSpread: 0.004,
+        askSpread: 0.005,
+        orderAmount: 0.1,
+        orderRefreshTime: 2500,
+        numberOfLayers: 1,
+        priceSourceType: 'last_trade',
+        amountChangePerLayer: 0,
+        amountChangeType: 'fixed',
+        ceilingPrice: 0,
+        floorPrice: 0,
+        balanceA: '0.1',
+        balanceB: '10.9',
+      }),
+      balanceA: '0.1',
+      balanceB: '10.9',
+    });
+    marketMakingRepository.find.mockResolvedValue([]);
+    exchange.fetchBalance.mockResolvedValue({
+      free: { BTC: 1, USDT: '7.3674727385' },
+      used: {},
+      total: {},
+    });
+
+    await expect(service.directResume('resume-order')).rejects.toThrow(
+      /current order allocates 10\.9 USDT.*exchange free balance is only 7\.3674727385 USDT/,
+    );
+    expect(marketMakingRuntimeService.startOrder).not.toHaveBeenCalled();
+  });
+
   it('removes a stopped direct order', async () => {
     const { service, marketMakingRepository } = buildService();
 
