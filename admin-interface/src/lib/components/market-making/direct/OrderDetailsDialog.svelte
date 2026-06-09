@@ -1,10 +1,12 @@
 <script lang="ts">
-    import BigNumber from "bignumber.js";
     import { _ } from "svelte-i18n";
     import { toast } from "svelte-sonner";
     import AdminStatePanel from "$lib/components/admin/shared/AdminStatePanel.svelte";
-    import PnlChart from "$lib/components/market-making/direct/PnlChart.svelte";
-    import RuntimeCyclePanel from "$lib/components/market-making/direct/RuntimeCyclePanel.svelte";
+    import OrderPerformanceDialog from "$lib/components/market-making/direct/OrderPerformanceDialog.svelte";
+    import OrderInventoryDialog from "$lib/components/market-making/direct/OrderInventoryDialog.svelte";
+    import OrderConfigDialog from "$lib/components/market-making/direct/OrderConfigDialog.svelte";
+    import OrderRoutingDialog from "$lib/components/market-making/direct/OrderRoutingDialog.svelte";
+    import OrderErrorsDialog from "$lib/components/market-making/direct/OrderErrorsDialog.svelte";
     import type { AdminErrorState } from "$lib/helpers/admin/common-states";
     import type {
         DirectOrderSummary,
@@ -13,8 +15,8 @@
     import type { OrderPerformance } from "$lib/types/hufi/order-performance";
     import {
         formatTimestamp,
-        resolveInventorySkewAllocation,
-        aggregateBalancesByAsset,
+        formatDirectDecimal,
+        formatDirectTimeAgo,
         isBestCapacityDirectOrderControllerType,
         isDualAccountOrder,
         isEfficientDualAccountControllerType,
@@ -36,10 +38,39 @@
     export let onStartOrder: () => void;
     export let onStopOrder: () => void;
     export let onRemoveOrder: () => void;
+
+    type DetailView =
+        | "overview"
+        | "performance"
+        | "inventory"
+        | "config"
+        | "routing"
+        | "errors";
+
+    let activeView: DetailView = "overview";
+    let trackedOrderId: string | null = null;
+
+    $: if (!show) {
+        activeView = "overview";
+    }
+
+    $: if (order && order.orderId !== trackedOrderId) {
+        trackedOrderId = order.orderId;
+        activeView = "overview";
+    }
+
     function copyOrderId() {
         if (!order) return;
         navigator.clipboard.writeText(order.orderId);
         toast.success($_("admin_direct_mm_order_id_copied"));
+    }
+
+    function handleEscape() {
+        if (activeView !== "overview") {
+            activeView = "overview";
+            return;
+        }
+        onClose();
     }
 
     function isRunningState(state: string): boolean {
@@ -76,51 +107,6 @@
         return $_("admin_direct_mm_connectivity_active");
     }
 
-    function formatEfficientMode(value?: string | null): string {
-        if (value === "cheapest_capital") return "Cheapest capital";
-        if (value === "fastest_volume") return "Fastest volume";
-        if (value === "balanced") return "Balanced";
-        return value || $_("admin_direct_mm_na");
-    }
-
-    function formatTimeAgo(iso: string | null): string {
-        if (!iso) return $_("admin_direct_mm_na");
-        const diffMs = Date.now() - Date.parse(iso);
-        if (diffMs < 0) return $_("admin_direct_mm_just_now");
-        const seconds = Math.floor(diffMs / 1000);
-        if (seconds < 60)
-            return $_("admin_direct_mm_seconds_ago", { values: { seconds } });
-        const minutes = Math.floor(seconds / 60);
-        if (minutes < 60)
-            return $_("admin_direct_mm_minutes_ago", {
-                values: { m: minutes },
-            });
-        const hours = Math.floor(minutes / 60);
-        return $_("admin_direct_mm_hours_ago", { values: { h: hours } });
-    }
-
-    function formatSpread(val: string | null | undefined): string {
-        if (val === null || val === undefined || val === "")
-            return $_("admin_direct_mm_na");
-        return new BigNumber(val).multipliedBy(100).toString() + "%";
-    }
-
-    function formatDecimal(value: string | null | undefined, decimals = 4): string {
-        if (value === null || value === undefined || value === "")
-            return $_("admin_direct_mm_na");
-        const parsed = new BigNumber(value);
-        if (!parsed.isFinite()) return $_("admin_direct_mm_na");
-        return parsed.decimalPlaces(decimals).toFormat();
-    }
-
-    function formatBps(value: string | null | undefined): string {
-        if (value === null || value === undefined || value === "")
-            return $_("admin_direct_mm_na");
-        const parsed = new BigNumber(value);
-        if (!parsed.isFinite()) return $_("admin_direct_mm_na");
-        return `${parsed.decimalPlaces(2).toFormat()} bps`;
-    }
-
     $: currentRuntimeState = data?.runtimeState ?? order?.runtimeState ?? "";
     $: stateLabel = currentRuntimeState ? getStateLabel(currentRuntimeState) : "";
     $: isOrderRunning = isRunningState(currentRuntimeState);
@@ -141,615 +127,516 @@
     $: isEfficientDualAccountStrategy =
         isEfficientDualAccountControllerType(resolvedControllerType) ||
         Boolean(data?.cycles?.length && isDualAccountStrategy);
-    $: isKnownStrategy = isKnownDirectStrategyControllerType(resolvedControllerType);
-    $: skewBalances = data
-        ? isDualAccountStrategy
-            ? aggregateBalancesByAsset(data.inventoryBalances)
-            : data.inventoryBalances
-        : [];
-    $: inventorySkew =
-        data && order
-            ? resolveInventorySkewAllocation(
-                  skewBalances,
-                  order.pair,
-                  data.spread?.bid,
-                  data.spread?.ask,
-              )
-            : null;
+    $: isKnownStrategy =
+        isKnownDirectStrategyControllerType(resolvedControllerType);
     $: fills1h = data?.fillCount1h ?? 0;
-
-    $: makerBalances =
-        data?.inventoryBalances.filter((b) => b.accountLabel === "maker") ?? [];
-    $: takerBalances =
-        data?.inventoryBalances.filter((b) => b.accountLabel === "taker") ?? [];
     $: recentErrors = data?.recentErrors ?? [];
     $: efficientResumeDisabled =
         isEfficientDualAccountStrategy &&
         actionAvailability.canResume &&
         data?.readiness?.canStart !== true;
+
+    $: detailEntries = (
+        [
+            {
+                key: "performance",
+                label: $_("admin_direct_mm_performance"),
+                show: true,
+            },
+            {
+                key: "config",
+                label: $_("admin_direct_mm_order_config"),
+                show: Boolean(data),
+            },
+            {
+                key: "routing",
+                label: $_("admin_direct_mm_account_routing"),
+                show: Boolean(data),
+            },
+            {
+                key: "inventory",
+                label: $_("admin_direct_mm_inventory_balances"),
+                show: Boolean(data),
+            },
+            {
+                key: "errors",
+                label: $_("admin_direct_mm_recent_errors"),
+                show: recentErrors.length > 0,
+            },
+        ] as { key: DetailView; label: string; show: boolean }[]
+    ).filter((entry) => entry.show);
+
+    function openView(view: DetailView) {
+        activeView = view;
+    }
+
+    function backToOverview() {
+        activeView = "overview";
+    }
 </script>
 
-<svelte:window on:keydown={(e) => show && e.key === "Escape" && onClose()} />
+<svelte:window on:keydown={(e) => show && e.key === "Escape" && handleEscape()} />
 
 {#if show && order}
     <div class="modal modal-open bg-black/20 backdrop-blur-[2px]">
-        <div
-            class="modal-box bg-base-100 p-0 rounded-2xl max-w-140 shadow-2xl border border-base-300 max-h-[90vh] overflow-y-auto"
-        >
-            <!-- Header -->
-            <div class="px-7 pt-6 pb-4">
-                <div class="flex items-start justify-between">
-                    <div class="flex items-center gap-3">
-                        <div
-                            class="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center"
-                        >
-                            <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                viewBox="0 0 24 24"
-                                fill="currentColor"
-                                class="w-5 h-5 text-primary"
-                            >
-                                <path
-                                    d="M5.625 1.5c-1.036 0-1.875.84-1.875 1.875v17.25c0 1.035.84 1.875 1.875 1.875h12.75c1.035 0 1.875-.84 1.875-1.875V8.625L14.25 1.5H5.625ZM14.25 3.75v3.375c0 .621.504 1.125 1.125 1.125h3.375"
-                                />
-                                <path d="M8.25 13.5h7.5M8.25 16.5h4.5" />
-                            </svg>
-                        </div>
-                        <div class="flex min-w-0 flex-col gap-0.5">
-                            <span
-                                class="text-xs text-base-content/50 font-semibold"
-                                >{$_(
-                                    "admin_direct_mm_order_details_title",
-                                )}</span
-                            >
+        {#if activeView === "performance"}
+            <OrderPerformanceDialog
+                {performance}
+                onBack={backToOverview}
+                {onClose}
+            />
+        {:else if activeView === "inventory" && data}
+            <OrderInventoryDialog
+                {order}
+                {data}
+                {isDualAccountStrategy}
+                onBack={backToOverview}
+                {onClose}
+            />
+        {:else if activeView === "config" && data}
+            <OrderConfigDialog
+                {data}
+                {isDualAccountStrategy}
+                {isBestCapacityStrategy}
+                {isKnownStrategy}
+                onBack={backToOverview}
+                {onClose}
+            />
+        {:else if activeView === "routing" && data}
+            <OrderRoutingDialog
+                {order}
+                {data}
+                {isDualAccountStrategy}
+                {isEfficientDualAccountStrategy}
+                onBack={backToOverview}
+                {onClose}
+            />
+        {:else if activeView === "errors"}
+            <OrderErrorsDialog
+                {recentErrors}
+                onBack={backToOverview}
+                {onClose}
+            />
+        {:else}
+            <div
+                class="modal-box bg-base-100 p-0 rounded-2xl max-w-140 shadow-2xl border border-base-300 max-h-[90vh] overflow-y-auto"
+            >
+                <!-- Header -->
+                <div class="px-7 pt-6 pb-4">
+                    <div class="flex items-start justify-between">
+                        <div class="flex items-center gap-3">
                             <div
-                                class="flex max-w-[360px] items-center gap-1.5 text-base-content/35"
+                                class="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center"
                             >
+                                <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    viewBox="0 0 24 24"
+                                    fill="currentColor"
+                                    class="w-5 h-5 text-primary"
+                                >
+                                    <path
+                                        d="M5.625 1.5c-1.036 0-1.875.84-1.875 1.875v17.25c0 1.035.84 1.875 1.875 1.875h12.75c1.035 0 1.875-.84 1.875-1.875V8.625L14.25 1.5H5.625ZM14.25 3.75v3.375c0 .621.504 1.125 1.125 1.125h3.375"
+                                    />
+                                    <path d="M8.25 13.5h7.5M8.25 16.5h4.5" />
+                                </svg>
+                            </div>
+                            <div class="flex min-w-0 flex-col gap-0.5">
                                 <span
-                                    class="truncate font-mono text-[11px]"
-                                    title={order.orderId}
-                                    >{order.orderId}</span
+                                    class="text-xs text-base-content/50 font-semibold"
+                                    >{$_("admin_direct_mm_order_details_title")}</span
                                 >
-                                <button
-                                    class="shrink-0 text-base-content/25 transition-colors hover:text-base-content/60"
-                                    on:click={copyOrderId}
-                                    aria-label={$_("copy_order_id")}
-                                >
-                                    <svg
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        viewBox="0 0 20 20"
-                                        fill="currentColor"
-                                        class="w-3.5 h-3.5"
-                                    >
-                                        <path
-                                            d="M7 3.5A1.5 1.5 0 0 1 8.5 2h3.879a1.5 1.5 0 0 1 1.06.44l3.122 3.12A1.5 1.5 0 0 1 17 6.622V12.5a1.5 1.5 0 0 1-1.5 1.5h-1v-3.379a3 3 0 0 0-.879-2.121L10.5 5.379A3 3 0 0 0 8.379 4.5H7v-1Z"
-                                        />
-                                        <path
-                                            d="M4.5 6A1.5 1.5 0 0 0 3 7.5v9A1.5 1.5 0 0 0 4.5 18h7a1.5 1.5 0 0 0 1.5-1.5v-5.879a1.5 1.5 0 0 0-.44-1.06L9.44 6.439A1.5 1.5 0 0 0 8.378 6H4.5Z"
-                                        />
-                                    </svg>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                    <button
-                        class="btn btn-sm btn-circle btn-ghost text-base-content/50 hover:bg-base-200"
-                        on:click={onClose}
-                        aria-label={$_("admin_direct_mm_close")}
-                    >
-                        <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke-width="2"
-                            stroke="currentColor"
-                            class="w-5 h-5"
-                        >
-                            <path
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                                d="M6 18L18 6M6 6l12 12"
-                            />
-                        </svg>
-                    </button>
-                </div>
-            </div>
-
-            {#if loading && !data && !error}
-                <div
-                    class="px-7 pb-7 flex flex-col gap-5"
-                    data-testid="direct-mm-detail-loading"
-                    aria-busy="true"
-                >
-                    <div class="rounded-2xl border border-base-300 bg-base-100 p-4">
-                        <div
-                            class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"
-                        >
-                            <div class="min-w-0 space-y-2">
-                                <div class="skeleton h-7 w-36 rounded-lg"></div>
-                                <div class="flex flex-wrap items-center gap-1.5">
-                                    <div class="skeleton h-5 w-20 rounded-full"></div>
-                                    <div class="skeleton h-5 w-16 rounded-full"></div>
-                                    <div class="skeleton h-5 w-28 rounded-full"></div>
-                                </div>
-                            </div>
-
-                            <div class="flex shrink-0 items-center gap-2">
-                                <div class="skeleton h-4 w-20 rounded"></div>
-                                <div class="skeleton h-4 w-28 rounded"></div>
-                                <div class="skeleton h-6 w-6 rounded-full"></div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="grid grid-cols-3 gap-3">
-                        <div class="skeleton h-20 rounded-xl"></div>
-                        <div class="skeleton h-20 rounded-xl"></div>
-                        <div class="skeleton h-20 rounded-xl"></div>
-                    </div>
-
-                    <div>
-                        <div class="mb-3 flex h-5 items-center justify-between">
-                            <div class="skeleton h-4 w-28 rounded"></div>
-                            <div class="skeleton h-3 w-36 rounded"></div>
-                        </div>
-                        <div class="grid grid-cols-2 gap-3 md:grid-cols-5">
-                            <div class="skeleton h-20 rounded-xl"></div>
-                            <div class="skeleton h-20 rounded-xl"></div>
-                            <div class="skeleton h-20 rounded-xl"></div>
-                            <div class="skeleton h-20 rounded-xl"></div>
-                            <div class="skeleton h-20 rounded-xl"></div>
-                        </div>
-                        <div class="skeleton mt-3 h-44 w-full rounded-xl"></div>
-                    </div>
-
-                    <div class="grid grid-cols-2 gap-4">
-                        <div class="skeleton h-36 rounded-xl"></div>
-                        <div class="skeleton h-36 rounded-xl"></div>
-                    </div>
-
-                    <div>
-                        <div class="mb-3 flex h-5 items-center justify-between">
-                            <div class="skeleton h-4 w-32 rounded"></div>
-                            <div class="skeleton h-3 w-28 rounded"></div>
-                        </div>
-                        <div class="skeleton h-48 w-full rounded-xl"></div>
-                    </div>
-
-                    <div class="flex gap-3 mt-2">
-                        <div class="skeleton h-11 w-[120px] rounded-[10px]"></div>
-                        <div class="skeleton h-11 flex-1 rounded-[10px]"></div>
-                    </div>
-                </div>
-            {:else if error}
-                <div class="px-7 pb-16 py-12">
-                    <AdminStatePanel
-                        kind={error.kind}
-                        context={$_("admin_direct_mm_order_diagnosis_context")}
-                        title={error.title}
-                        message={error.message}
-                        actionLabel={error.kind === "session" ? $_("admin_sign_in_again") : $_("admin_direct_mm_retry_diagnosis")}
-                        actionHref={error.kind === "session" ? "/login" : ""}
-                        onAction={error.kind === "session" ? undefined : onRefresh}
-                        disabled={loading || refreshing}
-                        testId="direct-mm-detail-error"
-                    />
-                </div>
-            {:else}
-                <div class="px-7 pb-7 flex flex-col gap-5">
-                    <!-- Market Info Bar -->
-                    <div class="rounded-2xl border border-base-300 bg-base-100 p-4">
-                        <div
-                            class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"
-                        >
-                            <div class="min-w-0">
-                                <div class="flex min-w-0 items-center gap-2">
-                                    <span
-                                        class="truncate text-xl font-bold tracking-tight text-base-content"
-                                    >
-                                        {order.pair}
-                                    </span>
-                                </div>
                                 <div
-                                    class="mt-2 flex min-w-0 flex-wrap items-center gap-1.5"
+                                    class="flex max-w-[360px] items-center gap-1.5 text-base-content/35"
                                 >
                                     <span
-                                        class="rounded-full border border-base-300 bg-base-200 px-2 py-0.5 text-[10px] font-semibold capitalize text-base-content/70"
+                                        class="truncate font-mono text-[11px]"
+                                        title={order.orderId}>{order.orderId}</span
                                     >
-                                        {order.exchangeName}
-                                    </span>
-                                    {#if stateLabel}
-                                        <span
-                                            class="rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-semibold capitalize text-success"
-                                        >
-                                            {stateLabel}
-                                        </span>
-                                    {/if}
-                                    <span
-                                        class="max-w-[220px] truncate rounded-full bg-base-200 px-2 py-0.5 text-[10px] font-medium text-base-content/55"
-                                        title={order.strategyName}
-                                    >
-                                        {order.strategyName}
-                                    </span>
-                                </div>
-                            </div>
-
-                            <div
-                                class="flex shrink-0 items-center justify-between gap-2 sm:justify-end"
-                            >
-                                <div class="flex items-center gap-1.5 text-base-content/55">
-                                    <span class="text-[10px] uppercase tracking-wide text-base-content/35">
-                                        {$_("admin_direct_mm_last_updated_label")}
-                                    </span>
-                                    <span class="font-mono text-[10px]">
-                                        {lastUpdated || $_("admin_direct_mm_na")}
-                                    </span>
                                     <button
-                                        type="button"
-                                        class="btn btn-ghost btn-xs h-6 min-h-6 w-6 rounded-full p-0 text-base-content/55 hover:text-base-content"
-                                        on:click={onRefresh}
-                                        disabled={loading || refreshing}
-                                        aria-label={$_(
-                                            "admin_direct_mm_refresh_order_diagnosis",
-                                        )}
-                                        title={$_("admin_direct_mm_refresh")}
+                                        class="shrink-0 text-base-content/25 transition-colors hover:text-base-content/60"
+                                        on:click={copyOrderId}
+                                        aria-label={$_("copy_order_id")}
                                     >
                                         <svg
                                             xmlns="http://www.w3.org/2000/svg"
-                                            width="13"
-                                            height="13"
-                                            viewBox="0 0 24 24"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            stroke-width="2"
-                                            stroke-linecap="round"
-                                            stroke-linejoin="round"
-                                            class={refreshing ? "animate-spin" : ""}
-                                            aria-hidden="true"
+                                            viewBox="0 0 20 20"
+                                            fill="currentColor"
+                                            class="w-3.5 h-3.5"
                                         >
-                                            <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-                                            <path d="M21 3v5h-5" />
+                                            <path
+                                                d="M7 3.5A1.5 1.5 0 0 1 8.5 2h3.879a1.5 1.5 0 0 1 1.06.44l3.122 3.12A1.5 1.5 0 0 1 17 6.622V12.5a1.5 1.5 0 0 1-1.5 1.5h-1v-3.379a3 3 0 0 0-.879-2.121L10.5 5.379A3 3 0 0 0 8.379 4.5H7v-1Z"
+                                            />
+                                            <path
+                                                d="M4.5 6A1.5 1.5 0 0 0 3 7.5v9A1.5 1.5 0 0 0 4.5 18h7a1.5 1.5 0 0 0 1.5-1.5v-5.879a1.5 1.5 0 0 0-.44-1.06L9.44 6.439A1.5 1.5 0 0 0 8.378 6H4.5Z"
+                                            />
                                         </svg>
-                                        <span class="sr-only">
-                                            {refreshing
-                                                ? $_("admin_direct_mm_refreshing_diagnosis")
-                                                : $_("admin_direct_mm_refresh")}
-                                        </span>
                                     </button>
                                 </div>
                             </div>
                         </div>
-                    </div>
-
-                    <!-- Warnings Banner -->
-                    {#if order.warnings && order.warnings.length > 0}
-                        <div class="flex flex-col gap-1.5">
-                            {#each order.warnings as warning}
-                                <div
-                                    class="flex items-center gap-2 bg-warning/10 border border-warning/30 rounded-lg px-3 py-2"
-                                >
-                                    <svg
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        viewBox="0 0 20 20"
-                                        fill="currentColor"
-                                        class="w-3.5 h-3.5 text-warning shrink-0"
-                                    >
-                                        <path
-                                            fill-rule="evenodd"
-                                            d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 6a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 6Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"
-                                            clip-rule="evenodd"
-                                        />
-                                    </svg>
-                                    <span class="text-xs text-warning"
-                                        >{explainDirectOrderWarning(warning)}</span
-                                    >
-                                </div>
-                            {/each}
-                        </div>
-                    {/if}
-
-                    <!-- Key Metrics Row -->
-                    <div class="grid grid-cols-3 gap-3">
-                        {#if isOrderRunning}
-                            <!-- Spread -->
-                            <div
-                                class="border border-base-300 rounded-xl p-3 text-center"
-                            >
-                                <span
-                                    class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                                    >{$_("admin_direct_mm_spread_label")}</span
-                                >
-                                {#if data?.spread}
-                                    <span
-                                        class="text-sm font-bold text-base-content block"
-                                        >{data.spread.absolute}</span
-                                    >
-                                    <span class="text-[10px] text-base-content/40"
-                                        >{data.spread.bid} / {data.spread.ask}</span
-                                    >
-                                {:else}
-                                    <span class="text-sm text-base-content/30"
-                                        >{$_("admin_direct_mm_no_spread")}</span
-                                    >
-                                {/if}
-                            </div>
-
-                            <!-- Last Tick Ago -->
-                            <div
-                                class="border border-base-300 rounded-xl p-3 text-center"
-                            >
-                                <span
-                                    class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                                    >{$_("admin_direct_mm_last_tick_ago")}</span
-                                >
-                                <span
-                                    class="text-sm font-bold text-base-content block"
-                                    >{formatTimeAgo(
-                                        data?.lastTickAt ?? order.lastTickAt,
-                                    )}</span
-                                >
-                            </div>
-                        {:else}
-                            <div
-                                class="border border-base-300 rounded-xl p-3 text-center"
-                            >
-                                <span
-                                    class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                                    >{$_("admin_direct_mm_final_net_pnl")}</span
-                                >
-                                <span
-                                    class="text-sm font-bold text-base-content block"
-                                    >{formatDecimal(performance?.summary.netPnlQuote)}</span
-                                >
-                            </div>
-
-                            <div
-                                class="border border-base-300 rounded-xl p-3 text-center"
-                            >
-                                <span
-                                    class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                                    >{$_("admin_direct_mm_volume")}</span
-                                >
-                                <span
-                                    class="text-sm font-bold text-base-content block"
-                                    >{formatDecimal(
-                                        performance?.summary.tradedQuoteVolume,
-                                        2,
-                                    )}</span
-                                >
-                            </div>
-                        {/if}
-
-                        <div
-                            class="border border-base-300 rounded-xl p-3 text-center"
+                        <button
+                            class="btn btn-sm btn-circle btn-ghost text-base-content/50 hover:bg-base-200"
+                            on:click={onClose}
+                            aria-label={$_("admin_direct_mm_close")}
                         >
-                            <span
-                                class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                                >{$_("admin_direct_mm_fills_1h")}</span
+                            <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke-width="2"
+                                stroke="currentColor"
+                                class="w-5 h-5"
                             >
-                            <span
-                                class="text-sm font-bold text-base-content block"
-                                >{fills1h}</span
-                            >
-                        </div>
+                                <path
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    d="M6 18L18 6M6 6l12 12"
+                                />
+                            </svg>
+                        </button>
                     </div>
+                </div>
 
-                    <div>
-                        <div class="flex items-center justify-between mb-3 h-5">
-                            <div class="flex items-center gap-1.5">
-                                <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    viewBox="0 0 20 20"
-                                    fill="currentColor"
-                                    class="w-3.5 h-3.5 text-primary"
-                                >
-                                    <path
-                                        d="M3 3.75A.75.75 0 0 1 3.75 3h12.5a.75.75 0 0 1 0 1.5H4.5v11.75a.75.75 0 0 1-1.5 0V3.75Z"
-                                    />
-                                    <path
-                                        d="M6.22 13.78a.75.75 0 0 1 0-1.06l2.75-2.75a.75.75 0 0 1 1.06 0l1.47 1.47 3.97-3.97a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0L9.5 11.56l-2.22 2.22a.75.75 0 0 1-1.06 0Z"
-                                    />
-                                </svg>
-                                <span class="text-xs font-bold text-base-content">
-                                    {$_("admin_direct_mm_performance")}
-                                </span>
-                            </div>
-                            {#if performance?.reconciliation && !performance.reconciliation.realizedPnlMatchesStored}
-                                <span class="text-[10px] text-warning font-semibold">
-                                    {$_("admin_direct_mm_pnl_reconciliation_mismatch")}
-                                </span>
-                            {/if}
-                        </div>
-
-                        <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-3">
-                            <div class="border border-base-300 rounded-xl p-3">
-                                <span class="text-[10px] text-base-content/40 font-semibold block mb-1">
-                                    {$_("admin_direct_mm_realized")}
-                                </span>
-                                <span class="text-sm font-bold text-base-content block">
-                                    {formatDecimal(performance?.summary.realizedPnlQuote)}
-                                </span>
-                            </div>
-                            <div class="border border-base-300 rounded-xl p-3">
-                                <span class="text-[10px] text-base-content/40 font-semibold block mb-1">
-                                    {$_("admin_direct_mm_fees")}
-                                </span>
-                                <span class="text-sm font-bold text-base-content block">
-                                    {formatDecimal(performance?.summary.feesQuote)}
-                                </span>
-                            </div>
-                            <div class="border border-base-300 rounded-xl p-3">
-                                <span class="text-[10px] text-base-content/40 font-semibold block mb-1">
-                                    {$_("admin_direct_mm_net")}
-                                </span>
-                                <span class="text-sm font-bold text-base-content block">
-                                    {formatDecimal(performance?.summary.netPnlQuote)}
-                                </span>
-                            </div>
-                            <div class="border border-base-300 rounded-xl p-3">
-                                <span class="text-[10px] text-base-content/40 font-semibold block mb-1">
-                                    {$_("admin_direct_mm_volume")}
-                                </span>
-                                <span class="text-sm font-bold text-base-content block">
-                                    {formatDecimal(performance?.summary.tradedQuoteVolume, 2)}
-                                </span>
-                            </div>
-                            <div class="border border-base-300 rounded-xl p-3">
-                                <span class="text-[10px] text-base-content/40 font-semibold block mb-1">
-                                    {$_("admin_direct_mm_effective_spread")}
-                                </span>
-                                <span class="text-sm font-bold text-base-content block">
-                                    {formatBps(performance?.summary.effectiveSpreadBps)}
-                                </span>
-                            </div>
-                        </div>
-
-                        <PnlChart series={performance?.series || []} />
-                    </div>
-
-                    <!-- Status Cards Row -->
-                    <div class="grid grid-cols-2 gap-4">
-                        <!-- General Status -->
-                        <div class="border border-base-300 rounded-xl p-4">
-                            <div class="flex items-center gap-1.5 mb-3 h-5">
-                                <div
-                                    class="w-3.5 h-3.5 flex items-center justify-center"
-                                >
-                                    <span
-                                        class="text-primary text-[10px] font-bold leading-none"
-                                        >{"<>"}</span
-                                    >
-                                </div>
-                                <span
-                                    class="text-xs font-bold text-base-content"
-                                    >{$_(
-                                        "admin_direct_mm_general_status",
-                                    )}</span
-                                >
-                            </div>
+                {#if loading && !data && !error}
+                    <div
+                        class="px-7 pb-7 flex flex-col gap-5"
+                        data-testid="direct-mm-detail-loading"
+                        aria-busy="true"
+                    >
+                        <div
+                            class="rounded-2xl border border-base-300 bg-base-100 p-4"
+                        >
                             <div
-                                class="flex items-center justify-between h-6 mb-2"
+                                class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"
                             >
-                                <span class="text-xs text-base-content/60"
-                                    >{$_("admin_direct_mm_order_state")}</span
-                                >
-                                <span
-                                    class="text-xs font-semibold bg-base-200 px-2 py-0.5 rounded capitalize"
-                                    >{stateLabel}</span
-                                >
-                            </div>
-                            <div class="flex items-center justify-between h-6 mb-2">
-                                <span
-                                    class="text-xs text-base-content/60 tracking-wider capitalize"
-                                    >{$_(
-                                        "admin_direct_mm_last_updated_label",
-                                    )}</span
-                                >
-                                <span class="text-[10px] text-base-content/50"
-                                    >{lastUpdated ||
-                                        $_("admin_direct_mm_na")}</span
-                                >
-                            </div>
-                            {#if order.createdAt}
-                                <div class="flex items-center justify-between h-6">
-                                    <span class="text-xs text-base-content/60">
-                                        {$_("admin_direct_mm_created_at")}
-                                    </span>
-                                    <span class="text-[10px] text-base-content/50">
-                                        {formatTimestamp(order.createdAt)}
-                                    </span>
+                                <div class="min-w-0 space-y-2">
+                                    <div class="skeleton h-7 w-36 rounded-lg"></div>
+                                    <div
+                                        class="flex flex-wrap items-center gap-1.5"
+                                    >
+                                        <div
+                                            class="skeleton h-5 w-20 rounded-full"
+                                        ></div>
+                                        <div
+                                            class="skeleton h-5 w-16 rounded-full"
+                                        ></div>
+                                        <div
+                                            class="skeleton h-5 w-28 rounded-full"
+                                        ></div>
+                                    </div>
                                 </div>
-                            {/if}
+
+                                <div class="flex shrink-0 items-center gap-2">
+                                    <div class="skeleton h-4 w-20 rounded"></div>
+                                    <div class="skeleton h-4 w-28 rounded"></div>
+                                    <div class="skeleton h-6 w-6 rounded-full"></div>
+                                </div>
+                            </div>
                         </div>
 
-                        <!-- Health Metrics -->
-                        <div class="border border-base-300 rounded-xl p-4">
-                            <div class="flex items-center gap-1.5 mb-3 h-5">
-                                <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    viewBox="0 0 20 20"
-                                    fill="currentColor"
-                                    class="w-3.5 h-3.5 text-primary"
-                                >
-                                    <path
-                                        fill-rule="evenodd"
-                                        d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Z"
-                                        clip-rule="evenodd"
-                                    />
-                                </svg>
-                                <span
-                                    class="text-xs font-bold text-base-content"
-                                    >{$_(
-                                        "admin_direct_mm_health_metrics",
-                                    )}</span
-                                >
-                            </div>
-                            {#if data}
-                                <div
-                                    class="flex items-center justify-between h-6 mb-2"
-                                >
-                                    <span class="text-xs text-base-content/60"
-                                        >{$_(
-                                            "admin_direct_mm_executor_health",
-                                        )}</span
-                                    >
-                                    <div
-                                        class="flex items-center gap-1.5 tooltip tooltip-left"
-                                        data-tip={data.executorHealth ===
-                                        "stale"
-                                            ? $_(
-                                                  "admin_direct_mm_stale_tooltip",
-                                              )
-                                            : ""}
-                                    >
+                        <div class="grid grid-cols-3 gap-3">
+                            <div class="skeleton h-20 rounded-xl"></div>
+                            <div class="skeleton h-20 rounded-xl"></div>
+                            <div class="skeleton h-20 rounded-xl"></div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="skeleton h-36 rounded-xl"></div>
+                            <div class="skeleton h-36 rounded-xl"></div>
+                        </div>
+
+                        <div class="skeleton h-44 w-full rounded-xl"></div>
+                    </div>
+                {:else if error}
+                    <div class="px-7 pb-16 py-12">
+                        <AdminStatePanel
+                            kind={error.kind}
+                            context={$_("admin_direct_mm_order_diagnosis_context")}
+                            title={error.title}
+                            message={error.message}
+                            actionLabel={error.kind === "session"
+                                ? $_("admin_sign_in_again")
+                                : $_("admin_direct_mm_retry_diagnosis")}
+                            actionHref={error.kind === "session" ? "/login" : ""}
+                            onAction={error.kind === "session"
+                                ? undefined
+                                : onRefresh}
+                            disabled={loading || refreshing}
+                            testId="direct-mm-detail-error"
+                        />
+                    </div>
+                {:else}
+                    <div class="px-7 pb-7 flex flex-col gap-5">
+                        <!-- Market Info Bar -->
+                        <div
+                            class="rounded-2xl border border-base-300 bg-base-100 p-4"
+                        >
+                            <div
+                                class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"
+                            >
+                                <div class="min-w-0">
+                                    <div class="flex min-w-0 items-center gap-2">
                                         <span
-                                            class="w-2 h-2 rounded-full {getContextualHealthDot(
-                                                data.executorHealth,
-                                                currentRuntimeState,
-                                            )}"
-                                        ></span>
-                                        <span
-                                            class="text-xs font-semibold {getHealthColor(
-                                                data.executorHealth,
-                                                currentRuntimeState,
-                                            )}"
-                                            >{getHealthLabel(
-                                                data.executorHealth,
-                                                currentRuntimeState,
-                                            )}</span
+                                            class="truncate text-xl font-bold tracking-tight text-base-content"
                                         >
+                                            {order.pair}
+                                        </span>
+                                    </div>
+                                    <div
+                                        class="mt-2 flex min-w-0 flex-wrap items-center gap-1.5"
+                                    >
+                                        <span
+                                            class="rounded-full border border-base-300 bg-base-200 px-2 py-0.5 text-[10px] font-semibold capitalize text-base-content/70"
+                                        >
+                                            {order.exchangeName}
+                                        </span>
+                                        {#if stateLabel}
+                                            <span
+                                                class="rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-semibold capitalize text-success"
+                                            >
+                                                {stateLabel}
+                                            </span>
+                                        {/if}
+                                        <span
+                                            class="max-w-[220px] truncate rounded-full bg-base-200 px-2 py-0.5 text-[10px] font-medium text-base-content/55"
+                                            title={order.strategyName}
+                                        >
+                                            {order.strategyName}
+                                        </span>
                                     </div>
                                 </div>
 
                                 <div
-                                    class="flex items-center justify-between h-6"
+                                    class="flex shrink-0 items-center justify-between gap-2 sm:justify-end"
                                 >
-                                    <span class="text-xs text-base-content/60"
-                                        >{$_(
-                                            "admin_direct_mm_connectivity",
-                                        )}</span
+                                    <div
+                                        class="flex items-center gap-1.5 text-base-content/55"
+                                    >
+                                        <span
+                                            class="text-[10px] uppercase tracking-wide text-base-content/35"
+                                        >
+                                            {$_("admin_direct_mm_last_updated_label")}
+                                        </span>
+                                        <span class="font-mono text-[10px]">
+                                            {lastUpdated || $_("admin_direct_mm_na")}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            class="btn btn-ghost btn-xs h-6 min-h-6 w-6 rounded-full p-0 text-base-content/55 hover:text-base-content"
+                                            on:click={onRefresh}
+                                            disabled={loading || refreshing}
+                                            aria-label={$_(
+                                                "admin_direct_mm_refresh_order_diagnosis",
+                                            )}
+                                            title={$_("admin_direct_mm_refresh")}
+                                        >
+                                            <svg
+                                                xmlns="http://www.w3.org/2000/svg"
+                                                width="13"
+                                                height="13"
+                                                viewBox="0 0 24 24"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                stroke-width="2"
+                                                stroke-linecap="round"
+                                                stroke-linejoin="round"
+                                                class={refreshing
+                                                    ? "animate-spin"
+                                                    : ""}
+                                                aria-hidden="true"
+                                            >
+                                                <path
+                                                    d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"
+                                                />
+                                                <path d="M21 3v5h-5" />
+                                            </svg>
+                                            <span class="sr-only">
+                                                {refreshing
+                                                    ? $_(
+                                                          "admin_direct_mm_refreshing_diagnosis",
+                                                      )
+                                                    : $_("admin_direct_mm_refresh")}
+                                            </span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Warnings Banner -->
+                        {#if order.warnings && order.warnings.length > 0}
+                            <div class="flex flex-col gap-1.5">
+                                {#each order.warnings as warning}
+                                    <div
+                                        class="flex items-center gap-2 bg-warning/10 border border-warning/30 rounded-lg px-3 py-2"
+                                    >
+                                        <svg
+                                            xmlns="http://www.w3.org/2000/svg"
+                                            viewBox="0 0 20 20"
+                                            fill="currentColor"
+                                            class="w-3.5 h-3.5 text-warning shrink-0"
+                                        >
+                                            <path
+                                                fill-rule="evenodd"
+                                                d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 6a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 6Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"
+                                                clip-rule="evenodd"
+                                            />
+                                        </svg>
+                                        <span class="text-xs text-warning"
+                                            >{explainDirectOrderWarning(warning)}</span
+                                        >
+                                    </div>
+                                {/each}
+                            </div>
+                        {/if}
+
+                        <!-- Key Metrics Row -->
+                        <div class="grid grid-cols-3 gap-3">
+                            {#if isOrderRunning}
+                                <div
+                                    class="border border-base-300 rounded-xl p-3 text-center"
+                                >
+                                    <span
+                                        class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                                        >{$_("admin_direct_mm_spread_label")}</span
+                                    >
+                                    {#if data?.spread}
+                                        <span
+                                            class="text-sm font-bold text-base-content block"
+                                            >{data.spread.absolute}</span
+                                        >
+                                        <span
+                                            class="text-[10px] text-base-content/40"
+                                            >{data.spread.bid} / {data.spread
+                                                .ask}</span
+                                        >
+                                    {:else}
+                                        <span class="text-sm text-base-content/30"
+                                            >{$_("admin_direct_mm_no_spread")}</span
+                                        >
+                                    {/if}
+                                </div>
+
+                                <div
+                                    class="border border-base-300 rounded-xl p-3 text-center"
+                                >
+                                    <span
+                                        class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                                        >{$_("admin_direct_mm_last_tick_ago")}</span
                                     >
                                     <span
-                                        class="text-xs font-semibold text-base-content/70"
-                                        >{getConnectivity(data)}</span
+                                        class="text-sm font-bold text-base-content block"
+                                        >{formatDirectTimeAgo(
+                                            data?.lastTickAt ?? order.lastTickAt,
+                                        )}</span
                                     >
                                 </div>
                             {:else}
-                                <div class="h-14 flex items-center">
-                                    <span class="text-xs text-base-content/40"
-                                        >{$_("admin_direct_mm_na")}</span
+                                <div
+                                    class="border border-base-300 rounded-xl p-3 text-center"
+                                >
+                                    <span
+                                        class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                                        >{$_("admin_direct_mm_final_net_pnl")}</span
+                                    >
+                                    <span
+                                        class="text-sm font-bold text-base-content block"
+                                        >{formatDirectDecimal(
+                                            performance?.summary.netPnlQuote,
+                                        )}</span
+                                    >
+                                </div>
+
+                                <div
+                                    class="border border-base-300 rounded-xl p-3 text-center"
+                                >
+                                    <span
+                                        class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                                        >{$_("admin_direct_mm_volume")}</span
+                                    >
+                                    <span
+                                        class="text-sm font-bold text-base-content block"
+                                        >{formatDirectDecimal(
+                                            performance?.summary.tradedQuoteVolume,
+                                            2,
+                                        )}</span
                                     >
                                 </div>
                             {/if}
-                        </div>
-                    </div>
 
-                    {#if data}
-                        <div>
                             <div
-                                class="flex items-center justify-between mb-3 h-5"
+                                class="border border-base-300 rounded-xl p-3 text-center"
                             >
-                                <div class="flex items-center gap-1.5">
+                                <span
+                                    class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                                    >{$_("admin_direct_mm_fills_1h")}</span
+                                >
+                                <span
+                                    class="text-sm font-bold text-base-content block"
+                                    >{fills1h}</span
+                                >
+                            </div>
+                        </div>
+
+                        <!-- Status Cards Row -->
+                        <div class="grid grid-cols-2 gap-4">
+                            <!-- General Status -->
+                            <div class="border border-base-300 rounded-xl p-4">
+                                <div class="flex items-center gap-1.5 mb-3 h-5">
+                                    <div
+                                        class="w-3.5 h-3.5 flex items-center justify-center"
+                                    >
+                                        <span
+                                            class="text-primary text-[10px] font-bold leading-none"
+                                            >{"<>"}</span
+                                        >
+                                    </div>
+                                    <span class="text-xs font-bold text-base-content"
+                                        >{$_("admin_direct_mm_general_status")}</span
+                                    >
+                                </div>
+                                <div
+                                    class="flex items-center justify-between h-6 mb-2"
+                                >
+                                    <span class="text-xs text-base-content/60"
+                                        >{$_("admin_direct_mm_order_state")}</span
+                                    >
+                                    <span
+                                        class="text-xs font-semibold bg-base-200 px-2 py-0.5 rounded capitalize"
+                                        >{stateLabel}</span
+                                    >
+                                </div>
+                                <div
+                                    class="flex items-center justify-between h-6 mb-2"
+                                >
+                                    <span
+                                        class="text-xs text-base-content/60 tracking-wider capitalize"
+                                        >{$_(
+                                            "admin_direct_mm_last_updated_label",
+                                        )}</span
+                                    >
+                                    <span class="text-[10px] text-base-content/50"
+                                        >{lastUpdated ||
+                                            $_("admin_direct_mm_na")}</span
+                                    >
+                                </div>
+                                {#if order.createdAt}
+                                    <div
+                                        class="flex items-center justify-between h-6"
+                                    >
+                                        <span class="text-xs text-base-content/60">
+                                            {$_("admin_direct_mm_created_at")}
+                                        </span>
+                                        <span class="text-[10px] text-base-content/50">
+                                            {formatTimestamp(order.createdAt)}
+                                        </span>
+                                    </div>
+                                {/if}
+                            </div>
+
+                            <!-- Health Metrics -->
+                            <div class="border border-base-300 rounded-xl p-4">
+                                <div class="flex items-center gap-1.5 mb-3 h-5">
                                     <svg
                                         xmlns="http://www.w3.org/2000/svg"
                                         viewBox="0 0 20 20"
@@ -757,759 +644,184 @@
                                         class="w-3.5 h-3.5 text-primary"
                                     >
                                         <path
-                                            d="M3 4.75A1.75 1.75 0 0 1 4.75 3h10.5A1.75 1.75 0 0 1 17 4.75v10.5A1.75 1.75 0 0 1 15.25 17H4.75A1.75 1.75 0 0 1 3 15.25V4.75Z"
+                                            fill-rule="evenodd"
+                                            d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Z"
+                                            clip-rule="evenodd"
                                         />
                                     </svg>
-                                    <span
-                                        class="text-xs font-bold text-base-content"
-                                        >{$_(
-                                            "admin_direct_mm_account_routing",
-                                        )}</span
+                                    <span class="text-xs font-bold text-base-content"
+                                        >{$_("admin_direct_mm_health_metrics")}</span
                                     >
                                 </div>
-                            </div>
-
-                            {#if isDualAccountStrategy}
-                                <div class="flex items-center gap-2">
+                                {#if data}
                                     <div
-                                        class="flex-1 border border-base-300 rounded-xl p-3 text-center"
-                                    >
-                                        <span
-                                            class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                                            >{$_(
-                                                "admin_direct_mm_maker_account",
-                                            )}</span
-                                        >
-                                        <span
-                                            class="text-sm font-bold text-base-content block truncate"
-                                            >{data.makerAccountName ||
-                                                $_("admin_direct_mm_na")}</span
-                                        >
-                                    </div>
-                                    <div
-                                        class="flex flex-col items-center gap-0.5 shrink-0"
-                                    >
-                                        <svg
-                                            xmlns="http://www.w3.org/2000/svg"
-                                            viewBox="0 0 20 20"
-                                            fill="currentColor"
-                                            class="w-4 h-4 text-base-content/30"
-                                        >
-                                            <path
-                                                fill-rule="evenodd"
-                                                d="M3 10a.75.75 0 0 1 .75-.75h10.638L10.23 5.29a.75.75 0 1 1 1.04-1.08l5.5 5.25a.75.75 0 0 1 0 1.08l-5.5 5.25a.75.75 0 1 1-1.04-1.08l4.158-3.96H3.75A.75.75 0 0 1 3 10Z"
-                                                clip-rule="evenodd"
-                                            />
-                                        </svg>
-                                        <svg
-                                            xmlns="http://www.w3.org/2000/svg"
-                                            viewBox="0 0 20 20"
-                                            fill="currentColor"
-                                            class="w-4 h-4 text-base-content/30 rotate-180"
-                                        >
-                                            <path
-                                                fill-rule="evenodd"
-                                                d="M3 10a.75.75 0 0 1 .75-.75h10.638L10.23 5.29a.75.75 0 1 1 1.04-1.08l5.5 5.25a.75.75 0 0 1 0 1.08l-5.5 5.25a.75.75 0 1 1-1.04-1.08l4.158-3.96H3.75A.75.75 0 0 1 3 10Z"
-                                                clip-rule="evenodd"
-                                            />
-                                        </svg>
-                                    </div>
-                                    <div
-                                        class="flex-1 border border-base-300 rounded-xl p-3 text-center"
-                                    >
-                                        <span
-                                            class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                                            >{$_(
-                                                "admin_direct_mm_taker_account",
-                                            )}</span
-                                        >
-                                        <span
-                                            class="text-sm font-bold text-base-content block truncate"
-                                            >{data.takerAccountName ||
-                                                $_("admin_direct_mm_na")}</span
-                                        >
-                                    </div>
-                                </div>
-                                {#if data.orderConfig?.dynamicRoleSwitching}
-                                    <div
-                                        class="flex items-center gap-1.5 mt-2 px-1"
-                                    >
-                                        <span
-                                            class="w-1.5 h-1.5 rounded-full bg-success animate-pulse"
-                                        ></span>
-                                        <span
-                                            class="text-[10px] text-base-content/50"
-                                            >{$_(
-                                                "admin_direct_mm_dynamic_role_switching",
-                                            )}</span
-                                        >
-                                    </div>
-                                {/if}
-                            {:else}
-                                <div class="grid grid-cols-2 gap-3">
-                                    <div
-                                        class="border border-base-300 rounded-xl p-3"
-                                    >
-                                        <span
-                                            class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                                            >{$_(
-                                                "admin_direct_mm_account_label",
-                                            )}</span
-                                        >
-                                        <span
-                                            class="text-sm font-bold text-base-content block"
-                                            >{data.accountLabel ||
-                                                $_("admin_direct_mm_na")}</span
-                                        >
-                                    </div>
-                                    <div
-                                        class="border border-base-300 rounded-xl p-3"
-                                    >
-                                        <span
-                                            class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                                            >{$_(
-                                                "admin_direct_mm_exchange_access",
-                                            )}</span
-                                        >
-                                        <span
-                                            class="text-sm font-bold text-base-content block"
-                                            >{$_("read_trade")}</span
-                                        >
-                                        {#if data.apiKeyId}
-                                            <span
-                                                class="mt-1 block truncate font-mono text-[10px] text-base-content/40"
-                                                title={data.apiKeyId}
-                                                >{$_(
-                                                    "admin_direct_mm_api_key_ref",
-                                                    {
-                                                        values: {
-                                                            id: data.apiKeyId,
-                                                        },
-                                                    },
-                                                )}</span
-                                            >
-                                        {/if}
-                                    </div>
-                                </div>
-                            {/if}
-                        </div>
-                    {/if}
-
-                    {#if data && isEfficientDualAccountStrategy}
-                        <RuntimeCyclePanel data={data} warnings={order.warnings || []} />
-                    {/if}
-
-                    <!-- Order Config -->
-                    <div>
-                        <div class="flex items-center justify-between mb-3 h-5">
-                            <div class="flex items-center gap-1.5">
-                                <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    viewBox="0 0 20 20"
-                                    fill="currentColor"
-                                    class="w-3.5 h-3.5 text-primary"
-                                >
-                                    <path
-                                        d="M4.75 3A1.75 1.75 0 0 0 3 4.75v10.5C3 16.216 3.784 17 4.75 17h10.5A1.75 1.75 0 0 0 17 15.25V4.75A1.75 1.75 0 0 0 15.25 3H4.75ZM5.5 6.75A.75.75 0 0 1 6.25 6h7.5a.75.75 0 0 1 0 1.5h-7.5a.75.75 0 0 1-.75-.75Zm0 3.5a.75.75 0 0 1 .75-.75h3.5a.75.75 0 0 1 0 1.5h-3.5a.75.75 0 0 1-.75-.75Zm0 3.5a.75.75 0 0 1 .75-.75h5.5a.75.75 0 0 1 0 1.5h-5.5a.75.75 0 0 1-.75-.75Z"
-                                    />
-                                </svg>
-                                <span
-                                    class="text-xs font-bold text-base-content"
-                                    >{$_("admin_direct_mm_order_config")}</span
-                                >
-                            </div>
-                            <span
-                                class="text-[10px] text-base-content/40 font-semibold"
-                                >{$_("admin_direct_mm_order_config_hint")}</span
-                            >
-                        </div>
-
-                        {#if isDualAccountStrategy}
-                            <!-- Volume & Cycle Progress -->
-                            <div class="grid grid-cols-2 gap-3 mb-3">
-                                <div
-                                    class="border border-base-300 rounded-xl p-3"
-                                >
-                                    <div
-                                        class="flex items-center justify-between mb-2"
-                                    >
-                                        <span
-                                            class="text-[10px] text-base-content/40 font-semibold"
-                                            >{$_(
-                                                isBestCapacityStrategy
-                                                    ? "admin_direct_mm_max_order_amount"
-                                                    : "admin_direct_mm_order_amount",
-                                            )}</span
-                                        >
-                                    </div>
-                                    <span
-                                        class="text-lg font-bold text-base-content block"
-                                        >{data?.orderConfig?.orderAmount}</span
-                                    >
-                                    <span
-                                        class="text-[10px] text-base-content/40"
-                                    >
-                                        {$_(
-                                            "admin_direct_mm_order_amount_small_hint",
-                                        )}
-                                    </span>
-                                </div>
-                                <div
-                                    class="border border-base-300 rounded-xl p-3"
-                                >
-                                    <div
-                                        class="flex items-center justify-between mb-2"
-                                    >
-                                        <span
-                                            class="text-[10px] text-base-content/40 font-semibold"
-                                            >{$_(
-                                                "admin_direct_mm_cycle_progress",
-                                            )}</span
-                                        >
-                                    </div>
-                                    <span
-                                        class="text-lg font-bold text-base-content block"
-                                        >{data?.orderConfig
-                                            .publishedCycles}</span
-                                    >
-                                    <span
-                                        class="text-[10px] text-base-content/40"
-                                        >{$_(
-                                            "admin_direct_mm_published_cycles",
-                                        )}</span
-                                    >
-                                </div>
-                            </div>
-
-                            <!-- Dual Account Config -->
-                            <div
-                                class="border border-base-300 rounded-xl p-4 mb-3"
-                            >
-                                {#if data?.orderConfig?.mode}
-                                    <div
-                                        class="flex items-center justify-between h-6 mb-1"
+                                        class="flex items-center justify-between h-6 mb-2"
                                     >
                                         <span class="text-xs text-base-content/60"
-                                            >Efficient mode</span
+                                            >{$_(
+                                                "admin_direct_mm_executor_health",
+                                            )}</span
+                                        >
+                                        <div
+                                            class="flex items-center gap-1.5 tooltip tooltip-left"
+                                            data-tip={data.executorHealth ===
+                                            "stale"
+                                                ? $_("admin_direct_mm_stale_tooltip")
+                                                : ""}
+                                        >
+                                            <span
+                                                class="w-2 h-2 rounded-full {getContextualHealthDot(
+                                                    data.executorHealth,
+                                                    currentRuntimeState,
+                                                )}"
+                                            ></span>
+                                            <span
+                                                class="text-xs font-semibold {getHealthColor(
+                                                    data.executorHealth,
+                                                    currentRuntimeState,
+                                                )}"
+                                                >{getHealthLabel(
+                                                    data.executorHealth,
+                                                    currentRuntimeState,
+                                                )}</span
+                                            >
+                                        </div>
+                                    </div>
+
+                                    <div
+                                        class="flex items-center justify-between h-6"
+                                    >
+                                        <span class="text-xs text-base-content/60"
+                                            >{$_(
+                                                "admin_direct_mm_connectivity",
+                                            )}</span
                                         >
                                         <span
-                                            class="text-xs font-semibold text-base-content"
-                                            >{formatEfficientMode(
-                                                data?.orderConfig?.mode,
-                                            )}</span
+                                            class="text-xs font-semibold text-base-content/70"
+                                            >{getConnectivity(data)}</span
+                                        >
+                                    </div>
+                                {:else}
+                                    <div class="h-14 flex items-center">
+                                        <span class="text-xs text-base-content/40"
+                                            >{$_("admin_direct_mm_na")}</span
                                         >
                                     </div>
                                 {/if}
-                                <div
-                                    class="flex items-center justify-between h-6 mb-1"
-                                >
-                                    <span class="text-xs text-base-content/60"
-                                        >{$_(
-                                            isBestCapacityStrategy
-                                                ? "admin_direct_mm_daily_volume_target_config"
-                                                : "admin_direct_mm_base_increment_percentage",
-                                        )}</span
+                            </div>
+                        </div>
+
+                        <!-- Detail Drill-down Entries -->
+                        {#if detailEntries.length > 0}
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                {#each detailEntries as entry}
+                                    <button
+                                        type="button"
+                                        class="flex items-center justify-between border border-base-300 rounded-xl px-4 h-12 hover:bg-base-200/60 transition-colors"
+                                        on:click={() => openView(entry.key)}
                                     >
-                                    <span
-                                        class="text-xs font-semibold text-base-content"
-                                        >{isBestCapacityStrategy
-                                            ? data?.orderConfig
-                                                  ?.targetQuoteVolume ||
-                                              $_("admin_direct_mm_na")
-                                            : data?.orderConfig
-                                                  ?.baseIncrementPercentage ||
-                                              $_("admin_direct_mm_na")}</span
-                                    >
-                                </div>
-                                <div
-                                    class="flex items-center justify-between h-6 mb-1"
-                                >
-                                    <span class="text-xs text-base-content/60"
-                                        >{$_(
-                                            "admin_direct_mm_realized_pnl_quote",
-                                        )}</span
-                                    >
-                                    <span
-                                        class="text-xs font-semibold text-base-content"
-                                        >{data?.orderConfig?.realizedPnlQuote ||
-                                            $_("admin_direct_mm_na")}</span
-                                    >
-                                </div>
-                                <div
-                                    class="flex items-center justify-between h-6 mb-1"
-                                >
-                                    <span class="text-xs text-base-content/60"
-                                        >{$_(
-                                            isBestCapacityStrategy
-                                                ? "admin_direct_mm_interval_optional"
-                                                : "admin_direct_mm_interval_time",
-                                        )}</span
-                                    >
-                                    <span
-                                        class="text-xs font-semibold text-base-content"
-                                        >{data?.orderConfig?.baseIntervalTime ??
-                                            $_("admin_direct_mm_na")}</span
-                                    >
-                                </div>
-                                {#if !isBestCapacityStrategy}
-                                    <div
-                                        class="flex items-center justify-between h-6 mb-1"
-                                    >
-                                        <span
-                                            class="text-xs text-base-content/60"
-                                            >{$_(
-                                                "admin_direct_mm_num_trades",
-                                            )}</span
-                                        >
-                                        <span
-                                            class="text-xs font-semibold text-base-content"
-                                            >{data?.orderConfig?.numTrades ??
-                                                $_("admin_direct_mm_na")}</span
-                                        >
-                                    </div>
-                                    <div
-                                        class="flex items-center justify-between h-6 mb-1"
-                                    >
-                                        <span
-                                            class="text-xs text-base-content/60"
-                                            >{$_(
-                                                "admin_direct_mm_price_push_rate",
-                                            )}</span
-                                        >
-                                        <span
-                                            class="text-xs font-semibold text-base-content"
-                                            >{data?.orderConfig?.pricePushRate ||
-                                                $_("admin_direct_mm_na")}</span
-                                        >
-                                    </div>
-                                    <div
-                                        class="flex items-center justify-between h-6 mb-1"
-                                    >
-                                        <span
-                                            class="text-xs text-base-content/60"
-                                            >{$_(
-                                                "admin_direct_mm_post_only_side",
-                                            )}</span
-                                        >
                                         <span
                                             class="text-xs font-semibold text-base-content capitalize"
-                                            >{data?.orderConfig?.postOnlySide ||
-                                                $_("admin_direct_mm_na")}</span
+                                            >{entry.label}</span
                                         >
-                                    </div>
-                                {/if}
-                            </div>
-                        {:else if isKnownStrategy}
-                            <div class="border border-base-300 rounded-xl p-4">
-                                <div
-                                    class="flex items-center justify-between h-6 mb-1"
-                                >
-                                    <span class="text-xs text-base-content/60"
-                                        >{$_(
-                                            "admin_direct_mm_order_amount",
-                                        )}</span
-                                    >
-                                    <span
-                                        class="text-xs font-semibold text-base-content"
-                                        >{data?.orderConfig?.orderAmount ||
-                                            $_("admin_direct_mm_na")}</span
-                                    >
-                                </div>
-                                <div
-                                    class="flex items-center justify-between h-6 mb-1"
-                                >
-                                    <span class="text-xs text-base-content/60"
-                                        >{$_("admin_direct_mm_layers")}</span
-                                    >
-                                    <span
-                                        class="text-xs font-semibold text-base-content"
-                                        >{data?.orderConfig?.numberOfLayers ||
-                                            $_("admin_direct_mm_na")}</span
-                                    >
-                                </div>
-                                <div
-                                    class="flex items-center justify-between h-6 mb-1"
-                                >
-                                    <span class="text-xs text-base-content/60"
-                                        >{$_(
-                                            "admin_direct_mm_bid_spread",
-                                        )}</span
-                                    >
-                                    <span
-                                        class="text-xs font-semibold text-base-content"
-                                        >{formatSpread(
-                                            data?.orderConfig?.bidSpread,
-                                        )}</span
-                                    >
-                                </div>
-                                <div
-                                    class="flex items-center justify-between h-6"
-                                >
-                                    <span class="text-xs text-base-content/60"
-                                        >{$_(
-                                            "admin_direct_mm_ask_spread",
-                                        )}</span
-                                    >
-                                    <span
-                                        class="text-xs font-semibold text-base-content"
-                                        >{formatSpread(
-                                            data?.orderConfig?.askSpread,
-                                        )}</span
-                                    >
-                                </div>
-                            </div>
-                        {:else}
-                            <div class="border border-base-300 rounded-xl p-4">
-                                {#each Object.entries(data?.orderConfig || {}) as [key, value]}
-                                    {#if value !== null && value !== undefined && value !== '' && key !== 'realizedPnlQuote' && key !== 'publishedCycles' && key !== 'completedCycles' && key !== 'tradedQuoteVolume'}
-                                        <div
-                                            class="flex items-center justify-between h-6 mb-1"
+                                        <svg
+                                            xmlns="http://www.w3.org/2000/svg"
+                                            width="16"
+                                            height="16"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            stroke-width="2.5"
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            class="text-base-content/40"
                                         >
-                                            <span class="text-xs text-base-content/60"
-                                                >{key}</span
-                                            >
-                                            <span
-                                                class="text-xs font-semibold text-base-content"
-                                                >{typeof value === 'number'
-                                                    ? value
-                                                    : String(value)}</span
-                                            >
-                                        </div>
-                                    {/if}
+                                            <path d="m9 18 6-6-6-6" />
+                                        </svg>
+                                    </button>
                                 {/each}
                             </div>
                         {/if}
-                    </div>
 
-                    <!-- Inventory Balances -->
-                    <div>
-                        <div class="flex items-center justify-between mb-3 h-5">
-                            <div class="flex items-center gap-1.5">
-                                <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    viewBox="0 0 20 20"
-                                    fill="currentColor"
-                                    class="w-3.5 h-3.5 text-primary"
-                                >
-                                    <path
-                                        d="M1 4.25a3.733 3.733 0 0 1 2.25-.75h13.5c.844 0 1.623.279 2.25.75A2.25 2.25 0 0 0 16.75 2H3.25A2.25 2.25 0 0 0 1 4.25ZM1 7.25a3.733 3.733 0 0 1 2.25-.75h13.5c.844 0 1.623.279 2.25.75A2.25 2.25 0 0 0 16.75 5H3.25A2.25 2.25 0 0 0 1 7.25ZM7 8a1 1 0 0 1 1 1 2 2 0 1 0 4 0 1 1 0 0 1 1-1h4.75A2.25 2.25 0 0 1 20 10.25v5.5A2.25 2.25 0 0 1 17.75 18H2.25A2.25 2.25 0 0 1 0 15.75v-5.5A2.25 2.25 0 0 1 2.25 8H7Z"
-                                    />
-                                </svg>
-                                <span
-                                    class="text-xs font-bold text-base-content"
-                                    >{$_(
-                                        "admin_direct_mm_inventory_balances",
-                                    )}</span
-                                >
-                            </div>
-                            <span
-                                class="text-[10px] text-base-content/40 font-semibold"
-                                >{$_(
-                                    "admin_direct_mm_currency_allocation",
-                                )}</span
-                            >
-                        </div>
-
-                        {#if isDualAccountStrategy && makerBalances.length > 0}
-                            <!-- Dual account: side-by-side tables -->
-                            <div class="grid grid-cols-2 gap-3">
-                                {#each [{ label: $_("admin_direct_mm_maker_balances"), balances: makerBalances }, { label: $_("admin_direct_mm_taker_balances"), balances: takerBalances }] as group}
-                                    <div
-                                        class="border border-base-300 rounded-xl overflow-hidden"
-                                    >
-                                        <div
-                                            class="px-3 py-2 bg-base-200/50 border-b border-base-300"
-                                        >
-                                            <span
-                                                class="text-[10px] font-bold text-base-content/50 capitalize"
-                                                >{group.label}</span
-                                            >
-                                        </div>
-                                        {#if group.balances.length > 0}
-                                            {#each group.balances as balance}
-                                                <div
-                                                    class="flex items-center justify-between px-3 py-2.5 border-b border-base-300/50 last:border-0"
-                                                >
-                                                    <div
-                                                        class="flex items-center gap-1.5"
-                                                    >
-                                                        <div
-                                                            class="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center"
-                                                        >
-                                                            <span
-                                                                class="text-[7px] font-bold text-primary"
-                                                                >{balance.asset.slice(
-                                                                    0,
-                                                                    3,
-                                                                )}</span
-                                                            >
-                                                        </div>
-                                                        <span
-                                                            class="text-xs font-semibold text-base-content"
-                                                            >{balance.asset}</span
-                                                        >
-                                                    </div>
-                                                    <span
-                                                        class="text-xs font-bold text-base-content"
-                                                        >{balance.total}</span
-                                                    >
-                                                </div>
-                                            {/each}
-                                        {:else}
-                                            <div class="px-3 py-4 text-center">
-                                                <span
-                                                    class="text-xs text-base-content/40"
-                                                    >{$_(
-                                                        "admin_direct_mm_no_balances",
-                                                    )}</span
-                                                >
-                                            </div>
-                                        {/if}
-                                    </div>
-                                {/each}
-                            </div>
-                        {:else}
-                            <div class="overflow-x-auto">
-                                <table class="w-full text-left">
-                                    <thead>
-                                        <tr>
-                                            <th
-                                                class="py-2.5 px-3 text-[10px] font-bold text-base-content/40 tracking-wider capitalize border-b border-base-300"
-                                                >{$_(
-                                                    "admin_direct_mm_asset",
-                                                )}</th
-                                            >
-                                            <th
-                                                class="py-2.5 px-3 text-[10px] font-bold text-base-content/40 tracking-wider capitalize border-b border-base-300"
-                                                >{$_(
-                                                    "admin_direct_mm_free_balance",
-                                                )}</th
-                                            >
-                                            <th
-                                                class="py-2.5 px-3 text-[10px] font-bold text-base-content/40 tracking-wider capitalize border-b border-base-300"
-                                                >{$_(
-                                                    "admin_direct_mm_used_balance",
-                                                )}</th
-                                            >
-                                            <th
-                                                class="py-2.5 px-3 text-[10px] font-bold text-base-content/40 tracking-wider capitalize text-right border-b border-base-300"
-                                                >{$_(
-                                                    "admin_direct_mm_total",
-                                                )}</th
-                                            >
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {#if data && data.inventoryBalances.length > 0}
-                                            {#each data.inventoryBalances as balance}
-                                                <tr
-                                                    class="border-b border-base-300/50 last:border-0"
-                                                >
-                                                    <td class="py-3 px-3">
-                                                        <div
-                                                            class="flex items-center gap-2"
-                                                        >
-                                                            <div
-                                                                class="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center"
-                                                            >
-                                                                <span
-                                                                    class="text-[8px] font-bold text-primary"
-                                                                    >{balance.asset.slice(
-                                                                        0,
-                                                                        4,
-                                                                    )}</span
-                                                                >
-                                                            </div>
-                                                            <span
-                                                                class="text-sm font-semibold text-base-content"
-                                                                >{balance.asset}</span
-                                                            >
-                                                        </div>
-                                                    </td>
-                                                    <td
-                                                        class="py-3 px-3 text-sm text-base-content/70"
-                                                        >{balance.free}</td
-                                                    >
-                                                    <td
-                                                        class="py-3 px-3 text-sm text-base-content/70"
-                                                        >{balance.used}</td
-                                                    >
-                                                    <td
-                                                        class="py-3 px-3 text-sm font-bold text-base-content text-right"
-                                                        >{balance.total}</td
-                                                    >
-                                                </tr>
-                                            {/each}
-                                        {:else}
-                                            <tr>
-                                                <td
-                                                    colspan="4"
-                                                    class="py-6 text-center text-sm text-base-content/40"
-                                                    >{$_(
-                                                        "admin_direct_mm_no_balances",
-                                                    )}</td
-                                                >
-                                            </tr>
-                                        {/if}
-                                    </tbody>
-                                </table>
-                            </div>
-                        {/if}
-
-                        <!-- Inventory Skew Bar (aggregated balances for dual, all for single) -->
-                        {#if inventorySkew !== null}
-                            <div class="mt-3">
-                                <div
-                                    class="flex items-center justify-between mb-1"
-                                >
-                                    <span
-                                        class="text-[10px] text-base-content/40 font-semibold"
-                                        >{$_(
-                                            "admin_direct_mm_inventory_skew",
-                                        )}</span
-                                    >
-                                    <span
-                                        class="text-[10px] text-base-content/50"
-                                        >{inventorySkew.baseAsset}
-                                        {inventorySkew.basePercent}% / {inventorySkew.quoteAsset}
-                                        {inventorySkew.quotePercent}%</span
-                                    >
-                                </div>
-                                <div
-                                    class="w-full h-2 rounded-full bg-base-200 overflow-hidden flex"
-                                >
-                                    <div
-                                        class="h-full bg-primary/70 rounded-l-full transition-all"
-                                        style="width: {inventorySkew.basePercent}%"
-                                    ></div>
-                                    <div
-                                        class="h-full bg-secondary/50 rounded-r-full transition-all"
-                                        style="width: {inventorySkew.quotePercent}%"
-                                    ></div>
-                                </div>
-                            </div>
-                        {/if}
-                    </div>
-
-                    {#if recentErrors.length > 0}
-                        <div>
-                            <div class="flex items-center gap-1.5 mb-3 h-5">
-                                <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    viewBox="0 0 20 20"
-                                    fill="currentColor"
-                                    class="w-3.5 h-3.5 text-error"
-                                >
-                                    <path
-                                        fill-rule="evenodd"
-                                        d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-8-5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0v-4.5A.75.75 0 0 1 10 5Zm0 10a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"
-                                        clip-rule="evenodd"
-                                    />
-                                </svg>
-                                <span
-                                    class="text-xs font-bold text-base-content"
-                                    >{$_("admin_direct_mm_recent_errors")}</span
-                                >
-                            </div>
-                            <div class="flex flex-col gap-1.5">
-                                {#each recentErrors as err}
-                                    <div
-                                        class="flex items-center justify-between bg-base-200/50 rounded-lg px-3 py-2"
-                                    >
-                                        <span
-                                            class="text-xs text-base-content/70"
-                                            >{err.message}</span
-                                        >
-                                        <span
-                                            class="text-[10px] text-base-content/40 shrink-0 ml-2"
-                                            >{err.ts
-                                                .replace("T", " ")
-                                                .slice(11, 19)}</span
-                                        >
-                                    </div>
-                                {/each}
-                            </div>
-                        </div>
-                    {/if}
-
-                    <!-- Actions -->
-                    <div class="flex gap-3 mt-2">
-                        <button
-                            class="btn bg-violet-50 hover:bg-violet-100 border-none text-slate-700 w-[120px] h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14px] shadow-none"
-                            on:click={onClose}
-                        >
-                            {$_("close")}
-                        </button>
-                        {#if actionAvailability.canStop}
+                        <!-- Actions -->
+                        <div class="flex gap-3 mt-2">
                             <button
-                                class="btn flex-1 bg-red-600 hover:bg-red-700 border-none text-white h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14.5px] shadow-[0_10px_24px_-12px_rgba(220,38,38,0.9)] flex items-center justify-center gap-1.5"
-                                on:click={onStopOrder}
+                                class="btn bg-violet-50 hover:bg-violet-100 border-none text-slate-700 w-[120px] h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14px] shadow-none"
+                                on:click={onClose}
                             >
-                                {$_("admin_direct_mm_confirm_stop")}
-                                <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    width="14"
-                                    height="14"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="2.5"
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                    class="ml-1"
-                                >
-                                    <path d="M18 6 6 18" />
-                                    <path d="m6 6 12 12" />
-                                </svg>
+                                {$_("close")}
                             </button>
-                            {#if actionAvailability.canRemove}
+                            {#if actionAvailability.canStop}
                                 <button
-                                    class="btn bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14px] shadow-none"
-                                    on:click={onRemoveOrder}
+                                    class="btn flex-1 bg-red-600 hover:bg-red-700 border-none text-white h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14.5px] shadow-[0_10px_24px_-12px_rgba(220,38,38,0.9)] flex items-center justify-center gap-1.5"
+                                    on:click={onStopOrder}
                                 >
-                                    {$_("admin_direct_mm_remove")}
-                                </button>
-                            {/if}
-                        {:else}
-                            {#if actionAvailability.canResume}
-                                <button
-                                    class="btn flex-1 bg-indigo-600 hover:bg-indigo-700 border-none text-white h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14.5px] shadow-[0_10px_24px_-12px_rgba(79,70,229,0.9)] flex items-center justify-center gap-1.5"
-                                    on:click={onStartOrder}
-                                    disabled={efficientResumeDisabled}
-                                    title={efficientResumeDisabled
-                                        ? "Resolve planner readiness blockers before resuming."
-                                        : ""}
-                                >
-                                    {$_("admin_direct_mm_resume_order")}
+                                    {$_("admin_direct_mm_confirm_stop")}
                                     <svg
                                         xmlns="http://www.w3.org/2000/svg"
-                                        width="16"
-                                        height="16"
+                                        width="14"
+                                        height="14"
                                         viewBox="0 0 24 24"
                                         fill="none"
                                         stroke="currentColor"
                                         stroke-width="2.5"
                                         stroke-linecap="round"
                                         stroke-linejoin="round"
+                                        class="ml-1"
                                     >
-                                        <path d="m9 18 6-6-6-6" />
+                                        <path d="M18 6 6 18" />
+                                        <path d="m6 6 12 12" />
                                     </svg>
                                 </button>
+                                {#if actionAvailability.canRemove}
+                                    <button
+                                        class="btn bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14px] shadow-none"
+                                        on:click={onRemoveOrder}
+                                    >
+                                        {$_("admin_direct_mm_remove")}
+                                    </button>
+                                {/if}
+                            {:else}
+                                {#if actionAvailability.canResume}
+                                    <button
+                                        class="btn flex-1 bg-indigo-600 hover:bg-indigo-700 border-none text-white h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14.5px] shadow-[0_10px_24px_-12px_rgba(79,70,229,0.9)] flex items-center justify-center gap-1.5"
+                                        on:click={onStartOrder}
+                                        disabled={efficientResumeDisabled}
+                                        title={efficientResumeDisabled
+                                            ? "Resolve planner readiness blockers before resuming."
+                                            : ""}
+                                    >
+                                        {$_("admin_direct_mm_resume_order")}
+                                        <svg
+                                            xmlns="http://www.w3.org/2000/svg"
+                                            width="16"
+                                            height="16"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            stroke-width="2.5"
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                        >
+                                            <path d="m9 18 6-6-6-6" />
+                                        </svg>
+                                    </button>
+                                {/if}
+                                {#if actionAvailability.canRemove}
+                                    <button
+                                        class="btn bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 {actionAvailability.canResume
+                                            ? ''
+                                            : 'flex-1'} h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14px] shadow-none"
+                                        on:click={onRemoveOrder}
+                                    >
+                                        {$_("admin_direct_mm_remove")}
+                                    </button>
+                                {/if}
                             {/if}
-                            {#if actionAvailability.canRemove}
-                                <button
-                                    class="btn bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 {actionAvailability.canResume
-                                        ? ''
-                                        : 'flex-1'} h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14px] shadow-none"
-                                    on:click={onRemoveOrder}
-                                >
-                                    {$_("admin_direct_mm_remove")}
-                                </button>
-                            {/if}
-                        {/if}
+                        </div>
                     </div>
-                </div>
-            {/if}
-        </div>
+                {/if}
+            </div>
+        {/if}
     </div>
 {/if}
