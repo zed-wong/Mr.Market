@@ -1351,6 +1351,57 @@ export function normalizeConfigOverrides(
   return accumulator;
 }
 
+export function formatDirectDecimal(
+  value: string | null | undefined,
+  decimals = 4,
+): string {
+  const $_ = get(_);
+  if (value === null || value === undefined || value === "")
+    return $_("admin_direct_mm_na");
+  const parsed = new BigNumber(value);
+  if (!parsed.isFinite()) return $_("admin_direct_mm_na");
+  return parsed.decimalPlaces(decimals).toFormat();
+}
+
+export function formatDirectSpread(val: string | null | undefined): string {
+  const $_ = get(_);
+  if (val === null || val === undefined || val === "")
+    return $_("admin_direct_mm_na");
+  return new BigNumber(val).multipliedBy(100).toString() + "%";
+}
+
+export function formatDirectBps(value: string | null | undefined): string {
+  const $_ = get(_);
+  if (value === null || value === undefined || value === "")
+    return $_("admin_direct_mm_na");
+  const parsed = new BigNumber(value);
+  if (!parsed.isFinite()) return $_("admin_direct_mm_na");
+  return `${parsed.decimalPlaces(2).toFormat()} bps`;
+}
+
+export function formatDirectTimeAgo(iso: string | null): string {
+  const $_ = get(_);
+  if (!iso) return $_("admin_direct_mm_na");
+  const diffMs = Date.now() - Date.parse(iso);
+  if (diffMs < 0) return $_("admin_direct_mm_just_now");
+  const seconds = Math.floor(diffMs / 1000);
+  if (seconds < 60)
+    return $_("admin_direct_mm_seconds_ago", { values: { seconds } });
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60)
+    return $_("admin_direct_mm_minutes_ago", { values: { m: minutes } });
+  const hours = Math.floor(minutes / 60);
+  return $_("admin_direct_mm_hours_ago", { values: { h: hours } });
+}
+
+export function formatEfficientMode(value?: string | null): string {
+  const $_ = get(_);
+  if (value === "cheapest_capital") return "Cheapest capital";
+  if (value === "fastest_volume") return "Fastest volume";
+  if (value === "balanced") return "Balanced";
+  return value || $_("admin_direct_mm_na");
+}
+
 export function buildGenericSchemaConfigOverrides(
   schema: StrategySchema | undefined,
   config: Record<string, unknown>,
