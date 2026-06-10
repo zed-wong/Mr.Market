@@ -319,6 +319,7 @@ export class UserStreamTrackerService
         exchangeOrderId: fill.exchangeOrderId,
         clientOrderId: fill.clientOrderId || trackedOrder.clientOrderId,
         accountLabel: fill.accountLabel,
+        ...(trackedOrder.role ? { role: trackedOrder.role } : {}),
         ...routedFill,
       });
 
@@ -360,6 +361,7 @@ export class UserStreamTrackerService
       exchangeOrderId: fill.exchangeOrderId,
       clientOrderId: fill.clientOrderId,
       accountLabel: fill.accountLabel,
+      ...(trackedOrder?.role ? { role: trackedOrder.role } : {}),
       ...routedFill,
     });
   }

@@ -9,6 +9,7 @@ export type ExchangePairFill = {
   clientOrderId?: string | null;
   accountLabel?: string | null;
   fillId?: string | null;
+  role?: 'maker' | 'taker' | 'rebalance';
   side?: 'buy' | 'sell';
   price?: string;
   qty?: string;

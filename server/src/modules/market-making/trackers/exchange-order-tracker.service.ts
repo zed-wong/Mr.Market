@@ -891,6 +891,7 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
       exchangeOrderId: previousOrder.exchangeOrderId,
       clientOrderId: previousOrder.clientOrderId,
       accountLabel: previousOrder.accountLabel,
+      ...(previousOrder.role ? { role: previousOrder.role } : {}),
       side: previousOrder.side,
       price: nextOrder.price || previousOrder.price,
       qty: fillDelta.qty,

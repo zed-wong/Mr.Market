@@ -24,6 +24,7 @@ export type SettlementFill = {
   clientOrderId?: string | null;
   accountLabel?: string | null;
   fillId?: string | null;
+  role?: 'maker' | 'taker' | 'rebalance';
   side?: 'buy' | 'sell';
   price?: string;
   qty?: string;
@@ -84,10 +85,10 @@ export class FillSettlementService {
     }
 
     const trackedOrder = this.resolveTrackedOrderForFill(session, fill);
-    const settlementFill = this.buildIncrementalSettlementFill(
-      trackedOrder,
-      fill,
-    );
+    const settlementFill = this.buildIncrementalSettlementFill(trackedOrder, {
+      ...fill,
+      role: fill.role || trackedOrder?.role,
+    });
 
     if (!settlementFill) {
       return;
@@ -593,14 +594,24 @@ export class FillSettlementService {
       const takerFee = new BigNumber(
         market?.taker ?? exchange?.fees?.trading?.taker ?? 0,
       );
+      if (command.fill.role === 'maker' && this.isPositiveFeeRate(makerFee)) {
+        return makerFee;
+      }
+
+      if (command.fill.role === 'taker' && this.isPositiveFeeRate(takerFee)) {
+        return takerFee;
+      }
+
       const feeRate = BigNumber.maximum(makerFee, takerFee);
 
-      return feeRate.isFinite() && feeRate.isGreaterThan(0)
-        ? feeRate
-        : new BigNumber(0);
+      return this.isPositiveFeeRate(feeRate) ? feeRate : new BigNumber(0);
     } catch {
       return new BigNumber(0);
     }
+  }
+
+  private isPositiveFeeRate(feeRate: BigNumber): boolean {
+    return feeRate.isFinite() && feeRate.isGreaterThan(0);
   }
 
   private buildFillLedgerEventKey(
