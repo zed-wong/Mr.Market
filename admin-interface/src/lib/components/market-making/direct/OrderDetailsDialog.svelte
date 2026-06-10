@@ -129,7 +129,7 @@
         Boolean(data?.cycles?.length && isDualAccountStrategy);
     $: isKnownStrategy =
         isKnownDirectStrategyControllerType(resolvedControllerType);
-    $: fills1h = data?.fillCount1h ?? 0;
+    $: fills = performance?.summary.fillCount ?? 0;
     $: recentErrors = data?.recentErrors ?? [];
     $: efficientResumeDisabled =
         isEfficientDualAccountStrategy &&
@@ -569,11 +569,11 @@
                             >
                                 <span
                                     class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                                    >{$_("admin_direct_mm_fills_1h")}</span
+                                    >{$_("admin_direct_mm_fills")}</span
                                 >
                                 <span
                                     class="text-sm font-bold text-base-content block"
-                                    >{fills1h}</span
+                                    >{fills}</span
                                 >
                             </div>
                         </div>
