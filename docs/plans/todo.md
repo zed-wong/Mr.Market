@@ -27,6 +27,7 @@
 - Build Volume Strategy after PMM and PNL/Risk views are stable.
 - Use it for HuFi campaign volume-based rewards.
 - Track qualified volume, fee cost, expected reward, realized reward, and net PNL.
+- Automatically stop the volume strategy after it reaches the target volume.
 - Product form should be a paid campaign-volume service: users pay to create an Volume execution order, while dual-account/API-key/EVM-wallet routing stays admin-only for now.
 
 ---
