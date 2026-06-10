@@ -96,7 +96,7 @@ const baseStatus: DirectOrderStatus = {
         {
           cycleId: 'cycle-runtime-1',
           cycleRole: 'maker',
-          accountLabel: 'maker-main',
+          accountLabel: 'maker',
           side: 'buy',
           plannedQty: '0.5',
           plannedPrice: '30000',
@@ -110,7 +110,7 @@ const baseStatus: DirectOrderStatus = {
         {
           cycleId: 'cycle-runtime-1',
           cycleRole: 'taker',
-          accountLabel: 'taker-alt',
+          accountLabel: 'taker',
           side: 'sell',
           plannedQty: '0.5',
           plannedPrice: '30000',
@@ -188,6 +188,7 @@ describe('RuntimeCyclePanel', () => {
     );
 
     expect(body).toContain('cycle 10');
+    expect(body).toContain('title="efficient-dual-account-volume:cycle:10:2026-06-04T00:10:00.000Z"');
     expect(body).toContain('completed');
     expect(cycle9Position).toBeGreaterThanOrEqual(0);
     expect(cycle10Position).toBeGreaterThanOrEqual(0);

@@ -88,11 +88,25 @@
     }
 
     function cycleHeading(cycle: DirectRuntimeCycle): string {
-        return cycle.cycleId;
+        return compactCycleId(cycle.cycleId);
     }
 
     function legAccountLabel(leg: DirectRuntimeCycleLeg): string {
-        return leg.accountLabel || "account unavailable";
+        if (!leg.accountLabel) return "account unavailable";
+        if (
+            data?.makerAccountLabel &&
+            leg.accountLabel === data.makerAccountLabel
+        ) {
+            return data.makerAccountName || leg.accountLabel;
+        }
+        if (
+            data?.takerAccountLabel &&
+            leg.accountLabel === data.takerAccountLabel
+        ) {
+            return data.takerAccountName || leg.accountLabel;
+        }
+
+        return leg.accountLabel;
     }
 
     $: cycles = normalizeDirectRuntimeCycles(data?.cycles ?? []);
@@ -200,7 +214,10 @@
                 >
                     <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                         <div class="min-w-0">
-                            <span class="truncate font-mono text-[11px] font-semibold text-base-content block">
+                            <span
+                                class="truncate font-mono text-[11px] font-semibold text-base-content block"
+                                title={cycle.cycleId}
+                            >
                                 {cycleHeading(cycle)}
                             </span>
                             {#if cycle.failureReason}
