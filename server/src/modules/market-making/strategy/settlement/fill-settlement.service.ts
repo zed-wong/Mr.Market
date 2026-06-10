@@ -37,6 +37,7 @@ export type FillSettlementCommand = {
   strategyKey: string;
   orderId: string;
   userId: string;
+  exchangeName?: string;
   pair: string;
   fill: SettlementFill;
 };
@@ -341,6 +342,7 @@ export class FillSettlementService {
       strategyKey: session.strategyKey,
       orderId,
       userId: session.userId,
+      exchangeName: this.readString(session.params?.exchangeName) || undefined,
       pair,
       fill,
     });
@@ -446,7 +448,7 @@ export class FillSettlementService {
       });
     }
 
-    await this.applyFillFee(command, eventKey);
+    await this.applyFillFee(command, eventKey, quoteAmount);
 
     return true;
   }
@@ -475,12 +477,14 @@ export class FillSettlementService {
   private async applyFillFee(
     command: FillSettlementCommand,
     eventKey: string,
+    quoteAmount: BigNumber,
   ): Promise<void> {
     if (
       !this.balanceLedgerService ||
       !command.fill.feeAmount ||
       !command.fill.feeAsset
     ) {
+      await this.applyEstimatedFillFee(command, eventKey, quoteAmount);
       return;
     }
 
@@ -521,6 +525,81 @@ export class FillSettlementService {
           error instanceof Error ? error.message : String(error)
         }`,
       );
+    }
+  }
+
+  private async applyEstimatedFillFee(
+    command: FillSettlementCommand,
+    eventKey: string,
+    quoteAmount: BigNumber,
+  ): Promise<void> {
+    if (
+      !this.balanceLedgerService ||
+      !command.exchangeName ||
+      !quoteAmount.isFinite() ||
+      quoteAmount.isLessThanOrEqualTo(0)
+    ) {
+      return;
+    }
+
+    const feeRate = this.resolveEstimatedFillFeeRate(command);
+
+    if (!feeRate.isFinite() || feeRate.isLessThanOrEqualTo(0)) {
+      return;
+    }
+
+    const assets = this.parseBaseQuote(command.pair);
+    const estimatedFeeAmount = quoteAmount.multipliedBy(feeRate);
+
+    if (
+      !assets ||
+      !estimatedFeeAmount.isFinite() ||
+      estimatedFeeAmount.isLessThanOrEqualTo(0)
+    ) {
+      return;
+    }
+
+    try {
+      await this.balanceLedgerService.debitFee({
+        orderId: command.orderId,
+        userId: command.userId,
+        assetId: assets.quote,
+        amount: estimatedFeeAmount.toFixed(),
+        idempotencyKey: `${eventKey}:estimated-fee:${assets.quote}`,
+        refType: 'market_making_estimated_fee',
+        refId: this.resolveRefId(command),
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Estimated fill fee debit requires manual review for strategyKey=${
+          command.strategyKey
+        } asset=${assets.quote} amount=${estimatedFeeAmount.toFixed()}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  private resolveEstimatedFillFeeRate(command: FillSettlementCommand): BigNumber {
+    try {
+      const exchange = this.exchangeInitService?.getExchange(
+        command.exchangeName || '',
+        this.readString(command.fill.accountLabel) || undefined,
+      );
+      const market = exchange?.markets?.[command.pair];
+      const makerFee = new BigNumber(
+        market?.maker ?? exchange?.fees?.trading?.maker ?? 0,
+      );
+      const takerFee = new BigNumber(
+        market?.taker ?? exchange?.fees?.trading?.taker ?? 0,
+      );
+      const feeRate = BigNumber.maximum(makerFee, takerFee);
+
+      return feeRate.isFinite() && feeRate.isGreaterThan(0)
+        ? feeRate
+        : new BigNumber(0);
+    } catch {
+      return new BigNumber(0);
     }
   }
 

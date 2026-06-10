@@ -115,6 +115,52 @@ describe('FillSettlementService', () => {
       refType: 'market_making_fee',
       refId: 'ex-1',
     });
+    expect(balanceLedgerService.debitFee).toHaveBeenCalledTimes(1);
+  });
+
+  it('records an estimated quote fee when exchange fill omits actual fee details', async () => {
+    const exchangeInitService = {
+      getExchange: jest.fn().mockReturnValue({
+        markets: {
+          'BTC/USDT': {
+            maker: 0.0002,
+            taker: 0.0005,
+          },
+        },
+      }),
+    };
+    const service = new FillSettlementService(
+      balanceLedgerService as any,
+      undefined,
+      exchangeInitService as any,
+    );
+
+    await service.settleFill({
+      strategyKey: 'strategy-1',
+      orderId: 'order-1',
+      userId: 'user-1',
+      exchangeName: 'mexc',
+      pair: 'BTC/USDT',
+      fill: {
+        exchangeOrderId: 'ex-1',
+        accountLabel: '4',
+        side: 'buy',
+        price: '100',
+        qty: '0.5',
+        cumulativeQty: '0.5',
+      },
+    });
+
+    expect(balanceLedgerService.debitFee).toHaveBeenCalledWith({
+      orderId: 'order-1',
+      userId: 'user-1',
+      assetId: 'USDT',
+      amount: '0.025',
+      idempotencyKey:
+        'mm-fill:strategy-1:order-1:4:ex-1:buy:0.5:estimated-fee:USDT',
+      refType: 'market_making_estimated_fee',
+      refId: 'ex-1',
+    });
   });
 
   it('uses cumulative order progress before fill id for cross-source idempotency', async () => {
