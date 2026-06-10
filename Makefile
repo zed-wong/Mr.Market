@@ -4,13 +4,25 @@ install-interface:
 	@echo "Client dependencies installed successfully!"
 .PHONY: install-interface
 
+install-web3-interface:
+	@echo "Installing web3-interface dependencies..."
+	@cd web3-interface && bun install || exit 1
+	@echo "Web3 interface dependencies installed successfully!"
+.PHONY: install-web3-interface
+
+install-admin-interface:
+	@echo "Installing admin-interface dependencies..."
+	@cd admin-interface && bun install || exit 1
+	@echo "Admin interface dependencies installed successfully!"
+.PHONY: install-admin-interface
+
 install-server:
 	@echo "Installing server dependencies..."
 	@cd server && bun install || exit 1
 	@echo "Server dependencies installed successfully!"
 .PHONY: install-server
 
-install: install-interface install-server
+install: install-interface install-web3-interface install-admin-interface install-server
 	@echo "All dependencies installed successfully!"
 .PHONY: install
 
