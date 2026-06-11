@@ -1,5 +1,9 @@
 # Execution Flow Changelog
 
+## 2026-06-11
+
+- Add dual-account immediate cycle outcomes as strategy-scoped runtime observations: safe no-fill and small maker/taker mismatch now complete the maker intent after maker cleanup and feed a dual-account-only soft-failure health counter, while the dual-account controller emits `STOP_CONTROLLER` only after three soft outcomes in the short window; generic runtime pressure and adaptive PMM reject handling remain unaffected.
+
 ## 2026-06-08
 
 - Execute the market-making logging normalization plan: add a `CustomLogger.marketMaking()` adapter with `[MM]` structured formatting and rate-limited warnings, then convert executor, balance scheduler, PMM/adaptive quote filtering, user-stream, order-book, runtime timing, and shutdown cleanup logs to the normalized levels.

@@ -5,32 +5,12 @@
 1. Admin Volume should support max volume auto stop
 2. Should clean up architectual intent execution mismatch
 3. Fix order id inconsistency
-
-
----
-
-## 1. Adaptive PMM
-
-- 48-hour launch priority: make Adaptive PMM user-facing as the real liquidity provision product. Users self-direct inventory/market risk, and only positive PnL after fees counts as earning.
-- Validate Adaptive PMM as the current execution-layer mainline.
-- Confirm quote quality for arbitrary market pairs: signals, inventory skew, fee floor, min-notional, budgets, and cancel/create cadence.
-- Re-check order lifecycle after the `StrategyService` split: reservation pause, fill settlement, reconciliation, and decision snapshots.
-
----
-
-## 2. PNL / Inventory / Risk Views
-
-- Current first task: choose a JS chart library for rendering PNL charts.
-- Add chart views for total / realized / unrealized PNL.
-- Add pair-level PNL, inventory exposure, fee cost, spread capture, and drawdown views.
-- Add quote / fill / cancel timeline views backed by strategy decision snapshots and tracked-order state.
-- Build an admin Direct Market Making cost/revenue dashboard surfacing the metrics market makers care about (spread capture, fee cost, inventory skew, realized vs unrealized PNL, fill rate, quote uptime).
+4. Design DEX support to support hyperliquid and PancakeSwap/Uniswap etc.. 
 
 ---
 
 ## 3. Volume Strategy
 
-- 48-hour launch priority: make dual-account volume user-facing for HuFi campaign rewards, because HuFi currently rewards market making by volume. Users should be able to create a volume strategy from the frontend and see expected reward, fee cost, qualified volume, and net result.
 - Build Volume Strategy after PMM and PNL/Risk views are stable.
 - Use it for HuFi campaign volume-based rewards.
 - Track qualified volume, fee cost, expected reward, realized reward, and net PNL.

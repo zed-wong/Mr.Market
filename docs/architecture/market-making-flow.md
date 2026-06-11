@@ -522,6 +522,10 @@ start flow.
 - Orders require `strategySnapshot` before runtime start.
 - `dualAccountVolume` uses maker/taker account labels under the same pooled
   `exchange:pair` executor.
+- Immediate dual-account safe no-fill and small maker/taker mismatch outcomes
+  are recorded as dual-account-scoped runtime observations, not generic intent
+  failures. The dual-account controller may stop after repeated soft outcomes;
+  adaptive PMM pressure logic does not consume these outcomes.
 - REST order reconciliation and balance refresh run outside the shared tick
   loop.
 - Reconciliation mismatches should block risk-increasing operations instead of
