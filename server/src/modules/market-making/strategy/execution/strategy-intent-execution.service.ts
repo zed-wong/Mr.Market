@@ -42,6 +42,41 @@ type ImmediateDualAccountOrderSnapshot = {
   remainingQty: BigNumber;
 };
 
+type ImmediateDualAccountPairedFillResult =
+  | { status: 'matched' }
+  | {
+      status: 'taker_no_fill';
+      reason: string;
+      takerIntentId: string;
+      makerExchangeOrderId: string;
+      makerCancelAttempted: false;
+    }
+  | {
+      status: 'maker_taker_mismatch';
+      reason: string;
+      takerIntentId: string;
+      makerExchangeOrderId: string;
+      makerDelta: string;
+      takerFilled: string;
+      makerCancelAttempted: true;
+    };
+
+class ImmediateDualAccountExecutionError extends Error {
+  constructor(
+    readonly result: Exclude<
+      ImmediateDualAccountPairedFillResult,
+      { status: 'matched' }
+    >,
+  ) {
+    super(
+      result.status === 'maker_taker_mismatch'
+        ? `${result.reason}: makerOrderId=${result.makerExchangeOrderId} makerDelta=${result.makerDelta} takerFilled=${result.takerFilled}`
+        : `${result.reason}: makerOrderId=${result.makerExchangeOrderId}`,
+    );
+    this.name = 'ImmediateDualAccountExecutionError';
+  }
+}
+
 @Injectable()
 export class StrategyIntentExecutionService {
   private static readonly DUAL_ACCOUNT_ORDER_POLL_MS = 100;
@@ -1151,21 +1186,24 @@ export class StrategyIntentExecutionService {
 
       const takerResult = await this.consumeIntent(takerIntent);
 
-      await this.assertImmediateDualAccountPairedFill(
-        intent,
-        makerExchangeOrderId,
-        makerDispatchSnapshot,
-        takerIntent,
-        takerResult,
-      );
-    } catch (error) {
-      const mismatchAlreadyHandled =
-        error instanceof Error &&
-        error.message.includes(
-          'Immediate dual-account paired fill mismatch between maker and taker',
+      const pairedFillResult =
+        await this.reconcileImmediateDualAccountPairedFill(
+          intent,
+          makerExchangeOrderId,
+          makerDispatchSnapshot,
+          takerIntent,
+          takerResult,
         );
 
-      if (!mismatchAlreadyHandled) {
+      if (pairedFillResult.status !== 'matched') {
+        throw new ImmediateDualAccountExecutionError(pairedFillResult);
+      }
+    } catch (error) {
+      const makerCancelAlreadyAttempted =
+        error instanceof ImmediateDualAccountExecutionError &&
+        error.result.makerCancelAttempted;
+
+      if (!makerCancelAlreadyAttempted) {
         await this.cancelMakerAfterImmediateDualAccountFailure(
           intent,
           makerExchangeOrderId,
@@ -1176,6 +1214,85 @@ export class StrategyIntentExecutionService {
 
       throw error;
     }
+  }
+
+  private async reconcileImmediateDualAccountPairedFill(
+    makerIntent: StrategyOrderIntent,
+    makerExchangeOrderId: string,
+    makerBeforeTakerSnapshot: ImmediateDualAccountOrderSnapshot,
+    takerIntent: StrategyOrderIntent,
+    takerResult: unknown,
+  ): Promise<ImmediateDualAccountPairedFillResult> {
+    const takerFilledQty = await this.resolveImmediateDualAccountTakerFillQty(
+      takerIntent,
+      takerResult,
+    );
+
+    if (
+      takerFilledQty.isLessThanOrEqualTo(
+        StrategyIntentExecutionService.DUAL_ACCOUNT_QTY_TOLERANCE,
+      )
+    ) {
+      const reason = 'Immediate dual-account taker did not fill any quantity';
+
+      await this.strategyIntentStoreService?.updateIntentStatus(
+        takerIntent.intentId,
+        'FAILED',
+        reason,
+      );
+
+      return {
+        status: 'taker_no_fill',
+        reason,
+        takerIntentId: takerIntent.intentId,
+        makerExchangeOrderId,
+        makerCancelAttempted: false,
+      };
+    }
+
+    const makerFillDelta = await this.waitForImmediateDualAccountMakerFillDelta(
+      makerIntent,
+      makerExchangeOrderId,
+      makerBeforeTakerSnapshot.cumulativeFilledQty,
+      takerFilledQty,
+    );
+
+    if (!this.quantitiesMatch(makerFillDelta, takerFilledQty)) {
+      const reason =
+        'Immediate dual-account paired fill mismatch between maker and taker';
+
+      await this.cancelRemainingImmediateDualAccountMaker(
+        makerIntent,
+        makerExchangeOrderId,
+        reason,
+      );
+
+      const makerDelta = makerFillDelta.toFixed();
+      const takerFilled = takerFilledQty.toFixed();
+
+      await this.strategyIntentStoreService?.updateIntentStatus(
+        takerIntent.intentId,
+        'FAILED',
+        `${reason}: makerDelta=${makerDelta} takerFilled=${takerFilled}`,
+      );
+
+      return {
+        status: 'maker_taker_mismatch',
+        reason,
+        takerIntentId: takerIntent.intentId,
+        makerExchangeOrderId,
+        makerDelta,
+        takerFilled,
+        makerCancelAttempted: true,
+      };
+    }
+
+    await this.strategyIntentStoreService?.updateIntentStatus(
+      takerIntent.intentId,
+      'DONE',
+    );
+
+    return { status: 'matched' };
   }
 
   private buildImmediateDualAccountTakerIntent(
@@ -1219,10 +1336,11 @@ export class StrategyIntentExecutionService {
     makerSnapshot: ImmediateDualAccountOrderSnapshot,
   ): Promise<boolean> {
     try {
-      const orderBook = await this.exchangeConnectorAdapterService.fetchOrderBook(
-        intent.exchange,
-        intent.pair,
-      );
+      const orderBook =
+        await this.exchangeConnectorAdapterService.fetchOrderBook(
+          intent.exchange,
+          intent.pair,
+        );
       const topLevel = this.readImmediateDualAccountTopLevel(
         intent.side === 'buy' ? orderBook?.bids : orderBook?.asks,
       );
@@ -1436,69 +1554,6 @@ export class StrategyIntentExecutionService {
 
     return Math.floor(
       Math.random() * (this.dualAccountInlineTakerMaxDelayMs + 1),
-    );
-  }
-
-  private async assertImmediateDualAccountPairedFill(
-    makerIntent: StrategyOrderIntent,
-    makerExchangeOrderId: string,
-    makerBeforeTakerSnapshot: ImmediateDualAccountOrderSnapshot,
-    takerIntent: StrategyOrderIntent,
-    takerResult: unknown,
-  ): Promise<void> {
-    const takerFilledQty = await this.resolveImmediateDualAccountTakerFillQty(
-      takerIntent,
-      takerResult,
-    );
-
-    if (
-      takerFilledQty.isLessThanOrEqualTo(
-        StrategyIntentExecutionService.DUAL_ACCOUNT_QTY_TOLERANCE,
-      )
-    ) {
-      const errorMessage =
-        'Immediate dual-account taker did not fill any quantity';
-
-      await this.strategyIntentStoreService?.updateIntentStatus(
-        takerIntent.intentId,
-        'FAILED',
-        errorMessage,
-      );
-
-      throw new Error(`${errorMessage}: makerOrderId=${makerExchangeOrderId}`);
-    }
-
-    const makerFillDelta = await this.waitForImmediateDualAccountMakerFillDelta(
-      makerIntent,
-      makerExchangeOrderId,
-      makerBeforeTakerSnapshot.cumulativeFilledQty,
-      takerFilledQty,
-    );
-
-    if (!this.quantitiesMatch(makerFillDelta, takerFilledQty)) {
-      const errorMessage =
-        'Immediate dual-account paired fill mismatch between maker and taker';
-
-      await this.cancelRemainingImmediateDualAccountMaker(
-        makerIntent,
-        makerExchangeOrderId,
-        errorMessage,
-      );
-
-      await this.strategyIntentStoreService?.updateIntentStatus(
-        takerIntent.intentId,
-        'FAILED',
-        `${errorMessage}: makerDelta=${makerFillDelta.toFixed()} takerFilled=${takerFilledQty.toFixed()}`,
-      );
-
-      throw new Error(
-        `${errorMessage}: makerOrderId=${makerExchangeOrderId} makerDelta=${makerFillDelta.toFixed()} takerFilled=${takerFilledQty.toFixed()}`,
-      );
-    }
-
-    await this.strategyIntentStoreService?.updateIntentStatus(
-      takerIntent.intentId,
-      'DONE',
     );
   }
 

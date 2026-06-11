@@ -361,9 +361,9 @@ describe('StrategyIntentExecutionService', () => {
       validation_status: 'valid',
     });
     intentStoreService.getMixinOrderId.mockResolvedValue(undefined);
-    intentStoreService.batchUpsertIntents.mockReset().mockResolvedValue(
-      undefined,
-    );
+    intentStoreService.batchUpsertIntents
+      .mockReset()
+      .mockResolvedValue(undefined);
     intentStoreService.cancelPendingRiskIncreasingIntents
       .mockReset()
       .mockResolvedValue(0);
@@ -927,9 +927,10 @@ describe('StrategyIntentExecutionService', () => {
       exchangeConnectorAdapterService.placeLimitOrder,
     ).toHaveBeenCalledTimes(2);
     expect(exchangeConnectorAdapterService.fetchOrder).toHaveBeenCalledTimes(4);
-    expect(
-      exchangeConnectorAdapterService.fetchOrderBook,
-    ).toHaveBeenCalledWith('binance', 'BTC/USDT');
+    expect(exchangeConnectorAdapterService.fetchOrderBook).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+    );
     expect(exchangeConnectorAdapterService.cancelOrder).not.toHaveBeenCalled();
     expect(strategyInstanceRepository.update).not.toHaveBeenCalled();
     expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
@@ -1185,6 +1186,144 @@ describe('StrategyIntentExecutionService', () => {
     );
   });
 
+  it('does not fallback-cancel maker twice when paired fill mismatch already cancelled it', async () => {
+    exchangeConnectorAdapterService.placeLimitOrder
+      .mockResolvedValueOnce({ id: 'maker-order-mismatch', status: 'open' })
+      .mockResolvedValueOnce({
+        id: 'taker-order-mismatch',
+        status: 'closed',
+        filled: '1',
+      });
+    exchangeConnectorAdapterService.fetchOrder
+      .mockResolvedValueOnce({
+        id: 'maker-order-mismatch',
+        status: 'open',
+        filled: '0',
+      })
+      .mockResolvedValueOnce({
+        id: 'maker-order-mismatch',
+        status: 'open',
+        filled: '0',
+      })
+      .mockResolvedValueOnce({
+        id: 'maker-order-mismatch',
+        status: 'open',
+        filled: '0',
+      })
+      .mockResolvedValueOnce({
+        id: 'maker-order-mismatch',
+        status: 'open',
+        filled: '1.5',
+      });
+    const service = createService(
+      true,
+      createConfigService(true, {
+        'strategy.dual_account_inline_taker_max_delay_ms': 0,
+      }),
+    );
+
+    await expect(
+      service.consumeIntents([
+        {
+          ...baseIntent,
+          intentId: 'dual-maker-mismatch',
+          accountLabel: 'maker',
+          metadata: {
+            role: 'maker',
+            takerAccountLabel: 'taker',
+            cycleId: 'cycle-mismatch',
+            orderId: 'dual-cycle-mismatch',
+          },
+        },
+      ]),
+    ).rejects.toThrow(
+      'Immediate dual-account paired fill mismatch between maker and taker',
+    );
+
+    expect(exchangeConnectorAdapterService.cancelOrder).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(exchangeConnectorAdapterService.cancelOrder).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      'maker-order-mismatch',
+      'maker',
+    );
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      'dual-maker-mismatch:inline-taker',
+      'FAILED',
+      'Immediate dual-account paired fill mismatch between maker and taker: makerDelta=1.5 takerFilled=1',
+    );
+  });
+
+  it('fallback-cancels maker when immediate taker does not fill', async () => {
+    exchangeConnectorAdapterService.placeLimitOrder
+      .mockResolvedValueOnce({ id: 'maker-order-no-fill', status: 'open' })
+      .mockResolvedValueOnce({
+        id: 'taker-order-no-fill',
+        status: 'closed',
+        filled: '0',
+      });
+    exchangeConnectorAdapterService.fetchOrder
+      .mockResolvedValueOnce({
+        id: 'maker-order-no-fill',
+        status: 'open',
+        filled: '0',
+      })
+      .mockResolvedValueOnce({
+        id: 'maker-order-no-fill',
+        status: 'open',
+        filled: '0',
+      })
+      .mockResolvedValueOnce({
+        id: 'maker-order-no-fill',
+        status: 'open',
+        filled: '0',
+      })
+      .mockResolvedValueOnce({
+        id: 'taker-order-no-fill',
+        status: 'closed',
+        filled: '0',
+      });
+    const service = createService(
+      true,
+      createConfigService(true, {
+        'strategy.dual_account_inline_taker_max_delay_ms': 0,
+      }),
+    );
+
+    await expect(
+      service.consumeIntents([
+        {
+          ...baseIntent,
+          intentId: 'dual-maker-no-fill',
+          accountLabel: 'maker',
+          metadata: {
+            role: 'maker',
+            takerAccountLabel: 'taker',
+            cycleId: 'cycle-no-fill',
+            orderId: 'dual-cycle-no-fill',
+          },
+        },
+      ]),
+    ).rejects.toThrow('Immediate dual-account taker did not fill any quantity');
+
+    expect(exchangeConnectorAdapterService.cancelOrder).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(exchangeConnectorAdapterService.cancelOrder).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      'maker-order-no-fill',
+      'maker',
+    );
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      'dual-maker-no-fill:inline-taker',
+      'FAILED',
+      'Immediate dual-account taker did not fill any quantity',
+    );
+  });
+
   it('treats matched partial maker and taker fills as success while only requiring the maker to remain open', async () => {
     exchangeConnectorAdapterService.placeLimitOrder
       .mockResolvedValueOnce({
@@ -1240,9 +1379,10 @@ describe('StrategyIntentExecutionService', () => {
       ]),
     ).resolves.toBeUndefined();
 
-    expect(
-      exchangeConnectorAdapterService.fetchOrderBook,
-    ).toHaveBeenCalledWith('binance', 'BTC/USDT');
+    expect(exchangeConnectorAdapterService.fetchOrderBook).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+    );
     expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
       'dual-maker-partial:inline-taker',
       'DONE',
