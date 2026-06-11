@@ -6,7 +6,7 @@
 2. Should clean up architectual intent execution mismatch
 3. Fix order id inconsistency
 4. Design DEX support to support hyperliquid and PancakeSwap/Uniswap etc.. 
-
+5. Design a great bussiness model
 ---
 
 ## 3. Volume Strategy
