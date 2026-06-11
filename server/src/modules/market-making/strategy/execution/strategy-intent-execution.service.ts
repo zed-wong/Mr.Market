@@ -25,7 +25,10 @@ import { DexAdapterId } from '../config/strategy.dto';
 import { StrategyOrderIntent } from '../config/strategy-intent.types';
 import { StrategyMarketDataProviderService } from '../data/strategy-market-data-provider.service';
 import { DexVolumeStrategyService } from '../dex/dex-volume.strategy.service';
-import { RuntimeObservationService } from '../observation/runtime-observation.service';
+import {
+  DualAccountCycleOutcomeStatus,
+  RuntimeObservationService,
+} from '../observation/runtime-observation.service';
 import { StrategyIntentStoreService } from './strategy-intent-store.service';
 
 class IntentCancelledError extends Error {
@@ -43,7 +46,40 @@ type ImmediateDualAccountOrderSnapshot = {
 };
 
 type ImmediateDualAccountPairedFillResult =
-  | { status: 'matched' }
+  | {
+      status: 'matched';
+      makerFilledQty: string;
+      takerFilledQty: string;
+    }
+  | {
+      status: 'safe_no_fill';
+      reason: string;
+      takerIntentId: string;
+      makerExchangeOrderId: string;
+      makerFilledQty: string;
+      takerFilledQty: string;
+      makerCancelAttempted: true;
+    }
+  | {
+      status: 'small_mismatch';
+      reason: string;
+      takerIntentId: string;
+      makerExchangeOrderId: string;
+      makerDelta: string;
+      takerFilled: string;
+      mismatchQty: string;
+      mismatchRatio: string;
+      makerCancelAttempted: true;
+    }
+  | {
+      status: 'cleanup_unknown';
+      reason: string;
+      takerIntentId: string;
+      makerExchangeOrderId: string;
+      makerFilledQty: string;
+      takerFilledQty: string;
+      makerCancelAttempted: true;
+    }
   | {
       status: 'taker_no_fill';
       reason: string;
@@ -65,7 +101,7 @@ class ImmediateDualAccountExecutionError extends Error {
   constructor(
     readonly result: Exclude<
       ImmediateDualAccountPairedFillResult,
-      { status: 'matched' }
+      { status: 'matched' | 'safe_no_fill' | 'small_mismatch' }
     >,
   ) {
     super(
@@ -96,6 +132,7 @@ export class StrategyIntentExecutionService {
   private readonly maxRetries: number;
   private readonly retryBaseDelayMs: number;
   private readonly dualAccountInlineTakerMaxDelayMs: number;
+  private readonly dualAccountSmallMismatchRatio: BigNumber;
   private readonly marketDataMaxAgeMs: number;
   private readonly nextClientOrderSeqByOrderId = new Map<string, number>();
   private readonly stoppedExecutionReason =
@@ -182,6 +219,21 @@ export class StrategyIntentExecutionService {
     ) {
       this.logger.warn(
         `Invalid strategy.dual_account_inline_taker_max_delay_ms value: ${parsedDualAccountInlineTakerMaxDelayMs}. Falling back to ${this.dualAccountInlineTakerMaxDelayMs}`,
+      );
+    }
+
+    const parsedDualAccountSmallMismatchRatio = new BigNumber(
+      this.configService.get('strategy.dual_account_small_mismatch_ratio', 0.005),
+    );
+
+    this.dualAccountSmallMismatchRatio =
+      parsedDualAccountSmallMismatchRatio.isFinite() &&
+      parsedDualAccountSmallMismatchRatio.isGreaterThanOrEqualTo(0)
+        ? parsedDualAccountSmallMismatchRatio
+        : new BigNumber(0.005);
+    if (!this.dualAccountSmallMismatchRatio.isEqualTo(parsedDualAccountSmallMismatchRatio)) {
+      this.logger.warn(
+        `Invalid strategy.dual_account_small_mismatch_ratio value: ${parsedDualAccountSmallMismatchRatio.toFixed()}. Falling back to ${this.dualAccountSmallMismatchRatio.toFixed()}`,
       );
     }
 
@@ -1195,7 +1247,13 @@ export class StrategyIntentExecutionService {
           takerResult,
         );
 
-      if (pairedFillResult.status !== 'matched') {
+      this.recordImmediateDualAccountCycleOutcome(intent, pairedFillResult);
+
+      if (
+        pairedFillResult.status !== 'matched' &&
+        pairedFillResult.status !== 'safe_no_fill' &&
+        pairedFillResult.status !== 'small_mismatch'
+      ) {
         throw new ImmediateDualAccountExecutionError(pairedFillResult);
       }
     } catch (error) {
@@ -1234,19 +1292,81 @@ export class StrategyIntentExecutionService {
       )
     ) {
       const reason = 'Immediate dual-account taker did not fill any quantity';
+      const makerFillDelta = await this.waitForImmediateDualAccountMakerFillDelta(
+        makerIntent,
+        makerExchangeOrderId,
+        makerBeforeTakerSnapshot.cumulativeFilledQty,
+        takerFilledQty,
+      );
 
-      await this.strategyIntentStoreService?.updateIntentStatus(
-        takerIntent.intentId,
-        'FAILED',
+      if (
+        makerFillDelta.isGreaterThan(
+          StrategyIntentExecutionService.DUAL_ACCOUNT_QTY_TOLERANCE,
+        )
+      ) {
+        const mismatchReason =
+          'Immediate dual-account paired fill mismatch between maker and taker';
+
+        await this.cancelRemainingImmediateDualAccountMaker(
+          makerIntent,
+          makerExchangeOrderId,
+          mismatchReason,
+        );
+
+        const makerDelta = makerFillDelta.toFixed();
+        const takerFilled = takerFilledQty.toFixed();
+
+        await this.strategyIntentStoreService?.updateIntentStatus(
+          takerIntent.intentId,
+          'FAILED',
+          `${mismatchReason}: makerDelta=${makerDelta} takerFilled=${takerFilled}`,
+        );
+
+        return {
+          status: 'maker_taker_mismatch',
+          reason: mismatchReason,
+          takerIntentId: takerIntent.intentId,
+          makerExchangeOrderId,
+          makerDelta,
+          takerFilled,
+          makerCancelAttempted: true,
+        };
+      }
+
+      const cleanupConfirmed = await this.cancelRemainingImmediateDualAccountMaker(
+        makerIntent,
+        makerExchangeOrderId,
         reason,
       );
 
+      if (!cleanupConfirmed) {
+        const cleanupReason =
+          'Immediate dual-account maker cleanup not confirmed';
+
+        return {
+          status: 'cleanup_unknown',
+          reason: cleanupReason,
+          takerIntentId: takerIntent.intentId,
+          makerExchangeOrderId,
+          makerFilledQty: makerFillDelta.toFixed(),
+          takerFilledQty: takerFilledQty.toFixed(),
+          makerCancelAttempted: true,
+        };
+      }
+
+      await this.strategyIntentStoreService?.updateIntentStatus(
+        takerIntent.intentId,
+        'DONE',
+      );
+
       return {
-        status: 'taker_no_fill',
+        status: 'safe_no_fill',
         reason,
         takerIntentId: takerIntent.intentId,
         makerExchangeOrderId,
-        makerCancelAttempted: false,
+        makerFilledQty: '0',
+        takerFilledQty: takerFilledQty.toFixed(),
+        makerCancelAttempted: true,
       };
     }
 
@@ -1261,7 +1381,7 @@ export class StrategyIntentExecutionService {
       const reason =
         'Immediate dual-account paired fill mismatch between maker and taker';
 
-      await this.cancelRemainingImmediateDualAccountMaker(
+      const cleanupConfirmed = await this.cancelRemainingImmediateDualAccountMaker(
         makerIntent,
         makerExchangeOrderId,
         reason,
@@ -1269,6 +1389,43 @@ export class StrategyIntentExecutionService {
 
       const makerDelta = makerFillDelta.toFixed();
       const takerFilled = takerFilledQty.toFixed();
+      const mismatchQty = makerFillDelta.minus(takerFilledQty).abs();
+      const mismatchRatio = this.calculateDualAccountMismatchRatio(
+        makerFillDelta,
+        takerFilledQty,
+        mismatchQty,
+      );
+
+      if (this.isSmallDualAccountMismatch(mismatchRatio) && cleanupConfirmed) {
+        await this.strategyIntentStoreService?.updateIntentStatus(
+          takerIntent.intentId,
+          'DONE',
+        );
+
+        return {
+          status: 'small_mismatch',
+          reason,
+          takerIntentId: takerIntent.intentId,
+          makerExchangeOrderId,
+          makerDelta,
+          takerFilled,
+          mismatchQty: mismatchQty.toFixed(),
+          mismatchRatio: mismatchRatio.toFixed(),
+          makerCancelAttempted: true,
+        };
+      }
+
+      if (this.isSmallDualAccountMismatch(mismatchRatio)) {
+        return {
+          status: 'cleanup_unknown',
+          reason: 'Immediate dual-account maker cleanup not confirmed',
+          takerIntentId: takerIntent.intentId,
+          makerExchangeOrderId,
+          makerFilledQty: makerDelta,
+          takerFilledQty: takerFilled,
+          makerCancelAttempted: true,
+        };
+      }
 
       await this.strategyIntentStoreService?.updateIntentStatus(
         takerIntent.intentId,
@@ -1292,7 +1449,94 @@ export class StrategyIntentExecutionService {
       'DONE',
     );
 
-    return { status: 'matched' };
+    return {
+      status: 'matched',
+      makerFilledQty: makerFillDelta.toFixed(),
+      takerFilledQty: takerFilledQty.toFixed(),
+    };
+  }
+
+  private recordImmediateDualAccountCycleOutcome(
+    makerIntent: StrategyOrderIntent,
+    result: ImmediateDualAccountPairedFillResult,
+  ): void {
+    const orderId = this.resolveOrderIdForClientOrderId(makerIntent);
+    const outcomeStatus = this.toDualAccountCycleOutcomeStatus(result.status);
+
+    if (!outcomeStatus) {
+      return;
+    }
+
+    this.runtimeObservationService?.recordDualAccountCycleOutcome({
+      strategyKey: makerIntent.strategyKey,
+      intentId: makerIntent.intentId,
+      orderId,
+      status: outcomeStatus,
+      makerFilledQty:
+        result.status === 'matched' || result.status === 'safe_no_fill'
+          ? result.makerFilledQty
+          : 'makerDelta' in result
+          ? result.makerDelta
+          : '0',
+      takerFilledQty:
+        result.status === 'matched' || result.status === 'safe_no_fill'
+          ? result.takerFilledQty
+          : 'takerFilled' in result
+          ? result.takerFilled
+          : '0',
+      mismatchQty: 'mismatchQty' in result ? result.mismatchQty : undefined,
+      mismatchRatio:
+        'mismatchRatio' in result ? result.mismatchRatio : undefined,
+      makerCleanupConfirmed:
+        result.status === 'matched' ||
+        result.status === 'safe_no_fill' ||
+        result.status === 'small_mismatch',
+    });
+  }
+
+  private toDualAccountCycleOutcomeStatus(
+    status: ImmediateDualAccountPairedFillResult['status'],
+  ): DualAccountCycleOutcomeStatus | null {
+    if (status === 'matched') {
+      return 'matched';
+    }
+
+    if (status === 'safe_no_fill') {
+      return 'safe_no_fill';
+    }
+
+    if (status === 'small_mismatch') {
+      return 'small_mismatch';
+    }
+
+    if (status === 'maker_taker_mismatch') {
+      return 'unsafe_mismatch';
+    }
+
+    return 'cleanup_unknown';
+  }
+
+  private calculateDualAccountMismatchRatio(
+    makerFillDelta: BigNumber,
+    takerFilledQty: BigNumber,
+    mismatchQty: BigNumber,
+  ): BigNumber {
+    const baseQty = BigNumber.maximum(
+      makerFillDelta.abs(),
+      takerFilledQty.abs(),
+    );
+
+    if (baseQty.isLessThanOrEqualTo(0)) {
+      return new BigNumber(0);
+    }
+
+    return mismatchQty.dividedBy(baseQty);
+  }
+
+  private isSmallDualAccountMismatch(mismatchRatio: BigNumber): boolean {
+    return mismatchRatio.isLessThanOrEqualTo(
+      this.dualAccountSmallMismatchRatio,
+    );
   }
 
   private buildImmediateDualAccountTakerIntent(
@@ -1706,7 +1950,7 @@ export class StrategyIntentExecutionService {
     intent: StrategyOrderIntent,
     makerExchangeOrderId: string,
     reason: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const makerSnapshot = await this.loadImmediateDualAccountOrderSnapshot(
       intent,
       makerExchangeOrderId,
@@ -1718,7 +1962,7 @@ export class StrategyIntentExecutionService {
       makerSnapshot.status &&
       this.isTrackedOrderTerminal(makerSnapshot.status)
     ) {
-      return;
+      return true;
     }
 
     this.logger.warn(
@@ -1734,7 +1978,7 @@ export class StrategyIntentExecutionService {
       ].join(' | '),
     );
 
-    await this.runWithRetries(intent, () =>
+    const result = await this.runWithRetries(intent, () =>
       this.exchangeConnectorAdapterService.cancelOrder(
         intent.exchange,
         intent.pair,
@@ -1742,6 +1986,8 @@ export class StrategyIntentExecutionService {
         intent.accountLabel,
       ),
     );
+
+    return this.isCancelResultFinal(result as Record<string, unknown> | undefined);
   }
 
   private async refreshTrackedOrderFromExchange(

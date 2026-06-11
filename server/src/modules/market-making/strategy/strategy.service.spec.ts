@@ -96,6 +96,7 @@ describe('StrategyService', () => {
   let timeIndicatorStrategyController: TimeIndicatorStrategyController;
   let quotePlannerService: QuotePlannerService;
   let adaptivePmmStateService: AdaptivePmmStateService;
+  let runtimeObservationService: RuntimeObservationService;
   let strategySessionRegistryService: StrategySessionRegistryService;
   let executorRegistry: ExecutorRegistry;
   let exchangeInitService: ExchangeInitServiceMock;
@@ -588,6 +589,9 @@ describe('StrategyService', () => {
     quotePlannerService = module.get<QuotePlannerService>(QuotePlannerService);
     adaptivePmmStateService = module.get<AdaptivePmmStateService>(
       AdaptivePmmStateService,
+    );
+    runtimeObservationService = module.get<RuntimeObservationService>(
+      RuntimeObservationService,
     );
     strategySessionRegistryService = module.get<StrategySessionRegistryService>(
       StrategySessionRegistryService,
@@ -2640,6 +2644,99 @@ describe('StrategyService', () => {
         parameters: expect.objectContaining({ publishedCycles: 1 }),
       }),
     );
+  });
+
+  it('stops dual-account volume only after the soft cycle outcome threshold is reached', async () => {
+    const params = {
+      exchangeName: 'binance',
+      symbol: 'BTC/USDT',
+      baseIncrementPercentage: 0.1,
+      baseIntervalTime: 10,
+      baseTradeAmount: 1,
+      numTrades: 0,
+      userId: 'user1',
+      clientId: 'client1',
+      pricePushRate: 0,
+      executionCategory: 'clob_cex' as const,
+      executionVenue: 'cex' as const,
+      makerAccountLabel: 'maker',
+      takerAccountLabel: 'taker',
+      targetQuoteVolume: 0,
+      publishedCycles: 0,
+      completedCycles: 0,
+    };
+    const session = await registerPooledSession({
+      strategyKey: 'user1-client1-dualAccountVolume',
+      strategyType: 'dualAccountVolume',
+      userId: 'user1',
+      clientId: 'client1',
+      cadenceMs: 1000,
+      nextRunAtMs: 0,
+      params,
+    });
+
+    mockStrategyInstanceRepository.findOne.mockResolvedValue({
+      strategyKey: session.strategyKey,
+      parameters: params,
+    });
+    exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([]);
+    runtimeObservationService.recordDualAccountCycleOutcome({
+      strategyKey: session.strategyKey,
+      intentId: 'intent-1',
+      orderId: 'order-1',
+      status: 'small_mismatch',
+      makerFilledQty: '1.001',
+      takerFilledQty: '1',
+      makerCleanupConfirmed: true,
+      observedAtMs: Date.now() - 1_000,
+    });
+    runtimeObservationService.recordDualAccountCycleOutcome({
+      strategyKey: session.strategyKey,
+      intentId: 'intent-2',
+      orderId: 'order-1',
+      status: 'safe_no_fill',
+      makerFilledQty: '0',
+      takerFilledQty: '0',
+      makerCleanupConfirmed: true,
+      observedAtMs: Date.now() - 500,
+    });
+    jest
+      .spyOn(dualAccountVolumeStrategyController, 'buildDualAccountVolumeActions')
+      .mockResolvedValue([]);
+
+    await expect(
+      dualAccountVolumeStrategyController.buildDualAccountVolumeSessionActions(
+        session as any,
+        '2026-06-08T00:00:00.000Z',
+      ),
+    ).resolves.toEqual([]);
+
+    runtimeObservationService.recordDualAccountCycleOutcome({
+      strategyKey: session.strategyKey,
+      intentId: 'intent-3',
+      orderId: 'order-1',
+      status: 'small_mismatch',
+      makerFilledQty: '1.001',
+      takerFilledQty: '1',
+      makerCleanupConfirmed: true,
+      observedAtMs: Date.now(),
+    });
+
+    await expect(
+      dualAccountVolumeStrategyController.buildDualAccountVolumeSessionActions(
+        session as any,
+        '2026-06-08T00:00:01.000Z',
+      ),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        type: 'STOP_CONTROLLER',
+        intentId:
+          'user1-client1-dualAccountVolume:2026-06-08T00:00:01.000Z:stop-dual_account_soft_failure_threshold_exceeded',
+        metadata: {
+          reason: 'dual_account_soft_failure_threshold_exceeded',
+        },
+      }),
+    ]);
   });
 
   it('returns a cancel intent instead of directly cancelling timed-out optimal dual-account maker orders', async () => {

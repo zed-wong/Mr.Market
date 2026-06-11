@@ -213,7 +213,10 @@ describe('StrategyIntentExecutionService', () => {
     orderRepository?: typeof marketMakingOrderRepository,
     marketDataProvider?: typeof strategyMarketDataProviderService,
     apiKeyService?: typeof exchangeApiKeyService,
-    runtimeObservationService?: { recordIntentFailure: jest.Mock },
+    runtimeObservationService?: {
+      recordIntentFailure: jest.Mock;
+      recordDualAccountCycleOutcome?: jest.Mock;
+    },
   ) =>
     new StrategyIntentExecutionService(
       configService,
@@ -1186,7 +1189,7 @@ describe('StrategyIntentExecutionService', () => {
     );
   });
 
-  it('does not fallback-cancel maker twice when paired fill mismatch already cancelled it', async () => {
+  it('records a soft outcome and completes the maker intent for small paired fill mismatch after maker cleanup', async () => {
     exchangeConnectorAdapterService.placeLimitOrder
       .mockResolvedValueOnce({ id: 'maker-order-mismatch', status: 'open' })
       .mockResolvedValueOnce({
@@ -1213,13 +1216,24 @@ describe('StrategyIntentExecutionService', () => {
       .mockResolvedValueOnce({
         id: 'maker-order-mismatch',
         status: 'open',
-        filled: '1.5',
+        filled: '1.001',
       });
+    const runtimeObservationService = {
+      recordIntentFailure: jest.fn(),
+      recordDualAccountCycleOutcome: jest.fn(),
+    };
     const service = createService(
       true,
       createConfigService(true, {
         'strategy.dual_account_inline_taker_max_delay_ms': 0,
+        'strategy.dual_account_small_mismatch_ratio': 0.005,
       }),
+      createExecutionHistoryRepository(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      runtimeObservationService,
     );
 
     await expect(
@@ -1236,9 +1250,7 @@ describe('StrategyIntentExecutionService', () => {
           },
         },
       ]),
-    ).rejects.toThrow(
-      'Immediate dual-account paired fill mismatch between maker and taker',
-    );
+    ).resolves.toBeUndefined();
 
     expect(exchangeConnectorAdapterService.cancelOrder).toHaveBeenCalledTimes(
       1,
@@ -1251,12 +1263,29 @@ describe('StrategyIntentExecutionService', () => {
     );
     expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
       'dual-maker-mismatch:inline-taker',
-      'FAILED',
-      'Immediate dual-account paired fill mismatch between maker and taker: makerDelta=1.5 takerFilled=1',
+      'DONE',
     );
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      'dual-maker-mismatch',
+      'DONE',
+    );
+    expect(
+      runtimeObservationService.recordDualAccountCycleOutcome,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        strategyKey: baseIntent.strategyKey,
+        intentId: 'dual-maker-mismatch',
+        orderId: 'dual-cycle-mismatch',
+        status: 'small_mismatch',
+        makerFilledQty: '1.001',
+        takerFilledQty: '1',
+        makerCleanupConfirmed: true,
+      }),
+    );
+    expect(runtimeObservationService.recordIntentFailure).not.toHaveBeenCalled();
   });
 
-  it('fallback-cancels maker when immediate taker does not fill', async () => {
+  it('records a safe outcome and completes the maker intent when immediate taker does not fill after maker cleanup', async () => {
     exchangeConnectorAdapterService.placeLimitOrder
       .mockResolvedValueOnce({ id: 'maker-order-no-fill', status: 'open' })
       .mockResolvedValueOnce({
@@ -1285,11 +1314,21 @@ describe('StrategyIntentExecutionService', () => {
         status: 'closed',
         filled: '0',
       });
+    const runtimeObservationService = {
+      recordIntentFailure: jest.fn(),
+      recordDualAccountCycleOutcome: jest.fn(),
+    };
     const service = createService(
       true,
       createConfigService(true, {
         'strategy.dual_account_inline_taker_max_delay_ms': 0,
       }),
+      createExecutionHistoryRepository(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      runtimeObservationService,
     );
 
     await expect(
@@ -1306,7 +1345,7 @@ describe('StrategyIntentExecutionService', () => {
           },
         },
       ]),
-    ).rejects.toThrow('Immediate dual-account taker did not fill any quantity');
+    ).resolves.toBeUndefined();
 
     expect(exchangeConnectorAdapterService.cancelOrder).toHaveBeenCalledTimes(
       1,
@@ -1319,9 +1358,197 @@ describe('StrategyIntentExecutionService', () => {
     );
     expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
       'dual-maker-no-fill:inline-taker',
-      'FAILED',
-      'Immediate dual-account taker did not fill any quantity',
+      'DONE',
     );
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      'dual-maker-no-fill',
+      'DONE',
+    );
+    expect(
+      runtimeObservationService.recordDualAccountCycleOutcome,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        strategyKey: baseIntent.strategyKey,
+        intentId: 'dual-maker-no-fill',
+        orderId: 'dual-cycle-no-fill',
+        status: 'safe_no_fill',
+        makerFilledQty: '0',
+        takerFilledQty: '0',
+        makerCleanupConfirmed: true,
+      }),
+    );
+    expect(runtimeObservationService.recordIntentFailure).not.toHaveBeenCalled();
+  });
+
+  it('keeps taker no-fill unsafe when the maker filled before cleanup', async () => {
+    exchangeConnectorAdapterService.placeLimitOrder
+      .mockResolvedValueOnce({ id: 'maker-order-no-fill-unsafe', status: 'open' })
+      .mockResolvedValueOnce({
+        id: 'taker-order-no-fill-unsafe',
+        status: 'closed',
+        filled: '0',
+      });
+    exchangeConnectorAdapterService.fetchOrder
+      .mockResolvedValueOnce({
+        id: 'maker-order-no-fill-unsafe',
+        status: 'open',
+        filled: '0',
+      })
+      .mockResolvedValueOnce({
+        id: 'maker-order-no-fill-unsafe',
+        status: 'open',
+        filled: '0',
+      })
+      .mockResolvedValueOnce({
+        id: 'maker-order-no-fill-unsafe',
+        status: 'open',
+        filled: '0',
+      })
+      .mockResolvedValueOnce({
+        id: 'taker-order-no-fill-unsafe',
+        status: 'closed',
+        filled: '0',
+      })
+      .mockResolvedValueOnce({
+        id: 'maker-order-no-fill-unsafe',
+        status: 'closed',
+        filled: '1',
+      });
+    const runtimeObservationService = {
+      recordIntentFailure: jest.fn(),
+      recordDualAccountCycleOutcome: jest.fn(),
+    };
+    const service = createService(
+      true,
+      createConfigService(true, {
+        'strategy.dual_account_inline_taker_max_delay_ms': 0,
+      }),
+      createExecutionHistoryRepository(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      runtimeObservationService,
+    );
+
+    await expect(
+      service.consumeIntents([
+        {
+          ...baseIntent,
+          intentId: 'dual-maker-no-fill-unsafe',
+          accountLabel: 'maker',
+          metadata: {
+            role: 'maker',
+            takerAccountLabel: 'taker',
+            cycleId: 'cycle-no-fill-unsafe',
+            orderId: 'dual-cycle-no-fill-unsafe',
+          },
+        },
+      ]),
+    ).rejects.toThrow(
+      'Immediate dual-account paired fill mismatch between maker and taker',
+    );
+
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      'dual-maker-no-fill-unsafe:inline-taker',
+      'FAILED',
+      'Immediate dual-account paired fill mismatch between maker and taker: makerDelta=1 takerFilled=0',
+    );
+    expect(
+      runtimeObservationService.recordDualAccountCycleOutcome,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        strategyKey: baseIntent.strategyKey,
+        intentId: 'dual-maker-no-fill-unsafe',
+        status: 'unsafe_mismatch',
+        makerCleanupConfirmed: false,
+      }),
+    );
+    expect(runtimeObservationService.recordIntentFailure).toHaveBeenCalled();
+  });
+
+  it('keeps taker no-fill unsafe when maker cleanup is not final', async () => {
+    exchangeConnectorAdapterService.placeLimitOrder
+      .mockResolvedValueOnce({ id: 'maker-order-cleanup-pending', status: 'open' })
+      .mockResolvedValueOnce({
+        id: 'taker-order-cleanup-pending',
+        status: 'closed',
+        filled: '0',
+      });
+    exchangeConnectorAdapterService.cancelOrder.mockResolvedValueOnce({
+      id: 'maker-order-cleanup-pending',
+      status: 'pending_cancel',
+    });
+    exchangeConnectorAdapterService.fetchOrder
+      .mockResolvedValueOnce({
+        id: 'maker-order-cleanup-pending',
+        status: 'open',
+        filled: '0',
+      })
+      .mockResolvedValueOnce({
+        id: 'maker-order-cleanup-pending',
+        status: 'open',
+        filled: '0',
+      })
+      .mockResolvedValueOnce({
+        id: 'maker-order-cleanup-pending',
+        status: 'open',
+        filled: '0',
+      })
+      .mockResolvedValueOnce({
+        id: 'taker-order-cleanup-pending',
+        status: 'closed',
+        filled: '0',
+      })
+      .mockResolvedValueOnce({
+        id: 'maker-order-cleanup-pending',
+        status: 'open',
+        filled: '0',
+      });
+    const runtimeObservationService = {
+      recordIntentFailure: jest.fn(),
+      recordDualAccountCycleOutcome: jest.fn(),
+    };
+    const service = createService(
+      true,
+      createConfigService(true, {
+        'strategy.dual_account_inline_taker_max_delay_ms': 0,
+      }),
+      createExecutionHistoryRepository(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      runtimeObservationService,
+    );
+
+    await expect(
+      service.consumeIntents([
+        {
+          ...baseIntent,
+          intentId: 'dual-maker-cleanup-pending',
+          accountLabel: 'maker',
+          metadata: {
+            role: 'maker',
+            takerAccountLabel: 'taker',
+            cycleId: 'cycle-cleanup-pending',
+            orderId: 'dual-cycle-cleanup-pending',
+          },
+        },
+      ]),
+    ).rejects.toThrow('Immediate dual-account maker cleanup not confirmed');
+
+    expect(
+      runtimeObservationService.recordDualAccountCycleOutcome,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        strategyKey: baseIntent.strategyKey,
+        intentId: 'dual-maker-cleanup-pending',
+        status: 'cleanup_unknown',
+        makerCleanupConfirmed: false,
+      }),
+    );
+    expect(runtimeObservationService.recordIntentFailure).toHaveBeenCalled();
   });
 
   it('treats matched partial maker and taker fills as success while only requiring the maker to remain open', async () => {

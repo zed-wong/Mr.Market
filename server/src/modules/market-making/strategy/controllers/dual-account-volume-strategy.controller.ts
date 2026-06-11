@@ -22,8 +22,12 @@ import type { DualAccountVolumeStrategyParams } from '../config/strategy-params.
 import { StrategyMarketDataProviderService } from '../data/strategy-market-data-provider.service';
 import * as dualAccountConfig from '../dual-account/dual-account-config';
 import { DualAccountPlannerService } from '../dual-account/dual-account-planner.service';
+import { RuntimeObservationService } from '../observation/runtime-observation.service';
 import { StrategySessionRegistryService } from '../runtime/strategy-session-registry.service';
 import { sanitizeVolumeCadenceMs } from './volume-controller.helpers';
+
+const DUAL_ACCOUNT_SOFT_FAILURE_THRESHOLD = 3;
+const DUAL_ACCOUNT_SOFT_FAILURE_WINDOW_MS = 5 * 60 * 1000;
 
 @Injectable()
 export class DualAccountVolumeStrategyController implements StrategyController {
@@ -44,6 +48,8 @@ export class DualAccountVolumeStrategyController implements StrategyController {
     private readonly dualAccountPlannerService?: DualAccountPlannerService,
     @Optional()
     private readonly strategyMarketDataProviderService?: StrategyMarketDataProviderService,
+    @Optional()
+    private readonly runtimeObservationService?: RuntimeObservationService,
   ) {}
 
   getCadenceMs(parameters: Record<string, unknown>): number {
@@ -161,6 +167,15 @@ export class DualAccountVolumeStrategyController implements StrategyController {
       return [
         this.buildStopControllerAction(session, ts, 'target_volume_reached'),
       ];
+    }
+
+    const softFailureStopAction = this.buildDualAccountSoftFailureStopAction(
+      session,
+      ts,
+    );
+
+    if (softFailureStopAction) {
+      return [softFailureStopAction];
     }
 
     if (activeTrackedOrders.length > 0) {
@@ -409,6 +424,15 @@ export class DualAccountVolumeStrategyController implements StrategyController {
       ];
     }
 
+    const softFailureStopAction = this.buildDualAccountSoftFailureStopAction(
+      session,
+      ts,
+    );
+
+    if (softFailureStopAction) {
+      return [softFailureStopAction];
+    }
+
     if (activeTrackedOrders.length > 0) {
       return [];
     }
@@ -546,6 +570,38 @@ export class DualAccountVolumeStrategyController implements StrategyController {
       metadata: { reason },
       createdAt: ts,
     };
+  }
+
+  private buildDualAccountSoftFailureStopAction(
+    session: StrategyRuntimeSession,
+    ts: string,
+  ): ExecutorAction | null {
+    if (!this.runtimeObservationService) {
+      return null;
+    }
+
+    const health = this.runtimeObservationService.getDualAccountCycleHealth(
+      session.strategyKey,
+      DUAL_ACCOUNT_SOFT_FAILURE_WINDOW_MS,
+    );
+
+    if (health.hasUnsafeOutcome) {
+      return this.buildStopControllerAction(
+        session,
+        ts,
+        'dual_account_unsafe_cycle_outcome',
+      );
+    }
+
+    if (health.softFailureCount < DUAL_ACCOUNT_SOFT_FAILURE_THRESHOLD) {
+      return null;
+    }
+
+    return this.buildStopControllerAction(
+      session,
+      ts,
+      'dual_account_soft_failure_threshold_exceeded',
+    );
   }
 
   private isTrackedOrderTerminal(status: string): boolean {

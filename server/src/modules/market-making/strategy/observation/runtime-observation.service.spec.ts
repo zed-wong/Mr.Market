@@ -55,4 +55,83 @@ describe('RuntimeObservationService', () => {
     });
     expect(service.getPressure('other', 1_000, 2_000).rejectCount).toBe(0);
   });
+
+  it('tracks dual-account soft cycle outcomes without increasing generic runtime pressure', () => {
+    const service = new RuntimeObservationService();
+
+    service.recordDualAccountCycleOutcome({
+      strategyKey: 'strategy-1',
+      intentId: 'intent-1',
+      orderId: 'order-1',
+      status: 'small_mismatch',
+      makerFilledQty: '1.001',
+      takerFilledQty: '1',
+      mismatchQty: '0.001',
+      mismatchRatio: '0.000999000999000999',
+      makerCleanupConfirmed: true,
+      observedAtMs: 1_000,
+    });
+    service.recordDualAccountCycleOutcome({
+      strategyKey: 'strategy-1',
+      intentId: 'intent-2',
+      orderId: 'order-1',
+      status: 'safe_no_fill',
+      makerFilledQty: '0',
+      takerFilledQty: '0',
+      makerCleanupConfirmed: true,
+      observedAtMs: 1_500,
+    });
+
+    expect(service.getPressure('strategy-1', 5_000, 2_000)).toEqual({
+      strategyKey: 'strategy-1',
+      windowMs: 5_000,
+      rejectCount: 0,
+      postOnlyRejectCount: 0,
+      rateLimitCount: 0,
+    });
+    expect(service.getDualAccountCycleHealth('strategy-1', 5_000, 2_000)).toEqual(
+      {
+        strategyKey: 'strategy-1',
+        windowMs: 5_000,
+        softFailureCount: 2,
+        hasUnsafeOutcome: false,
+        latestOutcomeStatus: 'safe_no_fill',
+      },
+    );
+  });
+
+  it('resets dual-account soft cycle health after a matched outcome', () => {
+    const service = new RuntimeObservationService();
+
+    service.recordDualAccountCycleOutcome({
+      strategyKey: 'strategy-1',
+      intentId: 'intent-1',
+      orderId: 'order-1',
+      status: 'small_mismatch',
+      makerFilledQty: '1.001',
+      takerFilledQty: '1',
+      makerCleanupConfirmed: true,
+      observedAtMs: 1_000,
+    });
+    service.recordDualAccountCycleOutcome({
+      strategyKey: 'strategy-1',
+      intentId: 'intent-2',
+      orderId: 'order-1',
+      status: 'matched',
+      makerFilledQty: '1',
+      takerFilledQty: '1',
+      makerCleanupConfirmed: true,
+      observedAtMs: 1_500,
+    });
+
+    expect(service.getDualAccountCycleHealth('strategy-1', 5_000, 2_000)).toEqual(
+      {
+        strategyKey: 'strategy-1',
+        windowMs: 5_000,
+        softFailureCount: 0,
+        hasUnsafeOutcome: false,
+        latestOutcomeStatus: 'matched',
+      },
+    );
+  });
 });

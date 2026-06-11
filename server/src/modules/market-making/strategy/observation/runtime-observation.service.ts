@@ -18,6 +18,34 @@ export type StrategyRuntimePressureSnapshot = {
   rateLimitCount: number;
 };
 
+export type DualAccountCycleOutcomeStatus =
+  | 'matched'
+  | 'safe_no_fill'
+  | 'small_mismatch'
+  | 'unsafe_mismatch'
+  | 'cleanup_unknown';
+
+export type DualAccountCycleOutcomeObservation = {
+  strategyKey: string;
+  intentId: string;
+  orderId: string;
+  status: DualAccountCycleOutcomeStatus;
+  makerFilledQty: string;
+  takerFilledQty: string;
+  mismatchQty?: string;
+  mismatchRatio?: string;
+  makerCleanupConfirmed: boolean;
+  observedAtMs?: number;
+};
+
+export type DualAccountCycleHealthSnapshot = {
+  strategyKey: string;
+  windowMs: number;
+  softFailureCount: number;
+  hasUnsafeOutcome: boolean;
+  latestOutcomeStatus: DualAccountCycleOutcomeStatus | null;
+};
+
 type IntentFailureObservation = {
   strategyKey: string;
   intentType: StrategyOrderIntent['type'];
@@ -30,6 +58,9 @@ type IntentFailureObservation = {
 @Injectable()
 export class RuntimeObservationService {
   private readonly failures: IntentFailureObservation[] = [];
+  private readonly dualAccountCycleOutcomes: Required<
+    DualAccountCycleOutcomeObservation
+  >[] = [];
   private readonly maxRetentionMs = 10 * 60 * 1000;
 
   constructor(
@@ -75,9 +106,63 @@ export class RuntimeObservationService {
     };
   }
 
+  recordDualAccountCycleOutcome(
+    outcome: DualAccountCycleOutcomeObservation,
+  ): void {
+    const observedAtMs = outcome.observedAtMs ?? Date.now();
+
+    this.dualAccountCycleOutcomes.push({
+      ...outcome,
+      mismatchQty: outcome.mismatchQty || '',
+      mismatchRatio: outcome.mismatchRatio || '',
+      observedAtMs,
+    });
+    this.prune(observedAtMs);
+  }
+
+  getDualAccountCycleHealth(
+    strategyKey: string,
+    windowMs: number,
+    nowMs = Date.now(),
+  ): DualAccountCycleHealthSnapshot {
+    this.prune(nowMs);
+
+    const cutoff = nowMs - Math.max(0, Number(windowMs || 0));
+    const recent = this.dualAccountCycleOutcomes
+      .filter(
+        (item) =>
+          item.strategyKey === strategyKey && item.observedAtMs >= cutoff,
+      )
+      .sort((left, right) => left.observedAtMs - right.observedAtMs);
+    const latest = recent[recent.length - 1];
+    let latestMatchedIndex = -1;
+
+    for (let index = recent.length - 1; index >= 0; index -= 1) {
+      if (recent[index].status === 'matched') {
+        latestMatchedIndex = index;
+        break;
+      }
+    }
+    const sinceLastMatch =
+      latestMatchedIndex >= 0 ? recent.slice(latestMatchedIndex + 1) : recent;
+
+    return {
+      strategyKey,
+      windowMs,
+      softFailureCount: sinceLastMatch.filter((item) =>
+        this.isDualAccountSoftFailure(item),
+      ).length,
+      hasUnsafeOutcome: sinceLastMatch.some((item) =>
+        this.isDualAccountUnsafeOutcome(item),
+      ),
+      latestOutcomeStatus: latest?.status || null,
+    };
+  }
+
   clear(strategyKey?: string): void {
     if (!strategyKey) {
       this.failures.length = 0;
+      this.dualAccountCycleOutcomes.length = 0;
 
       return;
     }
@@ -85,6 +170,16 @@ export class RuntimeObservationService {
     for (let index = this.failures.length - 1; index >= 0; index -= 1) {
       if (this.failures[index].strategyKey === strategyKey) {
         this.failures.splice(index, 1);
+      }
+    }
+
+    for (
+      let index = this.dualAccountCycleOutcomes.length - 1;
+      index >= 0;
+      index -= 1
+    ) {
+      if (this.dualAccountCycleOutcomes[index].strategyKey === strategyKey) {
+        this.dualAccountCycleOutcomes.splice(index, 1);
       }
     }
   }
@@ -235,12 +330,37 @@ export class RuntimeObservationService {
     return item.exchangeErrorKind === 'RATE_LIMIT';
   }
 
+  private isDualAccountSoftFailure(
+    item: Required<DualAccountCycleOutcomeObservation>,
+  ): boolean {
+    return (
+      item.makerCleanupConfirmed &&
+      (item.status === 'safe_no_fill' || item.status === 'small_mismatch')
+    );
+  }
+
+  private isDualAccountUnsafeOutcome(
+    item: Required<DualAccountCycleOutcomeObservation>,
+  ): boolean {
+    return item.status === 'unsafe_mismatch' || item.status === 'cleanup_unknown';
+  }
+
   private prune(nowMs: number): void {
     const cutoff = nowMs - this.maxRetentionMs;
 
     for (let index = this.failures.length - 1; index >= 0; index -= 1) {
       if (this.failures[index].observedAtMs < cutoff) {
         this.failures.splice(index, 1);
+      }
+    }
+
+    for (
+      let index = this.dualAccountCycleOutcomes.length - 1;
+      index >= 0;
+      index -= 1
+    ) {
+      if (this.dualAccountCycleOutcomes[index].observedAtMs < cutoff) {
+        this.dualAccountCycleOutcomes.splice(index, 1);
       }
     }
   }
