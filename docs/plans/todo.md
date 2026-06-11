@@ -1,5 +1,12 @@
 # Todos
 
+2026-06-12
+---
+1. Admin Volume should support max volume auto stop
+2. Should clean up architectual intent execution mismatch
+3. Fix order id inconsistency
+
+
 ---
 
 ## 1. Adaptive PMM
