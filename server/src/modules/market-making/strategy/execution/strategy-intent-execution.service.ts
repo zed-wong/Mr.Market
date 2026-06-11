@@ -13,6 +13,7 @@ import { Repository } from 'typeorm';
 
 import { DurabilityService } from '../../durability/durability.service';
 import { ExchangeConnectorAdapterService } from '../../execution/exchange-connector-adapter.service';
+import { isExchangeInsufficientFundsError } from '../../execution/exchange-error-classifier';
 import { ExchangeOrderMappingService } from '../../execution/exchange-order-mapping.service';
 import {
   OrderReservationResult,
@@ -1029,15 +1030,7 @@ export class StrategyIntentExecutionService {
       return;
     }
 
-    const message = error instanceof Error ? error.message : String(error);
-    const normalized = message.toLowerCase();
-
-    if (
-      !normalized.includes('oversold') &&
-      !normalized.includes('insufficient balance') &&
-      !normalized.includes('insufficient available') &&
-      !normalized.includes('insufficient position')
-    ) {
+    if (!isExchangeInsufficientFundsError(error)) {
       return;
     }
 

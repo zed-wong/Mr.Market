@@ -5,6 +5,7 @@ import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
 import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
+import { isExchangeOrderNotFoundError } from '../execution/exchange-error-classifier';
 import { ExchangeOrderMappingService } from '../execution/exchange-order-mapping.service';
 import { MarketMakingRuntimeTimingService } from '../tick/runtime-timing.service';
 import {
@@ -350,15 +351,7 @@ export class TrackedOrderShutdownService {
   }
 
   private isIdempotentCancelError(error: unknown): boolean {
-    const message = error instanceof Error ? error.message : String(error || '');
-    const normalized = message.toLowerCase();
-
-    return (
-      normalized.includes('unknown order id') ||
-      normalized.includes('order cancelled') ||
-      normalized.includes('already cancelled') ||
-      normalized.includes('order not found')
-    );
+    return isExchangeOrderNotFoundError(error);
   }
 
   isTrackedOrderTerminal(status: string): boolean {

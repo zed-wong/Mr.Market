@@ -1,6 +1,10 @@
 import { Injectable, Optional } from '@nestjs/common';
 import BigNumber from 'bignumber.js';
 
+import {
+  classifyExchangeError,
+  ExchangeErrorKind,
+} from '../../execution/exchange-error-classifier';
 import { PureMarketMakingStrategyDto } from '../config/strategy.dto';
 import { StrategyRuntimeSession } from '../config/strategy-controller.types';
 import { StrategyOrderIntent } from '../config/strategy-intent.types';
@@ -19,6 +23,7 @@ type IntentFailureObservation = {
   intentType: StrategyOrderIntent['type'];
   postOnly: boolean;
   message: string;
+  exchangeErrorKind: ExchangeErrorKind;
   observedAtMs: number;
 };
 
@@ -42,6 +47,7 @@ export class RuntimeObservationService {
       intentType: intent.type,
       postOnly: Boolean(intent.postOnly),
       message: error instanceof Error ? error.message : String(error),
+      exchangeErrorKind: classifyExchangeError(error).kind,
       observedAtMs,
     });
     this.prune(observedAtMs);
@@ -217,27 +223,16 @@ export class RuntimeObservationService {
   }
 
   private isPostOnlyReject(item: IntentFailureObservation): boolean {
-    const message = item.message.toLowerCase();
-
     return (
       item.intentType === 'CREATE_LIMIT_ORDER' &&
       (item.postOnly ||
-        message.includes('post only') ||
-        message.includes('post-only') ||
-        message.includes('maker'))
+        item.exchangeErrorKind === 'ORDER_IMMEDIATELY_FILLABLE' ||
+        item.exchangeErrorKind === 'ORDER_NOT_FILLABLE')
     );
   }
 
   private isRateLimit(item: IntentFailureObservation): boolean {
-    const message = item.message.toLowerCase();
-
-    return (
-      message.includes('rate limit') ||
-      message.includes('too many requests') ||
-      message.includes('429') ||
-      message.includes('throttle') ||
-      message.includes('timeout')
-    );
+    return item.exchangeErrorKind === 'RATE_LIMIT';
   }
 
   private prune(nowMs: number): void {

@@ -1,3 +1,5 @@
+import * as ccxt from 'ccxt';
+
 import { RuntimeObservationService } from './runtime-observation.service';
 
 describe('RuntimeObservationService', () => {
@@ -40,7 +42,7 @@ describe('RuntimeObservationService', () => {
         createdAt: '2026-03-11T00:00:00.000Z',
         status: 'NEW',
       },
-      new Error('rate limit 429'),
+      new ccxt.RateLimitExceeded('binance 429 too many requests'),
       1_500,
     );
 

@@ -8,6 +8,7 @@ jest.mock(
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ConfigService } from '@nestjs/config';
+import * as ccxt from 'ccxt';
 import { buildSubmittedClientOrderId } from 'src/common/helpers/client-order-id';
 
 import { StrategyOrderIntent } from '../config/strategy-intent.types';
@@ -669,7 +670,7 @@ describe('StrategyIntentExecutionService', () => {
     );
 
     exchangeConnectorAdapterService.placeLimitOrder.mockRejectedValue(
-      new Error('mexc {"msg":"Oversold","code":30005}'),
+      new ccxt.InsufficientFunds('mexc {"msg":"Oversold","code":30005}'),
     );
 
     await expect(service.consumeIntents([baseIntent])).rejects.toThrow(
@@ -707,7 +708,9 @@ describe('StrategyIntentExecutionService', () => {
     );
 
     exchangeConnectorAdapterService.placeLimitOrder.mockRejectedValue(
-      new Error('mexc {"msg":"Insufficient position","code":30004}'),
+      new ccxt.InsufficientFunds(
+        'mexc {"msg":"Insufficient position","code":30004}',
+      ),
     );
 
     await expect(service.consumeIntents([baseIntent])).rejects.toThrow(
