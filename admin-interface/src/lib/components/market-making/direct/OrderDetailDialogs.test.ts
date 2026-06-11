@@ -189,7 +189,7 @@ describe("Order detail sub-dialogs", () => {
     expect(body).toContain("No recent errors");
   });
 
-  it("does not natively disable efficient resume when readiness blocks it", () => {
+  it("keeps efficient resume actionable when readiness blocks immediate trading", () => {
     const { body } = render(OrderDetailsDialog, {
       props: {
         show: true,
@@ -208,7 +208,8 @@ describe("Order detail sub-dialogs", () => {
     });
 
     expect(body).toContain("Resume Order");
-    expect(body).toContain('aria-disabled="true"');
+    expect(body).not.toContain('aria-disabled="true"');
+    expect(body).not.toContain("Resolve planner readiness blockers before resuming.");
     expect(body).not.toMatch(/<button[^>]*\sdisabled(?:=|\s|>)[^>]*>[\s\S]*Resume Order/);
   });
 });

@@ -24,7 +24,6 @@
         getStateLabel,
         explainDirectOrderWarning,
         getDirectOrderActionAvailability,
-        describeSafeDirectStartFailure,
     } from "$lib/helpers/market-making/direct/helpers";
 
     export let show = false;
@@ -132,10 +131,6 @@
         isKnownDirectStrategyControllerType(resolvedControllerType);
     $: fills = performance?.summary.fillCount ?? 0;
     $: recentErrors = data?.recentErrors ?? [];
-    $: efficientResumeDisabled =
-        isEfficientDualAccountStrategy &&
-        actionAvailability.canResume &&
-        data?.readiness?.canStart !== true;
 
     $: detailEntries = (
         [
@@ -173,19 +168,6 @@
 
     function backToOverview() {
         activeView = "overview";
-    }
-
-    function handleResumeClick() {
-        if (!efficientResumeDisabled) {
-            onStartOrder();
-            return;
-        }
-
-        toast.warning($_("admin_direct_mm_readiness_start_blocked"), {
-            description:
-                describeSafeDirectStartFailure(data?.readiness) ||
-                $_("admin_direct_mm_readiness_start_blocked_hint"),
-        });
     }
 </script>
 
@@ -799,11 +781,7 @@
                                 {#if actionAvailability.canResume}
                                     <button
                                         class="btn flex-1 bg-indigo-600 hover:bg-indigo-700 border-none text-white h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14.5px] shadow-[0_10px_24px_-12px_rgba(79,70,229,0.9)] flex items-center justify-center gap-1.5"
-                                        on:click={handleResumeClick}
-                                        aria-disabled={efficientResumeDisabled}
-                                        title={efficientResumeDisabled
-                                            ? "Resolve planner readiness blockers before resuming."
-                                            : ""}
+                                        on:click={onStartOrder}
                                     >
                                         {$_("admin_direct_mm_resume_order")}
                                         <svg
