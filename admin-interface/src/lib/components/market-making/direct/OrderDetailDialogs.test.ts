@@ -12,6 +12,7 @@ import OrderInventoryDialog from "./OrderInventoryDialog.svelte";
 import OrderConfigDialog from "./OrderConfigDialog.svelte";
 import OrderRoutingDialog from "./OrderRoutingDialog.svelte";
 import OrderErrorsDialog from "./OrderErrorsDialog.svelte";
+import OrderDetailsDialog from "./OrderDetailsDialog.svelte";
 
 const noop = () => {};
 
@@ -101,6 +102,25 @@ const basePerformance: OrderPerformance = {
   },
 };
 
+const stoppedEfficientOrder: DirectOrderSummary = {
+  ...baseOrder,
+  state: "stopped",
+  runtimeState: "stopped",
+  controllerType: "efficientDualAccountVolume",
+  directExecutionMode: "dual_account",
+  strategyName: "Efficient Dual Account Volume",
+};
+
+const stoppedEfficientStatus: DirectOrderStatus = {
+  ...baseStatus,
+  state: "stopped",
+  runtimeState: "stopped",
+  controllerType: "efficientDualAccountVolume",
+  directExecutionMode: "dual_account",
+  readiness: null,
+  cycles: [],
+};
+
 describe("Order detail sub-dialogs", () => {
   it("renders performance metrics with a back affordance", () => {
     const { body } = render(OrderPerformanceDialog, {
@@ -167,5 +187,28 @@ describe("Order detail sub-dialogs", () => {
 
     expect(body).toContain("Recent Errors");
     expect(body).toContain("No recent errors");
+  });
+
+  it("does not natively disable efficient resume when readiness blocks it", () => {
+    const { body } = render(OrderDetailsDialog, {
+      props: {
+        show: true,
+        order: stoppedEfficientOrder,
+        data: stoppedEfficientStatus,
+        performance: basePerformance,
+        loading: false,
+        refreshing: false,
+        error: null,
+        onClose: noop,
+        onRefresh: noop,
+        onStartOrder: noop,
+        onStopOrder: noop,
+        onRemoveOrder: noop,
+      },
+    });
+
+    expect(body).toContain("Resume Order");
+    expect(body).toContain('aria-disabled="true"');
+    expect(body).not.toMatch(/<button[^>]*\sdisabled(?:=|\s|>)[^>]*>[\s\S]*Resume Order/);
   });
 });
