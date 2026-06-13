@@ -27,6 +27,7 @@ import { StrategySessionRegistryService } from '../runtime/strategy-session-regi
 import { sanitizeVolumeCadenceMs } from './volume-controller.helpers';
 
 const DUAL_ACCOUNT_SOFT_FAILURE_THRESHOLD = 3;
+const DUAL_ACCOUNT_UNSAFE_OUTCOME_THRESHOLD = 5;
 const DUAL_ACCOUNT_SOFT_FAILURE_WINDOW_MS = 5 * 60 * 1000;
 
 @Injectable()
@@ -158,6 +159,17 @@ export class DualAccountVolumeStrategyController implements StrategyController {
       latestParams.tradedQuoteVolume || activeSession?.tradedQuoteVolume || 0,
     );
     const targetQuoteVolume = Number(latestParams.targetQuoteVolume || 0);
+
+    if (latestParams.repairRequired) {
+      const repairAction = await this.buildRepairRebalanceAction(
+        session.strategyKey,
+        latestParams,
+        'buy',
+        ts,
+      );
+
+      return repairAction ? [repairAction] : [];
+    }
 
     if (targetQuoteVolume > 0 && tradedQuoteVolume >= targetQuoteVolume) {
       const activeBeforeStop = this.getActiveSession(session.strategyKey);
@@ -303,21 +315,12 @@ export class DualAccountVolumeStrategyController implements StrategyController {
     const targetQuoteVolume = Number(latestParams.targetQuoteVolume || 0);
 
     if (latestParams.repairRequired) {
-      const repairAction =
-        await this.getDualAccountPlanner().maybeBuildDualAccountRebalanceAction(
-          session.strategyKey,
-          latestParams,
-          'buy',
-          new BigNumber(0),
-          new BigNumber(0),
-          new BigNumber(0),
-          await this.getDualAccountPlanner().resolveFeeBufferRate(
-            latestParams.exchangeName,
-            latestParams.symbol,
-          ),
-          Number(latestParams.publishedCycles || 0),
-          ts,
-        );
+      const repairAction = await this.buildRepairRebalanceAction(
+        session.strategyKey,
+        latestParams,
+        'buy',
+        ts,
+      );
 
       return repairAction ? [repairAction] : [];
     }
@@ -380,6 +383,69 @@ export class DualAccountVolumeStrategyController implements StrategyController {
           latestParams,
           ts,
         );
+  }
+
+  private async buildRepairRebalanceAction(
+    strategyKey: string,
+    params: DualAccountVolumeStrategyParams,
+    preferredSide: 'buy' | 'sell',
+    ts: string,
+  ): Promise<ExecutorAction | null> {
+    if (!this.strategyMarketDataProviderService) {
+      this.logger.warn(
+        `Skipping dual-account repair for ${strategyKey}: market data provider is not available`,
+      );
+
+      return null;
+    }
+
+    const bestBidAsk =
+      this.strategyMarketDataProviderService.getTrackedBestBidAsk(
+        params.exchangeName,
+        params.symbol,
+      );
+
+    if (!bestBidAsk) {
+      this.logger.warn(
+        `Skipping dual-account repair for ${strategyKey}: tracked best bid/ask is unavailable`,
+      );
+
+      return null;
+    }
+
+    const bestBid = new BigNumber(bestBidAsk.bestBid);
+    const bestAsk = new BigNumber(bestBidAsk.bestAsk);
+    const price = bestBid.plus(bestAsk).dividedBy(2);
+
+    if (
+      !bestBid.isFinite() ||
+      !bestAsk.isFinite() ||
+      !price.isFinite() ||
+      bestBid.isLessThanOrEqualTo(0) ||
+      bestAsk.isLessThanOrEqualTo(0) ||
+      price.isLessThanOrEqualTo(0)
+    ) {
+      this.logger.warn(
+        `Skipping dual-account repair for ${strategyKey}: invalid tracked best bid/ask bid=${bestBidAsk.bestBid} ask=${bestBidAsk.bestAsk}`,
+      );
+
+      return null;
+    }
+
+    return await this.getDualAccountPlanner().maybeBuildDualAccountRebalanceAction(
+      strategyKey,
+      params,
+      preferredSide,
+      bestBid,
+      bestAsk,
+      price,
+      await this.getDualAccountPlanner().resolveFeeBufferRate(
+        params.exchangeName,
+        params.symbol,
+      ),
+      Number(params.publishedCycles || 0),
+      ts,
+    );
   }
 
   private getActiveSession(
@@ -504,7 +570,7 @@ export class DualAccountVolumeStrategyController implements StrategyController {
       DUAL_ACCOUNT_SOFT_FAILURE_WINDOW_MS,
     );
 
-    if (health.hasUnsafeOutcome) {
+    if (health.unsafeOutcomeCount >= DUAL_ACCOUNT_UNSAFE_OUTCOME_THRESHOLD) {
       return this.buildStopControllerAction(
         session,
         ts,

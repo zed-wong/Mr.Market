@@ -114,6 +114,7 @@ describe('StrategyService', () => {
     listInterruptedCreateIntents: jest.Mock;
     listInterruptedCancelIntents: jest.Mock;
     getQueueState: jest.Mock;
+    hasActiveIntents: jest.Mock;
     attachMixinOrderId: jest.Mock;
     updateIntentStatus: jest.Mock;
   };
@@ -184,6 +185,7 @@ describe('StrategyService', () => {
   };
   const mockMarketMakingOrderRepository = {
     findOne: jest.fn(),
+    update: jest.fn(),
   };
   const mockStrategyExecutionHistoryRepository = {
     create: jest.fn((entity: any) => entity),
@@ -271,6 +273,7 @@ describe('StrategyService', () => {
       orderId: 'default-order',
       state: 'running',
     });
+    mockMarketMakingOrderRepository.update.mockResolvedValue(undefined);
     mockStrategyExecutionHistoryRepository.create.mockImplementation(
       (entity: any) => entity,
     );
@@ -411,6 +414,7 @@ describe('StrategyService', () => {
         blockedByFailure: false,
         headIntentStatus: null,
       }),
+      hasActiveIntents: jest.fn().mockResolvedValue(false),
       attachMixinOrderId: jest.fn().mockResolvedValue(undefined),
       updateIntentStatus: jest.fn().mockResolvedValue(undefined),
     };
@@ -2061,13 +2065,59 @@ describe('StrategyService', () => {
         clientId: 'client1',
         strategyType: 'dualAccountVolume',
         status: 'stopping',
+        marketMakingOrderId: 'order-1',
         parameters: {},
       },
     ]);
     exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([]);
+    strategyIntentStoreService.hasActiveIntents.mockResolvedValueOnce(false);
+
+    await service.onTick('2026-06-08T00:00:00.000Z');
+
+    expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
+      { strategyKey },
+      expect.objectContaining({ status: 'stopped' }),
+    );
+    expect(mockMarketMakingOrderRepository.update).toHaveBeenCalledWith(
+      { orderId: 'order-1' },
+      { state: 'stopped' },
+    );
+    expect((service as any).sessions.has(strategyKey)).toBe(false);
+    expect(
+      strategyIntentStoreService.clearLatestIntentsForStrategy,
+    ).toHaveBeenCalledWith(strategyKey);
+  });
+
+  it('finalizes stopping strategies when only failed intents remain', async () => {
+    const strategyKey = 'admin-direct-order-1-efficientDualAccountVolume';
+
+    mockStrategyInstanceRepository.find.mockResolvedValueOnce([
+      {
+        strategyKey,
+        userId: 'admin-direct',
+        clientId: 'order-1',
+        strategyType: 'efficientDualAccountVolume',
+        status: 'stopping',
+        marketMakingOrderId: 'order-1',
+        parameters: {},
+      },
+    ]);
+    exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([
+      {
+        exchangeOrderId: 'ex-1',
+        status: 'cancelled',
+      },
+      {
+        exchangeOrderId: 'ex-2',
+        status: 'filled',
+      },
+    ]);
+    strategyIntentStoreService.hasActiveIntents.mockResolvedValueOnce(false);
     strategyIntentStoreService.getQueueState.mockResolvedValueOnce({
-      blockedByFailure: false,
-      headIntentStatus: null,
+      blockedByFailure: true,
+      headIntentStatus: 'FAILED',
+      failedHeadIntentId: 'intent-failed',
+      failedHeadErrorReason: 'paired fill mismatch',
     });
 
     await service.onTick('2026-06-08T00:00:00.000Z');
@@ -2076,10 +2126,10 @@ describe('StrategyService', () => {
       { strategyKey },
       expect.objectContaining({ status: 'stopped' }),
     );
-    expect((service as any).sessions.has(strategyKey)).toBe(false);
-    expect(
-      strategyIntentStoreService.clearLatestIntentsForStrategy,
-    ).toHaveBeenCalledWith(strategyKey);
+    expect(mockMarketMakingOrderRepository.update).toHaveBeenCalledWith(
+      { orderId: 'order-1' },
+      { state: 'stopped' },
+    );
   });
 
   it('removes pooled executor session when stopping a strategy', async () => {
@@ -2741,6 +2791,93 @@ describe('StrategyService', () => {
     ]);
   });
 
+  it('stops dual-account volume only after five unsafe outcomes in the rolling window', async () => {
+    const params = {
+      exchangeName: 'binance',
+      symbol: 'BTC/USDT',
+      baseIncrementPercentage: 0.1,
+      baseIntervalTime: 10,
+      baseTradeAmount: 1,
+      numTrades: 0,
+      userId: 'user1',
+      clientId: 'client1',
+      pricePushRate: 0,
+      executionCategory: 'clob_cex' as const,
+      executionVenue: 'cex' as const,
+      makerAccountLabel: 'maker',
+      takerAccountLabel: 'taker',
+      targetQuoteVolume: 0,
+      publishedCycles: 0,
+      completedCycles: 0,
+    };
+    const session = await registerPooledSession({
+      strategyKey: 'user1-client1-dualAccountVolume',
+      strategyType: 'dualAccountVolume',
+      userId: 'user1',
+      clientId: 'client1',
+      cadenceMs: 1000,
+      nextRunAtMs: 0,
+      params,
+    });
+    const baseObservedAtMs = Date.now() - 2_000;
+
+    mockStrategyInstanceRepository.findOne.mockResolvedValue({
+      strategyKey: session.strategyKey,
+      parameters: params,
+    });
+    exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([]);
+    jest
+      .spyOn(dualAccountVolumeStrategyController, 'buildDualAccountVolumeActions')
+      .mockResolvedValue([]);
+
+    for (let index = 1; index <= 4; index += 1) {
+      runtimeObservationService.recordDualAccountCycleOutcome({
+        strategyKey: session.strategyKey,
+        intentId: `intent-${index}`,
+        orderId: 'order-1',
+        status: 'unsafe_mismatch',
+        makerFilledQty: '0',
+        takerFilledQty: '0.349',
+        makerCleanupConfirmed: true,
+        observedAtMs: baseObservedAtMs + index,
+      });
+    }
+
+    await expect(
+      dualAccountVolumeStrategyController.buildDualAccountVolumeSessionActions(
+        session as any,
+        '2026-06-08T00:00:00.000Z',
+      ),
+    ).resolves.toEqual([]);
+
+    runtimeObservationService.recordDualAccountCycleOutcome({
+      strategyKey: session.strategyKey,
+      intentId: 'intent-5',
+      orderId: 'order-1',
+      status: 'unsafe_mismatch',
+      makerFilledQty: '0',
+      takerFilledQty: '0.349',
+      makerCleanupConfirmed: true,
+      observedAtMs: Date.now(),
+    });
+
+    await expect(
+      dualAccountVolumeStrategyController.buildDualAccountVolumeSessionActions(
+        session as any,
+        '2026-06-08T00:00:01.000Z',
+      ),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        type: 'STOP_CONTROLLER',
+        intentId:
+          'user1-client1-dualAccountVolume:2026-06-08T00:00:01.000Z:stop-dual_account_unsafe_cycle_outcome',
+        metadata: {
+          reason: 'dual_account_unsafe_cycle_outcome',
+        },
+      }),
+    ]);
+  });
+
   it('returns a cancel intent instead of directly cancelling timed-out optimal dual-account maker orders', async () => {
     const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(20_000);
     const session = {
@@ -2824,6 +2961,80 @@ describe('StrategyService', () => {
     ]);
 
     nowSpy.mockRestore();
+  });
+
+  it('builds a rebalance intent for efficient dual-account repair mode', async () => {
+    const session = {
+      runId: 'run-dual-repair',
+      strategyKey: 'user1-client1-efficientDualAccountVolume',
+      strategyType: 'efficientDualAccountVolume',
+      userId: 'user1',
+      clientId: 'client1',
+      cadenceMs: 1000,
+      nextRunAtMs: 0,
+      marketMakingOrderId: 'mm-order-1',
+      params: {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        pair: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 0.4,
+        maxOrderAmount: 1,
+        interval: 10,
+        numTrades: 0,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        targetQuoteVolume: 0,
+        publishedCycles: 3,
+        completedCycles: 1,
+        repairRequired: true,
+        repairReason: 'paired_fill_mismatch',
+      },
+    };
+
+    mockStrategyInstanceRepository.findOne.mockResolvedValue({
+      strategyKey: session.strategyKey,
+      parameters: session.params,
+    });
+    exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([]);
+    strategyMarketDataProviderService.getTrackedBestBidAsk.mockReturnValue({
+      bestBid: 100,
+      bestAsk: 101,
+    });
+    setCachedBalances({
+      default: { BTC: 0, USDT: 1000 },
+      maker: { BTC: 0, USDT: 1000 },
+      taker: { BTC: 0, USDT: 500 },
+    });
+
+    const actions =
+      await dualAccountVolumeStrategyController.buildOptimalDualAccountVolumeSessionActions(
+        session as any,
+        '2026-06-08T00:00:00.000Z',
+      );
+
+    expect(actions).toEqual([
+      expect.objectContaining({
+        type: 'CREATE_LIMIT_ORDER',
+        side: 'buy',
+        accountLabel: 'maker',
+        postOnly: false,
+        timeInForce: 'IOC',
+        metadata: expect.objectContaining({
+          role: 'rebalance',
+          rebalance: true,
+          rebalanceAccountLabel: 'maker',
+          configuredMakerAccountLabel: 'maker',
+          configuredTakerAccountLabel: 'taker',
+        }),
+      }),
+    ]);
   });
 
   it('returns a stop intent instead of directly stopping completed dual-account strategies', async () => {

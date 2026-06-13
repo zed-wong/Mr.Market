@@ -863,6 +863,7 @@ export class StrategyInstanceLifecycleService {
         { strategyKey: strategy.strategyKey },
         { status: 'stopped', updatedAt: getRFC3339Timestamp() },
       );
+      await this.markBoundOrderStopped(strategy);
       await this.removeSession(strategy.strategyKey, session);
       this.strategyIntentStoreService?.clearLatestIntentsForStrategy(
         strategy.strategyKey,
@@ -888,11 +889,33 @@ export class StrategyInstanceLifecycleService {
       return false;
     }
 
+    const hasActiveIntents =
+      await this.strategyIntentStoreService?.hasActiveIntents?.(strategyKey);
+
+    if (hasActiveIntents !== undefined) {
+      return !hasActiveIntents;
+    }
+
     const queueState = await this.strategyIntentStoreService?.getQueueState?.(
       strategyKey,
     );
 
     return !queueState?.headIntentStatus;
+  }
+
+  private async markBoundOrderStopped(
+    strategy: StrategyInstance,
+  ): Promise<void> {
+    const orderId = String(strategy.marketMakingOrderId || '').trim();
+
+    if (!orderId || !this.marketMakingOrderRepository) {
+      return;
+    }
+
+    await this.marketMakingOrderRepository.update(
+      { orderId },
+      { state: 'stopped' },
+    );
   }
 
   private isTrackedOrderTerminalStatus(status: string): boolean {

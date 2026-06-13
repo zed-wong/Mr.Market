@@ -94,6 +94,7 @@ describe('RuntimeObservationService', () => {
         strategyKey: 'strategy-1',
         windowMs: 5_000,
         softFailureCount: 2,
+        unsafeOutcomeCount: 0,
         hasUnsafeOutcome: false,
         latestOutcomeStatus: 'safe_no_fill',
       },
@@ -129,8 +130,48 @@ describe('RuntimeObservationService', () => {
         strategyKey: 'strategy-1',
         windowMs: 5_000,
         softFailureCount: 0,
+        unsafeOutcomeCount: 0,
         hasUnsafeOutcome: false,
         latestOutcomeStatus: 'matched',
+      },
+    );
+  });
+
+  it('counts unsafe dual-account outcomes in the rolling window', () => {
+    const service = new RuntimeObservationService();
+
+    service.recordDualAccountCycleOutcome({
+      strategyKey: 'strategy-1',
+      intentId: 'intent-old',
+      orderId: 'order-1',
+      status: 'unsafe_mismatch',
+      makerFilledQty: '0',
+      takerFilledQty: '1',
+      makerCleanupConfirmed: true,
+      observedAtMs: 500,
+    });
+
+    for (let index = 1; index <= 4; index += 1) {
+      service.recordDualAccountCycleOutcome({
+        strategyKey: 'strategy-1',
+        intentId: `intent-${index}`,
+        orderId: 'order-1',
+        status: 'unsafe_mismatch',
+        makerFilledQty: '0',
+        takerFilledQty: '1',
+        makerCleanupConfirmed: true,
+        observedAtMs: 1_000 + index,
+      });
+    }
+
+    expect(service.getDualAccountCycleHealth('strategy-1', 1_000, 2_000)).toEqual(
+      {
+        strategyKey: 'strategy-1',
+        windowMs: 1_000,
+        softFailureCount: 0,
+        unsafeOutcomeCount: 4,
+        hasUnsafeOutcome: true,
+        latestOutcomeStatus: 'unsafe_mismatch',
       },
     );
   });

@@ -42,6 +42,7 @@ export type DualAccountCycleHealthSnapshot = {
   strategyKey: string;
   windowMs: number;
   softFailureCount: number;
+  unsafeOutcomeCount: number;
   hasUnsafeOutcome: boolean;
   latestOutcomeStatus: DualAccountCycleOutcomeStatus | null;
 };
@@ -146,15 +147,18 @@ export class RuntimeObservationService {
     const sinceLastMatch =
       latestMatchedIndex >= 0 ? recent.slice(latestMatchedIndex + 1) : recent;
 
+    const unsafeOutcomeCount = sinceLastMatch.filter((item) =>
+      this.isDualAccountUnsafeOutcome(item),
+    ).length;
+
     return {
       strategyKey,
       windowMs,
       softFailureCount: sinceLastMatch.filter((item) =>
         this.isDualAccountSoftFailure(item),
       ).length,
-      hasUnsafeOutcome: sinceLastMatch.some((item) =>
-        this.isDualAccountUnsafeOutcome(item),
-      ),
+      unsafeOutcomeCount,
+      hasUnsafeOutcome: unsafeOutcomeCount > 0,
       latestOutcomeStatus: latest?.status || null,
     };
   }

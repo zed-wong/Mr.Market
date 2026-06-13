@@ -493,6 +493,44 @@ describe('StrategyIntentStoreService', () => {
     });
   });
 
+  it('does not treat failed intents as active work', async () => {
+    const rows = [
+      createIntent({
+        intentId: 'intent-failed',
+        strategyKey: 'strategy-1',
+        status: 'FAILED',
+      }),
+      createIntent({
+        intentId: 'intent-done',
+        strategyKey: 'strategy-1',
+        status: 'DONE',
+      }),
+    ];
+    const repository = createRepository(rows);
+    const service = new StrategyIntentStoreService(repository as any);
+
+    await expect(service.hasActiveIntents('strategy-1')).resolves.toBe(false);
+  });
+
+  it('treats new, sent, and acked intents as active work', async () => {
+    const rows = [
+      createIntent({
+        intentId: 'intent-failed',
+        strategyKey: 'strategy-1',
+        status: 'FAILED',
+      }),
+      createIntent({
+        intentId: 'intent-acked',
+        strategyKey: 'strategy-1',
+        status: 'ACKED',
+      }),
+    ];
+    const repository = createRepository(rows);
+    const service = new StrategyIntentStoreService(repository as any);
+
+    await expect(service.hasActiveIntents('strategy-1')).resolves.toBe(true);
+  });
+
   it('cancels pending intents for a strategy without touching terminal rows', async () => {
     const rows = [
       createIntent({

@@ -33,6 +33,8 @@ const CANCELLABLE_INTENT_STATUSES: StrategyIntentStatus[] = [
   'ACKED',
 ];
 
+const ACTIVE_INTENT_STATUSES: StrategyIntentStatus[] = ['NEW', 'SENT', 'ACKED'];
+
 @Injectable()
 export class StrategyIntentStoreService {
   private readonly latestIntentsByStrategy = new Map<
@@ -294,6 +296,21 @@ export class StrategyIntentStoreService {
       failedHeadUpdatedAt: headIntent.updatedAt,
       failedHeadErrorReason: headIntent.errorReason,
     };
+  }
+
+  async hasActiveIntents(strategyKey: string): Promise<boolean> {
+    const activeIntent = await this.strategyOrderIntentRepository.findOne({
+      where: {
+        strategyKey,
+        status: In(ACTIVE_INTENT_STATUSES),
+      },
+      order: {
+        createdAt: 'ASC',
+        intentId: 'ASC',
+      },
+    });
+
+    return Boolean(activeIntent);
   }
 
   async cancelPendingIntents(
