@@ -5,6 +5,7 @@ import type { DirectOrderSummary, DirectWalletStatus } from '$lib/types/hufi/adm
 import type { GrowInfo } from '$lib/types/hufi/grow';
 import type { StrategyDefinition } from '$lib/types/hufi/strategy-definition';
 import { getApiKeyReadiness, summarizeApiKeyReadiness } from './api-key-readiness';
+import { getDirectOrderDisplayState } from '$lib/helpers/market-making/direct/helpers';
 import { summarizeExchangeReadiness } from './exchange-readiness';
 
 export type SetupReadinessStatus = 'loading' | 'ready' | 'needs_attention' | 'unknown' | 'failed';
@@ -71,10 +72,10 @@ export const buildSetupReadiness = (input: SetupReadinessInput): SetupReadinessA
   const keys = input.apiKeys ?? [];
   const keySummary = summarizeApiKeyReadiness(keys);
   const activeOrders = (input.directOrders ?? []).filter((order) =>
-    ['running', 'active', 'created'].includes(String(order.runtimeState || order.state).toLowerCase()),
+    ['running', 'created'].includes(getDirectOrderDisplayState(order)),
   );
   const failedOrders = (input.directOrders ?? []).filter((order) =>
-    ['failed', 'gone', 'stale'].includes(String(order.runtimeState || order.state).toLowerCase()),
+    getDirectOrderDisplayState(order) === 'failed',
   );
 
   const backend: SetupReadinessArea = input.backendError
@@ -320,12 +321,12 @@ export const buildSetupReadiness = (input: SetupReadinessInput): SetupReadinessA
             status: hasStrategies && activeOrders.length > 0 && failedOrders.length === 0 ? 'ready' : 'needs_attention',
             summary:
               hasStrategies && activeOrders.length > 0 && failedOrders.length === 0
-                ? `${activeOrders.length} direct order${activeOrders.length === 1 ? '' : 's'} are active.`
+                ? `${activeOrders.length} direct order${activeOrders.length === 1 ? ' is' : 's are'} active.`
                 : 'Review strategies, API keys, and order diagnostics before starting direct market making.',
             evidence: [
               `${input.directStrategies?.length ?? 0} direct strategy definition${(input.directStrategies?.length ?? 0) === 1 ? '' : 's'} returned.`,
               `${input.directOrders?.length ?? 0} direct order${(input.directOrders?.length ?? 0) === 1 ? '' : 's'} returned.`,
-              `${failedOrders.length} failed, stale, or gone order${failedOrders.length === 1 ? '' : 's'} returned.`,
+              `${failedOrders.length} failed order${failedOrders.length === 1 ? '' : 's'} returned.`,
               ...directErrors.map((message) => `Load issue: ${message}.`),
             ],
             href: '/trading/direct-market-making',

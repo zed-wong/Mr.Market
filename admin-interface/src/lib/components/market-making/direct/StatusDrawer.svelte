@@ -2,6 +2,7 @@
   import { _ } from "svelte-i18n";
   import {
     getBadgeClass,
+    getDirectOrderDisplayState,
     getStateLabel,
   } from "$lib/helpers/market-making/direct/helpers";
   import type { DirectOrderSummary, DirectOrderStatus } from "$lib/types/hufi/admin-direct-market-making";
@@ -52,9 +53,10 @@
           >{$_("admin_direct_mm_updating")}</span
         >
       {:else if data}
+        {@const displayState = getDirectOrderDisplayState(data)}
         <div class="flex items-center justify-between gap-3">
-          <span class={getBadgeClass(data.runtimeState)}
-            >{getStateLabel(data.runtimeState)}</span
+          <span class={getBadgeClass(displayState)}
+            >{getStateLabel(displayState)}</span
           >
           <span class="text-sm text-base-content/60"
             >{$_("admin_direct_mm_last_updated", {

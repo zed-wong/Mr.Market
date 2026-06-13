@@ -44,6 +44,7 @@
         filterDirectCreateStrategies,
         formatOrderAmountForDisplay,
         getDirectOrderActionAvailability,
+        getDirectOrderDisplayState,
         getErrorMessage,
         getRecoveryHint,
         isEfficientDualAccountControllerType,
@@ -339,7 +340,7 @@
     $: campaigns = initialCampaigns;
     $: stoppableOrdersCount = orders.filter(isOrderStoppable).length;
     $: stoppedOrdersCount = orders.filter(
-        (o) => o.runtimeState === "stopped",
+        (o) => getDirectOrderDisplayState(o) === "stopped",
     ).length;
     $: exchangeOptions = buildDirectOrderExchangeOptions(growInfo, apiKeys);
     $: filteredPairs = pairs.filter(
@@ -1089,7 +1090,7 @@
         if (!token) return;
 
         const stoppedOrders = orders.filter(
-            (order) => order.runtimeState === "stopped",
+            (order) => getDirectOrderDisplayState(order) === "stopped",
         );
         if (stoppedOrders.length === 0) {
             showStartAllModal = false;

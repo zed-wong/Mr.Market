@@ -1418,6 +1418,7 @@ test.describe.serial('real-data admin smoke', () => {
     await page.waitForLoadState('networkidle');
 
     const staleRow = page.getByRole('row').filter({ hasText: 'STALE/USDT' });
+    await expect(staleRow.getByText(/^running$/i)).toBeVisible();
     await expect(staleRow.getByRole('button', { name: /^stop$/i })).toBeVisible();
     await expect(staleRow.getByRole('button', { name: /^remove$/i })).toHaveCount(0);
     await expect(staleRow.getByRole('button', { name: /^play$/i })).toHaveCount(0);
@@ -1436,7 +1437,7 @@ test.describe.serial('real-data admin smoke', () => {
     await expect(failedRow.getByRole('button', { name: /^play$/i })).toHaveCount(0);
 
     await page.getByRole('button', { name: /open diagnosis details for STALE\/USDT on binance/i }).click();
-    await expect(page.locator('.modal-open')).toContainText(/stale/i);
+    await expect(page.locator('.modal-open').getByText(/^running$/i)).toBeVisible();
     await expect(page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]')).toHaveCount(0);
     await expect(page.locator('.modal-open').getByRole('button', { name: /stop order/i })).toBeVisible();
     await expect(page.locator('.modal-open').getByRole('button', { name: /^remove$/i })).toHaveCount(0);

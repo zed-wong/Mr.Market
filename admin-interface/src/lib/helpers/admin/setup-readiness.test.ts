@@ -94,6 +94,24 @@ describe('setup readiness', () => {
     expect(areas.every((area) => area.status === 'ready')).toBe(true);
   });
 
+  it('treats delayed runtime signals as running direct orders instead of failed states', () => {
+    const areas = buildSetupReadiness({
+      directOrders: [
+        {
+          ...order,
+          runtimeState: 'stale',
+          warnings: ['executor_stale'],
+        },
+      ],
+      directStrategies: [strategy],
+    });
+    const direct = areas.find((area) => area.id === 'direct-market-making');
+
+    expect(direct?.status).toBe('ready');
+    expect(direct?.summary).toContain('1 direct order is active');
+    expect(direct?.evidence.join(' ')).toContain('0 failed orders returned');
+  });
+
   it('marks missing setup data as needs attention and request failures as failed', () => {
     const areas = buildSetupReadiness({
       backendError: 'network down',

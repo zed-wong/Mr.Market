@@ -5,6 +5,7 @@
         getApiKeyPermissionViews,
         getApiKeyReadiness,
     } from "$lib/helpers/admin/api-key-readiness";
+    import { getDirectOrderDisplayState } from "$lib/helpers/market-making/direct/helpers";
     import type { AdminSingleKey } from "$lib/types/hufi/admin";
     import type { DirectOrderSummary } from "$lib/types/hufi/admin-direct-market-making";
 
@@ -15,8 +16,7 @@
         return orders.filter(
             (order) =>
                 order.apiKeyId === apiKey.key_id &&
-                (order.runtimeState === "running" ||
-                    order.runtimeState === "active"),
+                getDirectOrderDisplayState(order) === "running",
         ).length;
     }
 

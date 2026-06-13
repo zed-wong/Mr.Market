@@ -23,6 +23,7 @@
         getStateLabel,
         explainDirectOrderWarning,
         getDirectOrderActionAvailability,
+        getDirectOrderDisplayState,
     } from "$lib/helpers/market-making/direct/helpers";
 
     export let show = false;
@@ -73,7 +74,7 @@
     }
 
     function isRunningState(state: string): boolean {
-        return ["active", "created", "running"].includes(state);
+        return state === "running";
     }
 
     function getHealthDot(health: string): string {
@@ -85,13 +86,14 @@
     function getHealthLabel(health: string, runtimeState = ""): string {
         if (!isRunningState(runtimeState))
             return $_("admin_direct_mm_not_running");
-        return health.charAt(0).toUpperCase() + health.slice(1);
+        if (health === "active") return $_("admin_direct_mm_runtime_signal_healthy");
+        if (health === "gone") return $_("admin_direct_mm_runtime_signal_unavailable");
+        return $_("admin_direct_mm_runtime_signal_attention");
     }
 
     function getHealthColor(health: string, runtimeState = ""): string {
         if (!isRunningState(runtimeState)) return "text-base-content/55";
         if (health === "active") return "text-success";
-        if (health === "gone") return "text-error";
         return "text-warning";
     }
 
@@ -106,9 +108,10 @@
         return $_("admin_direct_mm_connectivity_active");
     }
 
-    $: currentRuntimeState = data?.runtimeState ?? order?.runtimeState ?? "";
-    $: stateLabel = currentRuntimeState ? getStateLabel(currentRuntimeState) : "";
-    $: isOrderRunning = isRunningState(currentRuntimeState);
+    $: currentDisplayState = getDirectOrderDisplayState(data || order);
+    $: stateLabel =
+        currentDisplayState !== "unknown" ? getStateLabel(currentDisplayState) : "";
+    $: isOrderRunning = isRunningState(currentDisplayState);
 
     $: lastUpdated = data?.lastUpdatedAt
         ? data.lastUpdatedAt.replace("T", " ").slice(0, 19)
@@ -662,17 +665,17 @@
                                             <span
                                                 class="w-2 h-2 rounded-full {getContextualHealthDot(
                                                     data.executorHealth,
-                                                    currentRuntimeState,
+                                                    currentDisplayState,
                                                 )}"
                                             ></span>
                                             <span
                                                 class="text-xs font-semibold {getHealthColor(
                                                     data.executorHealth,
-                                                    currentRuntimeState,
+                                                    currentDisplayState,
                                                 )}"
                                                 >{getHealthLabel(
                                                     data.executorHealth,
-                                                    currentRuntimeState,
+                                                    currentDisplayState,
                                                 )}</span
                                             >
                                         </div>

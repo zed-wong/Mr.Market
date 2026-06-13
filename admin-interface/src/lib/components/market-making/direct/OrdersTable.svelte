@@ -4,6 +4,7 @@
   import type { DirectOrderSummary } from "$lib/types/hufi/admin-direct-market-making";
   import {
     getDirectOrderActionAvailability,
+    getDirectOrderDisplayState,
     getStateLabel,
   } from "$lib/helpers/market-making/direct/helpers";
 
@@ -44,8 +45,8 @@
     return order.strategyName || order.strategyDefinitionId || $_("admin_direct_mm_na");
   }
 
-  function isActiveState(runtimeState: string): boolean {
-    return runtimeState === "running" || runtimeState === "active";
+  function isActiveState(state: string): boolean {
+    return state === "running";
   }
 
   function canStop(order: DirectOrderSummary): boolean {
@@ -60,20 +61,20 @@
     return getDirectOrderActionAvailability(order).canRemove;
   }
 
-  function getStatusClasses(runtimeState: string): string {
-    if (isActiveState(runtimeState)) {
+  function getStatusClasses(state: string): string {
+    if (isActiveState(state)) {
       return "bg-success/10 text-success";
     }
 
-    if (runtimeState === "stopped") {
+    if (state === "stopped") {
       return "bg-base-300/50 text-base-content/55";
     }
 
-    if (runtimeState === "failed" || runtimeState === "gone" || runtimeState === "deleted" || runtimeState === "removed") {
+    if (state === "failed" || state === "deleted" || state === "refunded") {
       return "bg-error/10 text-error";
     }
 
-    if (runtimeState === "created" || runtimeState === "stale") {
+    if (state === "created" || state === "paused") {
       return "bg-warning/10 text-warning";
     }
 
@@ -228,12 +229,12 @@
             </td>
             <td class="py-4 px-2 whitespace-nowrap">
               <span
-                class={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide capitalize ${getStatusClasses(order.runtimeState)}`}
+                class={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide capitalize ${getStatusClasses(getDirectOrderDisplayState(order))}`}
               >
-                {#if isActiveState(order.runtimeState)}
+                {#if isActiveState(getDirectOrderDisplayState(order))}
                   <span class="w-1.5 h-1.5 bg-current rounded-full"></span>
                 {/if}
-                {getStateLabel(order.runtimeState)}
+                {getStateLabel(getDirectOrderDisplayState(order))}
               </span>
             </td>
             <td class="py-4 px-2">

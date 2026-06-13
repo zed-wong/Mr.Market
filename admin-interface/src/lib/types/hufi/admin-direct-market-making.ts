@@ -7,14 +7,19 @@ export type EfficientDualAccountVolumeMode =
   | 'balanced'
   | 'fastest_volume';
 
-export type DirectOrderRuntimeState =
+export type DirectOrderLifecycleState =
   | 'created'
   | 'running'
   | 'paused'
   | 'stopped'
-  | 'blocked'
   | 'failed'
+  | 'refunded'
+  | 'deleted';
+
+export type DirectOrderRuntimeSignal =
+  | DirectOrderLifecycleState
   | 'active'
+  | 'blocked'
   | 'gone'
   | 'stale';
 
@@ -46,8 +51,8 @@ export interface DirectOrderSummary {
   orderId: string;
   exchangeName: string;
   pair: string;
-  state: string;
-  runtimeState: DirectOrderRuntimeState;
+  state: DirectOrderLifecycleState | string;
+  runtimeState: DirectOrderRuntimeSignal | string;
   strategyDefinitionId?: string;
   strategyName: string;
   controllerType: DirectOrderControllerType;
@@ -67,8 +72,8 @@ export interface DirectOrderSummary {
 
 export interface DirectOrderStatus {
   orderId: string;
-  state: string;
-  runtimeState: DirectOrderRuntimeState;
+  state: DirectOrderLifecycleState | string;
+  runtimeState: DirectOrderRuntimeSignal | string;
   controllerType: DirectOrderControllerType;
   directExecutionMode?: StrategyDirectExecutionMode | null;
   accountLabel: string;

@@ -63,6 +63,15 @@ interface DirectOrderDiagnosisSummaryInput {
 }
 
 const DIAGNOSIS_STALE_TICK_MS = 60 * 1000;
+const BACKEND_LIFECYCLE_STATES = new Set([
+  "created",
+  "running",
+  "paused",
+  "stopped",
+  "failed",
+  "refunded",
+  "deleted",
+]);
 
 function normalizeToken(value: unknown): string {
   return String(value || "")
@@ -91,7 +100,32 @@ function hasOwnDiagnosticField(status: DirectOrderDiagnosisInput, field: keyof D
 }
 
 function isRunningRuntimeState(runtimeState: string): boolean {
-  return runtimeState === "running" || runtimeState === "active";
+  return runtimeState === "running";
+}
+
+function resolveDisplayLifecycleState(persistedState: string, runtimeState: string): string {
+  const runtimeFailed = runtimeState === "failed" || runtimeState === "blocked";
+
+  if (persistedState === "failed") {
+    return "failed";
+  }
+  if ((persistedState === "running" || persistedState === "created") && runtimeFailed) {
+    return "failed";
+  }
+  if (BACKEND_LIFECYCLE_STATES.has(persistedState)) {
+    return persistedState;
+  }
+  if (["active", "gone", "running", "stale"].includes(runtimeState)) {
+    return "running";
+  }
+  if (BACKEND_LIFECYCLE_STATES.has(runtimeState)) {
+    return runtimeState;
+  }
+  if (runtimeFailed) {
+    return "failed";
+  }
+
+  return "";
 }
 
 function isHealthyStreamState(state: string): boolean {
@@ -109,6 +143,15 @@ function streamStateNeedsAttention(stream: {
   return stream.order === false && stream.trade === false && stream.balance === false;
 }
 
+function formatRuntimeSignalState(value: string | null | undefined): string {
+  const state = normalizeToken(value);
+
+  if (state === "stale") return "delayed";
+  if (state === "gone") return "unavailable";
+
+  return state || "missing";
+}
+
 export function explainDirectOrderWarning(warning: string): string {
   const normalized = normalizeToken(warning).replace(/[\s-]+/g, "_");
   const map: Record<string, string> = {
@@ -116,11 +159,11 @@ export function explainDirectOrderWarning(warning: string): string {
     blocked_by_failed_intent: "A failed intent is blocking new market-making work.",
     failed_head_intent: "The queue head failed and is blocking execution.",
     stale_tick: "The strategy has not produced a recent tick.",
-    stale_executor: "The runtime executor looks stale and may not be processing work.",
-    executor_gone: "The runtime executor is gone, so the order may not be executing.",
-    balance_cache_stale: "Balance cache data is stale and should be refreshed before relying on it.",
+    stale_executor: "The runtime executor has not produced recent work.",
+    executor_gone: "The runtime executor signal is unavailable, so the order may not be executing.",
+    balance_cache_stale: "Balance cache data is old and should be refreshed before relying on it.",
     balance_cache_missing: "Balance cache data is missing for one or more assets.",
-    stream_stale: "Private stream data is stale for one or more linked accounts.",
+    stream_stale: "Private stream data is old for one or more linked accounts.",
     stream_missing: "Private stream health is missing for one or more linked accounts.",
     api_key_missing: "The linked API key is missing.",
     api_key_validation_failed: "The linked API key failed validation.",
@@ -131,7 +174,7 @@ export function explainDirectOrderWarning(warning: string): string {
   if (normalized.includes("failed") || normalized.includes("error")) {
     return `A failure needs operator attention. Source: ${warning}`;
   }
-  if (normalized.includes("stale")) return `A stale diagnostic needs attention. Source: ${warning}`;
+  if (normalized.includes("stale")) return `A freshness diagnostic needs attention. Source: ${warning}`;
 
   return `Operator warning: ${warning}`;
 }
@@ -142,7 +185,7 @@ function buildTickEvidence(
   nowMs: number,
 ): { evidence: DirectOrderDiagnosisEvidence; risk: string | null } {
   const ageMs = ageMsFromIso(lastTickAt, nowMs);
-  const expectsTicks = runtimeState === "running" || runtimeState === "active";
+  const expectsTicks = runtimeState === "running";
 
   if (ageMs === null) {
     return {
@@ -161,10 +204,10 @@ function buildTickEvidence(
     return {
       evidence: {
         label: "Tick freshness",
-        value: `Last tick was stale at ${formatAgeFromMs(ageMs)}.`,
+        value: `Last tick was delayed at ${formatAgeFromMs(ageMs)}.`,
         tone: "warning",
       },
-      risk: `Last tick is stale (${formatAgeFromMs(ageMs)}).`,
+      risk: `Last tick is delayed (${formatAgeFromMs(ageMs)}).`,
     };
   }
 
@@ -188,7 +231,7 @@ function buildStreamEvidence(
   const expectsRuntime = isRunningRuntimeState(runtimeState);
   const risks = streams
     .filter(streamStateNeedsAttention)
-    .map((stream) => `${stream.accountLabel || "account"} stream health is ${stream.state || "missing"}.`);
+    .map((stream) => `${stream.accountLabel || "account"} stream health is ${formatRuntimeSignalState(stream.state)}.`);
 
   if (risks.length > 0) {
     return {
@@ -212,7 +255,7 @@ function buildStreamEvidence(
     return {
       evidence: {
         label: "Stream health",
-        value: `${streams.length} linked stream${streams.length === 1 ? "" : "s"} reported without stale or failed state.${watcherCopy}${capabilityCopy}`,
+        value: `${streams.length} linked stream${streams.length === 1 ? "" : "s"} reported without delayed or failed state.${watcherCopy}${capabilityCopy}`,
         tone: "success",
       },
       risks: [],
@@ -254,7 +297,7 @@ function buildBalanceEvidence(
     const first = risky[0];
     const account = first.accountLabel || "account";
     const asset = first.asset || "asset";
-    const reason = first.stale ? "stale" : "missing";
+    const reason = first.stale ? "old" : "missing";
     return {
       evidence: {
         label: "Balance cache",
@@ -264,7 +307,7 @@ function buildBalanceEvidence(
       risks: risky.map(
         (balance) =>
           `${balance.accountLabel || "account"} ${balance.asset || "asset"} balance cache is ${
-            balance.stale ? "stale" : "missing"
+            balance.stale ? "old" : "missing"
           }.`,
       ),
     };
@@ -307,7 +350,9 @@ export function buildDirectOrderDiagnosis(
   order?: DirectOrderDiagnosisSummaryInput | null,
   nowMs: number = Date.now(),
 ): DirectOrderDiagnosis {
-  const runtimeState = normalizeToken(status.runtimeState || order?.runtimeState || status.state || order?.state);
+  const persistedState = normalizeToken(status.state || order?.state);
+  const runtimeSignal = normalizeToken(status.runtimeState || order?.runtimeState);
+  const runtimeState = resolveDisplayLifecycleState(persistedState, runtimeSignal);
   const warnings = order?.warnings || [];
   const expectsRuntime = isRunningRuntimeState(runtimeState);
   const hasRecentErrors = hasOwnDiagnosticField(status, "recentErrors");
@@ -332,8 +377,10 @@ export function buildDirectOrderDiagnosis(
   const balance = buildBalanceEvidence(status, runtimeState);
   const executorHealth = normalizeToken(status.executorHealth);
   const executorRisk =
-    executorHealth === "stale" || executorHealth === "gone"
-      ? [`Executor health is ${executorHealth}.`]
+    executorHealth === "stale"
+      ? ["Runtime executor signal has not updated recently."]
+      : executorHealth === "gone"
+        ? ["Runtime executor signal is unavailable."]
       : [];
   const missingArrayRisks = expectsRuntime
     ? [
@@ -343,7 +390,7 @@ export function buildDirectOrderDiagnosis(
       ].filter(Boolean)
     : [];
   const staleRisks = [
-    ...(status.stale ? ["The status endpoint marked this order as stale."] : []),
+    ...(status.stale ? ["The status endpoint reported delayed runtime diagnostics."] : []),
     ...(tick.risk ? [tick.risk] : []),
     ...stream.risks,
     ...balance.risks,
@@ -400,14 +447,21 @@ export function buildDirectOrderDiagnosis(
 
   const executorEvidence: DirectOrderDiagnosisEvidence = {
     label: "Executor health",
-    value: executorHealth ? `Executor is ${executorHealth}.` : "Executor health is unavailable.",
+    value:
+      executorHealth === "active"
+        ? "Executor signal is healthy."
+        : executorHealth === "stale"
+          ? "Executor signal needs attention."
+          : executorHealth === "gone"
+            ? "Executor signal is unavailable."
+            : "Executor health is unavailable.",
     tone: executorRisk.length > 0 ? "warning" : executorHealth ? "success" : "info",
   };
 
   const baseEvidence: DirectOrderDiagnosisEvidence[] = [
     {
       label: "Lifecycle",
-      value: runtimeState ? `Runtime state is ${runtimeState}.` : "Runtime state is unavailable.",
+      value: runtimeState ? `Order state is ${runtimeState}.` : "Order state is unavailable.",
       tone: runtimeState ? "info" : "warning",
     },
     tick.evidence,
@@ -451,8 +505,6 @@ export function buildDirectOrderDiagnosis(
   }
 
   if (
-    runtimeState === "stale" ||
-    runtimeState === "gone" ||
     executorHealth === "stale" ||
     executorHealth === "gone" ||
     staleRisks.length > 0
@@ -461,19 +513,19 @@ export function buildDirectOrderDiagnosis(
       kind: "risky",
       tone: "warning",
       title: "Operational risk detected",
-      summary: `This order is not failed, but stale or incomplete diagnostics create operational risk. Evidence: ${staleRisks[0] || "runtime state needs review."}`,
+      summary: `This order is not failed, but delayed or incomplete diagnostics create operational risk. Evidence: ${staleRisks[0] || "runtime signal needs review."}`,
       evidence: baseEvidence,
-      risks: staleRisks.length > 0 ? staleRisks : ["Runtime state needs review."],
+      risks: staleRisks.length > 0 ? staleRisks : ["Runtime signal needs review."],
     };
   }
 
-  if (runtimeState === "running" || runtimeState === "active") {
+  if (runtimeState === "running") {
     return {
       kind: "normal",
       tone: "success",
       title: "Running normally",
       summary:
-        "This direct market-making order is running normally: lifecycle is active, tick evidence is fresh, streams and balances do not show stale risk, and no recent blocking errors were returned.",
+        "This direct market-making order is running normally: lifecycle is running, tick evidence is fresh, streams and balances do not show freshness risk, and no recent blocking errors were returned.",
       evidence: baseEvidence,
       risks: [],
     };
@@ -486,6 +538,6 @@ export function buildDirectOrderDiagnosis(
     summary:
       "The order has partial or unfamiliar diagnostics. Review the evidence sections before assuming it is healthy.",
     evidence: baseEvidence,
-    risks: ["Runtime state is not recognized as healthy, stopped, failed, or stale."],
+    risks: ["Order state is not recognized as healthy, stopped, failed, or delayed."],
   };
 }

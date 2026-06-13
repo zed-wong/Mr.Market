@@ -14,6 +14,7 @@ import {
   formatDirectRuntimeRemainingEstimate,
   buildGenericSchemaConfigOverrides,
   formatOrderAmountForDisplay,
+  getDirectOrderDisplayState,
   formatReadinessAmount,
   getDirectOrderActionAvailability,
   getDirectReadinessSubmitStatus,
@@ -130,7 +131,7 @@ describe('buildDirectOrderDiagnosis', () => {
     expect(diagnosis.risks[0]).toContain('Execution is blocked');
   });
 
-  it('diagnoses stale ticks, streams, or balances as operational risk', () => {
+  it('diagnoses delayed ticks, streams, or balances as operational risk', () => {
     const diagnosis = buildDirectOrderDiagnosis(
       {
         ...baseDiagnosisStatus,
@@ -154,9 +155,9 @@ describe('buildDirectOrderDiagnosis', () => {
     expect(diagnosis.kind).toBe('risky');
     expect(diagnosis.title).toBe('Operational risk detected');
     expect(diagnosis.summary).toContain('operational risk');
-    expect(diagnosis.risks.join(' ')).toContain('Last tick is stale');
-    expect(diagnosis.risks.join(' ')).toContain('stream health is stale');
-    expect(diagnosis.risks.join(' ')).toContain('balance cache is stale');
+    expect(diagnosis.risks.join(' ')).toContain('Last tick is delayed');
+    expect(diagnosis.risks.join(' ')).toContain('stream health is delayed');
+    expect(diagnosis.risks.join(' ')).toContain('balance cache is old');
   });
 
   it.each(['degraded', 'reconnecting', 'silent', 'unknown'])(
@@ -265,6 +266,33 @@ describe('buildDirectOrderDiagnosis', () => {
 });
 
 describe('getDirectOrderActionAvailability', () => {
+  it('displays runtime health signals as backend lifecycle states', () => {
+    expect(
+      getDirectOrderDisplayState({
+        state: 'running',
+        runtimeState: 'stale',
+      }),
+    ).toBe('running');
+    expect(
+      getDirectOrderDisplayState({
+        state: 'running',
+        runtimeState: 'gone',
+      }),
+    ).toBe('running');
+    expect(
+      getDirectOrderDisplayState({
+        state: 'running',
+        runtimeState: 'active',
+      }),
+    ).toBe('running');
+    expect(
+      getDirectOrderDisplayState({
+        state: 'running',
+        runtimeState: 'failed',
+      }),
+    ).toBe('failed');
+  });
+
   it('offers stop but not remove or resume for stale persisted running orders', () => {
     expect(
       getDirectOrderActionAvailability({
@@ -343,7 +371,7 @@ describe('getDirectOrderActionAvailability', () => {
     });
   });
 
-  it('allows removal when a persisted running order has a gone runtime executor', () => {
+  it('does not expose removal when a persisted running order has a missing runtime signal', () => {
     expect(
       getDirectOrderActionAvailability({
         state: 'running',
@@ -352,7 +380,7 @@ describe('getDirectOrderActionAvailability', () => {
     ).toEqual({
       canStop: true,
       canResume: false,
-      canRemove: true,
+      canRemove: false,
     });
   });
 
@@ -1163,6 +1191,36 @@ describe('Efficient Dual Account runtime cycle helpers', () => {
       tone: 'info',
       canResumeNow: true,
       readinessGated: false,
+    });
+
+    expect(
+      getDirectRuntimeLifecycleView({
+        state: 'running',
+        runtimeState: 'stale',
+        readiness: {
+          ...readiness,
+          canStart: true,
+          missingBalances: [],
+          blockingReasons: [],
+        },
+      }),
+    ).toMatchObject({
+      label: 'Running',
+      tone: 'success',
+      canResumeNow: false,
+    });
+
+    expect(
+      getDirectRuntimeLifecycleView({
+        state: 'running',
+        runtimeState: 'failed',
+        warnings: ['execution_blocked'],
+        readiness,
+      }),
+    ).toMatchObject({
+      label: 'Failed',
+      tone: 'error',
+      canResumeNow: false,
     });
   });
 });

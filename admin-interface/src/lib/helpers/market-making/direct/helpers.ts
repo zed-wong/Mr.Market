@@ -44,6 +44,7 @@ export interface InventorySkewAllocation {
 export interface DirectOrderActionState {
   state?: string | null;
   runtimeState?: string | null;
+  warnings?: string[] | null;
 }
 
 export interface DirectOrderActionAvailability {
@@ -59,6 +60,16 @@ export interface DirectRuntimeLifecycleView {
   canResumeNow: boolean;
   readinessGated: boolean;
 }
+
+export type DirectOrderDisplayState =
+  | "created"
+  | "running"
+  | "paused"
+  | "stopped"
+  | "failed"
+  | "refunded"
+  | "deleted"
+  | "unknown";
 
 export type {
   DirectOrderDiagnosis,
@@ -110,29 +121,88 @@ export function getRecoveryHint(error: unknown): string {
   return $_("admin_direct_mm_recovery_retry");
 }
 
+const BACKEND_DISPLAY_STATES = new Set([
+  "created",
+  "running",
+  "paused",
+  "stopped",
+  "failed",
+  "refunded",
+  "deleted",
+]);
+
+function hasExecutionBlocker(warnings?: string[] | null): boolean {
+  return (warnings || []).some((warning) => {
+    const normalized = normalizeOrderLifecycleState(warning);
+
+    return (
+      normalized.includes("blocked") ||
+      normalized.includes("failed") ||
+      normalized.includes("failure") ||
+      normalized.includes("error")
+    );
+  });
+}
+
+export function getDirectOrderDisplayState(
+  order: DirectOrderActionState | null | undefined,
+): DirectOrderDisplayState {
+  const persistedState = normalizeOrderLifecycleState(order?.state);
+  const runtimeState = normalizeOrderLifecycleState(order?.runtimeState);
+
+  const runtimeFailed =
+    runtimeState === "failed" ||
+    runtimeState === "blocked" ||
+    hasExecutionBlocker(order?.warnings);
+
+  if (persistedState === "failed") {
+    return "failed";
+  }
+
+  if ((persistedState === "running" || persistedState === "created") && runtimeFailed) {
+    return "failed";
+  }
+
+  if (BACKEND_DISPLAY_STATES.has(persistedState)) {
+    return persistedState as DirectOrderDisplayState;
+  }
+
+  if (["active", "gone", "running", "stale"].includes(runtimeState)) {
+    return "running";
+  }
+  if (BACKEND_DISPLAY_STATES.has(runtimeState)) {
+    return runtimeState as DirectOrderDisplayState;
+  }
+  if (runtimeFailed) {
+    return "failed";
+  }
+
+  return "unknown";
+}
+
 export function getBadgeClass(state: string): string {
-  if (state === "active" || state === "running" || state === "joined") return "badge bg-success/10 text-success border-success/20";
-  if (state === "created" || state === "stale") return "badge bg-warning/10 text-warning border-warning/20";
-  if (state === "failed" || state === "gone" || state === "deleted" || state === "removed") return "badge bg-error/10 text-error border-error/20";
+  const displayState = getDirectOrderDisplayState({ state, runtimeState: state });
+
+  if (displayState === "running") return "badge bg-success/10 text-success border-success/20";
+  if (displayState === "created" || displayState === "paused") return "badge bg-warning/10 text-warning border-warning/20";
+  if (displayState === "failed" || displayState === "deleted" || displayState === "refunded") return "badge bg-error/10 text-error border-error/20";
   return "badge bg-base-content/5 text-base-content/60 border-base-300";
 }
 
 export function getStateLabel(state: string): string {
   const $_ = get(_);
+  const displayState = getDirectOrderDisplayState({ state, runtimeState: state });
   const map: Record<string, string> = {
-    active: "admin_direct_mm_state_running",
     running: "admin_direct_mm_state_running",
     created: "admin_direct_mm_state_created",
+    paused: "admin_direct_mm_state_paused",
     stopped: "admin_direct_mm_state_stopped",
     failed: "admin_direct_mm_state_failed",
-    joined: "admin_direct_mm_state_joined",
-    gone: "admin_direct_mm_state_gone",
-    stale: "admin_direct_mm_state_stale",
+    refunded: "admin_direct_mm_state_refunded",
     deleted: "admin_direct_mm_state_deleted",
-    removed: "admin_direct_mm_state_deleted",
   };
 
-  return $_(map[state] || "admin_direct_mm_state_unknown");
+  return $_(map[displayState] || "admin_direct_mm_state_unknown");
 }
 
 function normalizeOrderLifecycleState(value?: string | null): string {
@@ -144,22 +214,23 @@ export function getDirectOrderActionAvailability(
 ): DirectOrderActionAvailability {
   const persistedState = normalizeOrderLifecycleState(order?.state);
   const runtimeState = normalizeOrderLifecycleState(order?.runtimeState);
-  const effectiveRuntimeState = runtimeState || persistedState;
+  const displayState = getDirectOrderDisplayState(order);
   const isPersistedStopped = persistedState === "stopped";
   const isPersistedPaused = persistedState === "paused";
   const isPersistedFailed = persistedState === "failed";
-  const isGoneRunningOrder =
-    persistedState === "running" && effectiveRuntimeState === "gone";
   const canStop =
     !isPersistedPaused &&
     !isPersistedStopped &&
     !isPersistedFailed &&
-    ["active", "created", "failed", "gone", "running", "stale"].includes(effectiveRuntimeState);
+    (displayState === "created" ||
+      displayState === "running" ||
+      (displayState === "failed" && persistedState === "running") ||
+      (runtimeState === "failed" && persistedState === "running"));
 
   return {
     canStop,
     canResume: isPersistedStopped || isPersistedPaused,
-    canRemove: isPersistedStopped || isPersistedFailed || isGoneRunningOrder,
+    canRemove: isPersistedStopped || isPersistedFailed,
   };
 }
 
@@ -545,7 +616,7 @@ export function describeReadinessBlockingReason(
   const assetSuffix = reason.asset ? ` (${reason.asset})` : "";
   const copyByCode: Record<string, string> = {
     market_data_stale:
-      "Market data is stale. Refresh market data before starting.",
+      "Market data is outdated. Refresh market data before starting.",
     market_data_missing:
       "Reference market data is unavailable. Configure deterministic market data before starting.",
     trading_rules_missing:
@@ -555,7 +626,7 @@ export function describeReadinessBlockingReason(
     fee_data_missing:
       "Fee data is unavailable. Configure maker and taker fee data before starting.",
     balance_snapshot_unavailable:
-      "Current balances are unavailable or stale. Refresh account balances before starting.",
+      "Current balances are unavailable or old. Refresh account balances before starting.",
     below_exchange_minimums:
       "Current balances cannot satisfy exchange minimums plus the safety buffer.",
     capacity_limited:
@@ -827,15 +898,12 @@ export function getDirectRuntimeLifecycleView(args: {
   warnings?: string[];
 }): DirectRuntimeLifecycleView {
   const persistedState = normalizeOrderLifecycleState(args.state);
-  const runtimeState = normalizeOrderLifecycleState(args.runtimeState);
-  const effectiveState = runtimeState || persistedState;
+  const displayState = getDirectOrderDisplayState(args);
   const hasPlannerBlocker =
     args.readiness?.canStart === false ||
     (args.readiness?.missingBalances?.length ?? 0) > 0 ||
     (args.readiness?.blockingReasons?.length ?? 0) > 0;
-  const hasExecutionBlocker = (args.warnings || []).some((warning) =>
-    normalizeOrderLifecycleState(warning).includes("blocked"),
-  );
+  const executionBlocked = hasExecutionBlocker(args.warnings);
 
   if (persistedState === "paused") {
     return {
@@ -859,15 +927,14 @@ export function getDirectRuntimeLifecycleView(args: {
   }
 
   if (
-    effectiveState === "failed" ||
-    effectiveState === "blocked" ||
-    hasExecutionBlocker
+    displayState === "failed" ||
+    executionBlocked
   ) {
     return {
-      label: "Failed or blocked",
+      label: "Failed",
       tone: "error",
       summary:
-        "Runtime execution is blocked and needs operator attention before more cycles can run.",
+        "Runtime execution failed or is blocked and needs operator attention before more cycles can run.",
       canResumeNow: false,
       readinessGated: false,
     };
@@ -883,7 +950,7 @@ export function getDirectRuntimeLifecycleView(args: {
     };
   }
 
-  if (effectiveState === "running" || effectiveState === "active") {
+  if (displayState === "running") {
     return {
       label: "Running",
       tone: "success",
@@ -894,7 +961,7 @@ export function getDirectRuntimeLifecycleView(args: {
     };
   }
 
-  if (effectiveState === "created") {
+  if (displayState === "created") {
     return {
       label: "Created",
       tone: "info",
@@ -906,7 +973,7 @@ export function getDirectRuntimeLifecycleView(args: {
   }
 
   return {
-    label: effectiveState || "Unknown",
+    label: displayState || "Unknown",
     tone: "info",
     summary: "Runtime lifecycle needs review before taking action.",
     canResumeNow: false,
