@@ -67,6 +67,17 @@ export function isExchangeInsufficientFundsError(error: unknown): boolean {
   return classifyExchangeError(error).kind === 'INSUFFICIENT_FUNDS';
 }
 
+export function isAmbiguousPlacementError(error: unknown): boolean {
+  const { kind } = classifyExchangeError(error);
+
+  return (
+    kind === 'NETWORK' ||
+    kind === 'REQUEST_TIMEOUT' ||
+    kind === 'UNKNOWN' ||
+    kind === 'DUPLICATE_ORDER_ID'
+  );
+}
+
 export function isExchangeOrderNotFoundError(error: unknown): boolean {
   return classifyExchangeError(error).kind === 'ORDER_NOT_FOUND';
 }

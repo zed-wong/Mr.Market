@@ -27,6 +27,15 @@ describe('client-order-id helpers', () => {
     );
   });
 
+  it('builds Hyperliquid submitted clientOrderId values as 128-bit hex', () => {
+    expect(buildSubmittedClientOrderId('order-1', 42, 'hyperliquid')).toBe(
+      '0x78b03881f575d18f8a3c345fdd99afc5',
+    );
+    expect(buildSubmittedClientOrderId('order-1', 42, 'hyperliquid')).toMatch(
+      /^0x[a-f0-9]{32}$/,
+    );
+  });
+
   it('rejects invalid clientOrderId values', () => {
     expect(parseClientOrderId('order-1')).toBeNull();
     expect(parseClientOrderId('order-1:abc')).toBeNull();

@@ -14,6 +14,7 @@ export function buildClientOrderId(orderId: string, seq: number): string {
 export function buildSubmittedClientOrderId(
   orderId: string,
   seq: number,
+  exchange?: string,
 ): string {
   if (!orderId || !orderId.trim()) {
     throw new Error('orderId must be non-empty');
@@ -22,10 +23,15 @@ export function buildSubmittedClientOrderId(
     throw new Error('seq must be a non-negative integer');
   }
 
-  return createHash('sha1')
+  const digest = createHash('sha1')
     .update(`${orderId.trim()}:${seq}:submitted`)
-    .digest('hex')
-    .slice(0, 20);
+    .digest('hex');
+
+  if (String(exchange || '').toLowerCase() === 'hyperliquid') {
+    return `0x${digest.slice(0, 32)}`;
+  }
+
+  return digest.slice(0, 20);
 }
 
 export function parseClientOrderId(

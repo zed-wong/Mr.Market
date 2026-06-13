@@ -2,6 +2,7 @@
 
 ## 2026-06-11
 
+- Add an in-doubt create-order path for market-making intent execution: ambiguous placement errors now reconcile by deterministic `clientOrderId` before releasing reservations, unresolved placements persist as `pending_create` tracked orders without generic balance adjustment, and the tracker can recover those orders by client id on later polling.
 - Add dual-account immediate cycle outcomes as strategy-scoped runtime observations: safe no-fill and small maker/taker mismatch now complete the maker intent after maker cleanup and feed a dual-account-only soft-failure health counter, while the dual-account controller emits `STOP_CONTROLLER` only after three soft outcomes in the short window; generic runtime pressure and adaptive PMM reject handling remain unaffected.
 
 ## 2026-06-08

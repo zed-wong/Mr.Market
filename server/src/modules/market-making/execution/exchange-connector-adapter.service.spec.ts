@@ -13,6 +13,7 @@ describe('ExchangeConnectorAdapterService', () => {
       .fn()
       .mockResolvedValue({ id: 'ex-order-1', status: 'open' }),
     fetchOpenOrders: jest.fn().mockResolvedValue([{ id: 'ex-order-1' }]),
+    fetchClosedOrders: jest.fn().mockResolvedValue([]),
     fetchMyTrades: jest.fn().mockResolvedValue([{ id: 'trade-1' }]),
     fetchOrderBook: jest.fn().mockResolvedValue({ bids: [], asks: [] }),
     fetchBalance: jest.fn().mockResolvedValue({ free: { BTC: 1, USDT: 1000 } }),
@@ -131,11 +132,15 @@ describe('ExchangeConnectorAdapterService', () => {
     );
 
     await service.fetchOrder('binance', 'BTC/USDT', 'ex-order-1');
+    await service.fetchOrderByClientOrderId('binance', 'BTC/USDT', 'client-1');
     await service.fetchOpenOrders('binance', 'BTC/USDT');
     await service.fetchMyTrades('binance', 'BTC/USDT', 1000, 50, 'maker');
     await service.fetchOrderBook('binance', 'BTC/USDT');
 
     expect(exchange.fetchOrder).toHaveBeenCalled();
+    expect(exchange.fetchOrder).toHaveBeenCalledWith(undefined, 'BTC/USDT', {
+      clientOrderId: 'client-1',
+    });
     expect(exchange.fetchOpenOrders).toHaveBeenCalledWith('BTC/USDT');
     expect(exchange.fetchMyTrades).toHaveBeenCalledWith('BTC/USDT', 1000, 50);
     expect(exchangeInitService.getExchange).toHaveBeenCalledWith(
@@ -189,7 +194,9 @@ describe('ExchangeConnectorAdapterService', () => {
       createConfigService(),
     );
 
-    expect(service.getCachedTradingRules('binance', 'BTC/USDT')).toBeUndefined();
+    expect(
+      service.getCachedTradingRules('binance', 'BTC/USDT'),
+    ).toBeUndefined();
 
     await service.loadTradingRules('binance', 'BTC/USDT', 'account-a');
     exchange.loadMarkets.mockClear();

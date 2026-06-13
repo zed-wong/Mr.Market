@@ -34,6 +34,7 @@ describe('StrategyIntentExecutionService', () => {
     fetchOrder: jest
       .fn()
       .mockResolvedValue({ id: 'order-1', status: 'open', filled: '0' }),
+    fetchOrderByClientOrderId: jest.fn().mockResolvedValue(null),
     quantizeOrder: jest.fn(
       (_exchange: string, _pair: string, qty: string, price: string) => ({
         qty,
@@ -253,6 +254,9 @@ describe('StrategyIntentExecutionService', () => {
       status: 'open',
       filled: '0',
     });
+    exchangeConnectorAdapterService.fetchOrderByClientOrderId
+      .mockReset()
+      .mockResolvedValue(null);
     exchangeConnectorAdapterService.fetchOrderBook
       .mockReset()
       .mockResolvedValue({ bids: [[100, 1]], asks: [[101, 1]] });
@@ -424,6 +428,38 @@ describe('StrategyIntentExecutionService', () => {
         status: 'pending_create',
       }),
     );
+  });
+
+  it('uses Hyperliquid-compatible clientOrderId format for submitted create orders', async () => {
+    const service = createService(true);
+    const intent = {
+      ...baseIntent,
+      exchange: 'hyperliquid',
+    };
+    const expectedClientOrderId = buildSubmittedClientOrderId(
+      'c1',
+      0,
+      'hyperliquid',
+    );
+
+    await service.consumeIntents([intent]);
+
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).toHaveBeenCalledWith(
+      'hyperliquid',
+      'BTC/USDT',
+      'buy',
+      '1',
+      '100',
+      expectedClientOrderId,
+      { postOnly: false, timeInForce: undefined },
+      undefined,
+    );
+    expect(exchangeOrderMappingService.reserveMapping).toHaveBeenCalledWith({
+      orderId: 'c1',
+      clientOrderId: expectedClientOrderId,
+    });
   });
 
   it('reserves order funds before exchange create', async () => {
@@ -661,6 +697,124 @@ describe('StrategyIntentExecutionService', () => {
     expect(runtimeObservationService.recordIntentFailure).toHaveBeenCalledWith(
       baseIntent,
       error,
+    );
+  });
+
+  it('keeps reservation and tracks order when ambiguous create failure reconciles by clientOrderId', async () => {
+    const service = createService(
+      true,
+      createConfigService(true, { 'strategy.intent_max_retries': 0 }),
+      createExecutionHistoryRepository(),
+      orderReservationService,
+    );
+
+    exchangeConnectorAdapterService.placeLimitOrder.mockRejectedValue(
+      new ccxt.NetworkError('fetch failed'),
+    );
+    exchangeConnectorAdapterService.fetchOrderByClientOrderId.mockResolvedValue(
+      {
+        id: 'exchange-live-1',
+        status: 'closed',
+        filled: '1',
+        clientOrderId: buildSubmittedClientOrderId('c1', 0),
+      },
+    );
+
+    await service.consumeIntents([baseIntent]);
+
+    expect(
+      orderReservationService.releaseLimitOrderReservation,
+    ).not.toHaveBeenCalled();
+    expect(
+      exchangeConnectorAdapterService.fetchOrderByClientOrderId,
+    ).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      buildSubmittedClientOrderId('c1', 0),
+      undefined,
+    );
+    expect(exchangeOrderMappingService.createMapping).toHaveBeenCalledWith({
+      orderId: 'c1',
+      exchangeOrderId: 'exchange-live-1',
+      clientOrderId: buildSubmittedClientOrderId('c1', 0),
+    });
+    expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exchangeOrderId: 'exchange-live-1',
+        clientOrderId: buildSubmittedClientOrderId('c1', 0),
+        cumulativeFilledQty: '1',
+        status: 'filled',
+      }),
+    );
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      baseIntent.intentId,
+      'DONE',
+    );
+  });
+
+  it('releases reservation when ambiguous create failure reconciles as not placed', async () => {
+    const service = createService(
+      true,
+      createConfigService(true, { 'strategy.intent_max_retries': 0 }),
+      createExecutionHistoryRepository(),
+      orderReservationService,
+    );
+
+    exchangeConnectorAdapterService.placeLimitOrder.mockRejectedValue(
+      new ccxt.NetworkError('fetch failed'),
+    );
+    exchangeConnectorAdapterService.fetchOrderByClientOrderId.mockResolvedValue(
+      null,
+    );
+
+    await expect(service.consumeIntents([baseIntent])).rejects.toThrow(
+      'fetch failed',
+    );
+
+    expect(
+      orderReservationService.releaseLimitOrderReservation,
+    ).toHaveBeenCalledWith({
+      orderId: 'c1',
+      userId: 'u1',
+      intentId: 'intent-1',
+      pair: 'BTC/USDT',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      reason: 'exchange_create_failed',
+    });
+  });
+
+  it('persists pending_create without exchangeOrderId when ambiguous create reconciliation fails', async () => {
+    const service = createService(
+      true,
+      createConfigService(true, { 'strategy.intent_max_retries': 0 }),
+      createExecutionHistoryRepository(),
+      orderReservationService,
+    );
+
+    exchangeConnectorAdapterService.placeLimitOrder.mockRejectedValue(
+      new ccxt.NetworkError('fetch failed'),
+    );
+    exchangeConnectorAdapterService.fetchOrderByClientOrderId.mockRejectedValue(
+      new ccxt.NetworkError('still unavailable'),
+    );
+
+    await service.consumeIntents([baseIntent]);
+
+    expect(
+      orderReservationService.releaseLimitOrderReservation,
+    ).not.toHaveBeenCalled();
+    expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exchangeOrderId: '',
+        clientOrderId: buildSubmittedClientOrderId('c1', 0),
+        status: 'pending_create',
+      }),
+    );
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      baseIntent.intentId,
+      'DONE',
     );
   });
 
@@ -1282,7 +1436,9 @@ describe('StrategyIntentExecutionService', () => {
         makerCleanupConfirmed: true,
       }),
     );
-    expect(runtimeObservationService.recordIntentFailure).not.toHaveBeenCalled();
+    expect(
+      runtimeObservationService.recordIntentFailure,
+    ).not.toHaveBeenCalled();
   });
 
   it('records a safe outcome and completes the maker intent when immediate taker does not fill after maker cleanup', async () => {
@@ -1377,12 +1533,17 @@ describe('StrategyIntentExecutionService', () => {
         makerCleanupConfirmed: true,
       }),
     );
-    expect(runtimeObservationService.recordIntentFailure).not.toHaveBeenCalled();
+    expect(
+      runtimeObservationService.recordIntentFailure,
+    ).not.toHaveBeenCalled();
   });
 
   it('keeps taker no-fill unsafe when the maker filled before cleanup', async () => {
     exchangeConnectorAdapterService.placeLimitOrder
-      .mockResolvedValueOnce({ id: 'maker-order-no-fill-unsafe', status: 'open' })
+      .mockResolvedValueOnce({
+        id: 'maker-order-no-fill-unsafe',
+        status: 'open',
+      })
       .mockResolvedValueOnce({
         id: 'taker-order-no-fill-unsafe',
         status: 'closed',
@@ -1469,7 +1630,10 @@ describe('StrategyIntentExecutionService', () => {
 
   it('keeps taker no-fill unsafe when maker cleanup is not final', async () => {
     exchangeConnectorAdapterService.placeLimitOrder
-      .mockResolvedValueOnce({ id: 'maker-order-cleanup-pending', status: 'open' })
+      .mockResolvedValueOnce({
+        id: 'maker-order-cleanup-pending',
+        status: 'open',
+      })
       .mockResolvedValueOnce({
         id: 'taker-order-cleanup-pending',
         status: 'closed',

@@ -13,7 +13,10 @@ import { Repository } from 'typeorm';
 
 import { DurabilityService } from '../../durability/durability.service';
 import { ExchangeConnectorAdapterService } from '../../execution/exchange-connector-adapter.service';
-import { isExchangeInsufficientFundsError } from '../../execution/exchange-error-classifier';
+import {
+  isAmbiguousPlacementError,
+  isExchangeInsufficientFundsError,
+} from '../../execution/exchange-error-classifier';
 import { ExchangeOrderMappingService } from '../../execution/exchange-order-mapping.service';
 import {
   OrderReservationResult,
@@ -223,7 +226,10 @@ export class StrategyIntentExecutionService {
     }
 
     const parsedDualAccountSmallMismatchRatio = new BigNumber(
-      this.configService.get('strategy.dual_account_small_mismatch_ratio', 0.005),
+      this.configService.get(
+        'strategy.dual_account_small_mismatch_ratio',
+        0.005,
+      ),
     );
 
     this.dualAccountSmallMismatchRatio =
@@ -231,7 +237,11 @@ export class StrategyIntentExecutionService {
       parsedDualAccountSmallMismatchRatio.isGreaterThanOrEqualTo(0)
         ? parsedDualAccountSmallMismatchRatio
         : new BigNumber(0.005);
-    if (!this.dualAccountSmallMismatchRatio.isEqualTo(parsedDualAccountSmallMismatchRatio)) {
+    if (
+      !this.dualAccountSmallMismatchRatio.isEqualTo(
+        parsedDualAccountSmallMismatchRatio,
+      )
+    ) {
       this.logger.warn(
         `Invalid strategy.dual_account_small_mismatch_ratio value: ${parsedDualAccountSmallMismatchRatio.toFixed()}. Falling back to ${this.dualAccountSmallMismatchRatio.toFixed()}`,
       );
@@ -378,7 +388,10 @@ export class StrategyIntentExecutionService {
           return;
         }
 
-        const clientOrderId = await this.reserveClientOrderId(orderId);
+        const clientOrderId = await this.reserveClientOrderId(
+          orderId,
+          intent.exchange,
+        );
         let reservation: OrderReservationResult | undefined;
         let result: Record<string, unknown> | undefined;
 
@@ -398,6 +411,8 @@ export class StrategyIntentExecutionService {
           );
         }
 
+        let createResultHandled = false;
+
         try {
           result = await this.runWithRetries(intent, () =>
             this.exchangeConnectorAdapterService.placeLimitOrder(
@@ -415,7 +430,20 @@ export class StrategyIntentExecutionService {
             ),
           );
         } catch (error) {
-          if (reservation?.applied) {
+          if (isAmbiguousPlacementError(error)) {
+            const reconciled = await this.reconcileInDoubtPlacement(
+              intent,
+              orderId,
+              clientOrderId,
+              reservation,
+            );
+
+            if (reconciled) {
+              createResultHandled = true;
+            }
+          }
+
+          if (!createResultHandled && reservation?.applied) {
             await this.orderReservationService?.releaseLimitOrderReservation({
               orderId,
               userId: intent.userId,
@@ -432,70 +460,31 @@ export class StrategyIntentExecutionService {
             orderId,
             error,
           );
-          throw error;
+          if (!createResultHandled) {
+            throw error;
+          }
         }
 
-        this.assertImmediateOrderAck(intent, result);
-        executionResult = result as Record<string, unknown> | undefined;
+        if (!createResultHandled) {
+          this.assertImmediateOrderAck(intent, result);
+          executionResult = result as Record<string, unknown> | undefined;
 
-        if (result?.id) {
-          const createAckStatus = this.normalizeTrackedOrderStatus(
-            result.status,
-          );
-          const rejectedCreateAck =
-            createAckStatus === 'failed' || createAckStatus === 'cancelled';
-
-          await this.strategyIntentStoreService?.attachMixinOrderId(
-            intent.intentId,
-            String(result.id),
-          );
-          await this.exchangeOrderMappingService?.createMapping({
-            orderId,
-            exchangeOrderId: String(result.id),
-            clientOrderId,
-          });
-          await this.strategyExecutionHistoryRepository?.save(
-            this.strategyExecutionHistoryRepository.create({
-              userId: intent.userId,
-              clientId: intent.clientId,
-              exchange: intent.exchange,
-              pair: intent.pair,
-              side: intent.side,
-              amount: intent.qty,
-              price: intent.price,
-              strategyType: this.extractStrategyType(intent.strategyKey),
-              runtimeInstanceKey: intent.runtimeInstanceKey,
+          if (result?.id) {
+            await this.handleLimitOrderCreateAck(
+              intent,
               orderId,
-              status:
-                typeof result?.status === 'string' ? result.status : 'open',
-              metadata: {
-                intentId: intent.intentId,
-                intentType: intent.type,
-                clientOrderId,
-                exchangeOrderId: String(result.id),
-              },
-            }),
-          );
-          this.exchangeOrderTrackerService?.upsertOrder({
-            orderId,
-            strategyKey: intent.strategyKey,
-            exchange: intent.exchange,
-            accountLabel: intent.accountLabel,
-            pair: intent.pair,
-            exchangeOrderId: String(result.id),
-            clientOrderId,
-            slotKey: intent.slotKey,
-            role: this.resolveIntentRole(intent),
-            side: intent.side,
-            price: intent.price,
-            qty: intent.qty,
-            cumulativeFilledQty: '0',
-            status: rejectedCreateAck ? createAckStatus : 'pending_create',
-            createdAt: getRFC3339Timestamp(),
-            updatedAt: getRFC3339Timestamp(),
-          });
-
-          if (rejectedCreateAck) {
+              clientOrderId,
+              result,
+              reservation,
+            );
+          } else {
+            this.logger.warn(
+              `CREATE_LIMIT_ORDER returned no id for ${intent.strategyKey}: ${
+                intent.side
+              } ${intent.qty}@${intent.price} ${intent.exchange} ${
+                intent.pair
+              } result=${JSON.stringify(result)}`,
+            );
             if (reservation?.applied) {
               await this.orderReservationService?.releaseLimitOrderReservation({
                 orderId,
@@ -506,41 +495,11 @@ export class StrategyIntentExecutionService {
                 side: intent.side,
                 price: intent.price,
                 qty: intent.qty,
-                reason: 'exchange_create_rejected',
+                reason: 'exchange_create_missing_id',
               });
             }
-            throw new Error(
-              `exchange create returned terminal status ${createAckStatus}`,
-            );
+            throw new Error('exchange create returned no order id');
           }
-
-          await this.maybeExecuteImmediateDualAccountTaker(
-            intent,
-            result,
-            clientOrderId,
-          );
-        } else {
-          this.logger.warn(
-            `CREATE_LIMIT_ORDER returned no id for ${intent.strategyKey}: ${
-              intent.side
-            } ${intent.qty}@${intent.price} ${intent.exchange} ${
-              intent.pair
-            } result=${JSON.stringify(result)}`,
-          );
-          if (reservation?.applied) {
-            await this.orderReservationService?.releaseLimitOrderReservation({
-              orderId,
-              userId: intent.userId,
-              intentId: intent.intentId,
-              releaseId: clientOrderId,
-              pair: intent.pair,
-              side: intent.side,
-              price: intent.price,
-              qty: intent.qty,
-              reason: 'exchange_create_missing_id',
-            });
-          }
-          throw new Error('exchange create returned no order id');
         }
       }
 
@@ -1292,12 +1251,13 @@ export class StrategyIntentExecutionService {
       )
     ) {
       const reason = 'Immediate dual-account taker did not fill any quantity';
-      const makerFillDelta = await this.waitForImmediateDualAccountMakerFillDelta(
-        makerIntent,
-        makerExchangeOrderId,
-        makerBeforeTakerSnapshot.cumulativeFilledQty,
-        takerFilledQty,
-      );
+      const makerFillDelta =
+        await this.waitForImmediateDualAccountMakerFillDelta(
+          makerIntent,
+          makerExchangeOrderId,
+          makerBeforeTakerSnapshot.cumulativeFilledQty,
+          takerFilledQty,
+        );
 
       if (
         makerFillDelta.isGreaterThan(
@@ -1333,11 +1293,12 @@ export class StrategyIntentExecutionService {
         };
       }
 
-      const cleanupConfirmed = await this.cancelRemainingImmediateDualAccountMaker(
-        makerIntent,
-        makerExchangeOrderId,
-        reason,
-      );
+      const cleanupConfirmed =
+        await this.cancelRemainingImmediateDualAccountMaker(
+          makerIntent,
+          makerExchangeOrderId,
+          reason,
+        );
 
       if (!cleanupConfirmed) {
         const cleanupReason =
@@ -1381,11 +1342,12 @@ export class StrategyIntentExecutionService {
       const reason =
         'Immediate dual-account paired fill mismatch between maker and taker';
 
-      const cleanupConfirmed = await this.cancelRemainingImmediateDualAccountMaker(
-        makerIntent,
-        makerExchangeOrderId,
-        reason,
-      );
+      const cleanupConfirmed =
+        await this.cancelRemainingImmediateDualAccountMaker(
+          makerIntent,
+          makerExchangeOrderId,
+          reason,
+        );
 
       const makerDelta = makerFillDelta.toFixed();
       const takerFilled = takerFilledQty.toFixed();
@@ -1987,7 +1949,9 @@ export class StrategyIntentExecutionService {
       ),
     );
 
-    return this.isCancelResultFinal(result as Record<string, unknown> | undefined);
+    return this.isCancelResultFinal(
+      result as Record<string, unknown> | undefined,
+    );
   }
 
   private async refreshTrackedOrderFromExchange(
@@ -2227,7 +2191,10 @@ export class StrategyIntentExecutionService {
     }
   }
 
-  private async reserveClientOrderId(orderId: string): Promise<string> {
+  private async reserveClientOrderId(
+    orderId: string,
+    exchange?: string,
+  ): Promise<string> {
     const current = this.nextClientOrderSeqByOrderId.get(orderId);
     const nextSeq =
       current ??
@@ -2235,7 +2202,11 @@ export class StrategyIntentExecutionService {
         orderId,
       )) ??
       0;
-    const clientOrderId = buildSubmittedClientOrderId(orderId, nextSeq);
+    const clientOrderId = buildSubmittedClientOrderId(
+      orderId,
+      nextSeq,
+      exchange,
+    );
 
     await this.exchangeOrderMappingService?.reserveMapping({
       orderId,
@@ -2245,6 +2216,171 @@ export class StrategyIntentExecutionService {
     this.nextClientOrderSeqByOrderId.set(orderId, nextSeq + 1);
 
     return clientOrderId;
+  }
+
+  private async reconcileInDoubtPlacement(
+    intent: StrategyOrderIntent,
+    orderId: string,
+    clientOrderId: string,
+    reservation?: OrderReservationResult,
+  ): Promise<boolean> {
+    let live: unknown;
+
+    try {
+      live =
+        await this.exchangeConnectorAdapterService.fetchOrderByClientOrderId(
+          intent.exchange,
+          intent.pair,
+          clientOrderId,
+          intent.accountLabel,
+        );
+    } catch (error) {
+      this.logger.warn(
+        `CREATE_LIMIT_ORDER result unknown for ${intent.strategyKey}: ${
+          intent.side
+        } ${intent.qty}@${intent.price} ${intent.exchange} ${
+          intent.pair
+        } clientOrderId=${clientOrderId}; deferring reconciliation: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      this.persistInDoubtPlacement(intent, orderId, clientOrderId);
+
+      return true;
+    }
+
+    if (live && typeof live === 'object' && 'id' in live) {
+      await this.handleLimitOrderCreateAck(
+        intent,
+        orderId,
+        clientOrderId,
+        live as Record<string, unknown>,
+        reservation,
+      );
+
+      return true;
+    }
+
+    return false;
+  }
+
+  private async handleLimitOrderCreateAck(
+    intent: StrategyOrderIntent,
+    orderId: string,
+    clientOrderId: string,
+    result: Record<string, unknown>,
+    reservation?: OrderReservationResult,
+  ): Promise<void> {
+    const exchangeOrderId = String(result.id);
+    const createAckStatus = this.normalizeTrackedOrderStatus(result.status);
+    const rejectedCreateAck =
+      createAckStatus === 'failed' || createAckStatus === 'cancelled';
+    const trackedStatus =
+      !rejectedCreateAck && createAckStatus === 'filled'
+        ? createAckStatus
+        : rejectedCreateAck
+        ? createAckStatus
+        : 'pending_create';
+    const filledQty = this.readFilledQtyFromResult(result)?.toFixed() || '0';
+
+    await this.strategyIntentStoreService?.attachMixinOrderId(
+      intent.intentId,
+      exchangeOrderId,
+    );
+    await this.exchangeOrderMappingService?.createMapping({
+      orderId,
+      exchangeOrderId,
+      clientOrderId,
+    });
+    await this.strategyExecutionHistoryRepository?.save(
+      this.strategyExecutionHistoryRepository.create({
+        userId: intent.userId,
+        clientId: intent.clientId,
+        exchange: intent.exchange,
+        pair: intent.pair,
+        side: intent.side,
+        amount: intent.qty,
+        price: intent.price,
+        strategyType: this.extractStrategyType(intent.strategyKey),
+        runtimeInstanceKey: intent.runtimeInstanceKey,
+        orderId,
+        status: typeof result.status === 'string' ? result.status : 'open',
+        metadata: {
+          intentId: intent.intentId,
+          intentType: intent.type,
+          clientOrderId,
+          exchangeOrderId,
+        },
+      }),
+    );
+    this.exchangeOrderTrackerService?.upsertOrder({
+      orderId,
+      strategyKey: intent.strategyKey,
+      exchange: intent.exchange,
+      accountLabel: intent.accountLabel,
+      pair: intent.pair,
+      exchangeOrderId,
+      clientOrderId,
+      slotKey: intent.slotKey,
+      role: this.resolveIntentRole(intent),
+      side: intent.side,
+      price: intent.price,
+      qty: intent.qty,
+      cumulativeFilledQty: filledQty,
+      status: trackedStatus,
+      createdAt: getRFC3339Timestamp(),
+      updatedAt: getRFC3339Timestamp(),
+    });
+
+    if (rejectedCreateAck) {
+      if (reservation?.applied) {
+        await this.orderReservationService?.releaseLimitOrderReservation({
+          orderId,
+          userId: intent.userId,
+          intentId: intent.intentId,
+          releaseId: clientOrderId,
+          pair: intent.pair,
+          side: intent.side,
+          price: intent.price,
+          qty: intent.qty,
+          reason: 'exchange_create_rejected',
+        });
+      }
+      throw new Error(
+        `exchange create returned terminal status ${createAckStatus}`,
+      );
+    }
+
+    await this.maybeExecuteImmediateDualAccountTaker(
+      intent,
+      result,
+      clientOrderId,
+    );
+  }
+
+  private persistInDoubtPlacement(
+    intent: StrategyOrderIntent,
+    orderId: string,
+    clientOrderId: string,
+  ): void {
+    this.exchangeOrderTrackerService?.upsertOrder({
+      orderId,
+      strategyKey: intent.strategyKey,
+      exchange: intent.exchange,
+      accountLabel: intent.accountLabel,
+      pair: intent.pair,
+      exchangeOrderId: '',
+      clientOrderId,
+      slotKey: intent.slotKey,
+      role: this.resolveIntentRole(intent),
+      side: intent.side,
+      price: intent.price,
+      qty: intent.qty,
+      cumulativeFilledQty: '0',
+      status: 'pending_create',
+      createdAt: getRFC3339Timestamp(),
+      updatedAt: getRFC3339Timestamp(),
+    });
   }
 
   private isCancelResultFinal(result: Record<string, unknown> | undefined) {

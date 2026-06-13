@@ -171,11 +171,7 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
   }
 
   upsertOrder(order: TrackedOrder, options?: UpsertTrackedOrderOptions): void {
-    const key = this.toKey(
-      order.exchange,
-      order.accountLabel,
-      order.exchangeOrderId,
-    );
+    const key = this.toOrderKey(order);
     const existingOrder = this.orders.get(key);
 
     if (existingOrder) {
@@ -500,11 +496,7 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
 
     for (const order of dueOrders) {
       processedCount += 1;
-      const orderKey = this.toKey(
-        order.exchange,
-        order.accountLabel,
-        order.exchangeOrderId,
-      );
+      const orderKey = this.toOrderKey(order);
 
       if (!(await this.isStrategyOrderStillActive(order.strategyKey))) {
         this.upsertOrder({
@@ -516,6 +508,15 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
         this.logger.warn(
           `Self-healed orphan tracked order ${order.strategyKey}:${order.exchangeOrderId} by marking it cancelled because the strategy is no longer running`,
         );
+        continue;
+      }
+
+      if (
+        order.status === 'pending_create' &&
+        !order.exchangeOrderId &&
+        order.clientOrderId
+      ) {
+        await this.reconcilePendingCreateByClientOrderId(order, orderKey, ts);
         continue;
       }
 
@@ -667,11 +668,7 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
   }
 
   private isPollDue(order: TrackedOrder, now: number): boolean {
-    const key = this.toKey(
-      order.exchange,
-      order.accountLabel,
-      order.exchangeOrderId,
-    );
+    const key = this.toOrderKey(order);
     const lastPolled = this.lastPolledAtByOrderKey.get(key);
     const interval = this.isUserStreamHealthy(
       order.exchange,
@@ -707,8 +704,8 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
           return aPriority - bPriority;
         }
 
-        const aKey = this.toKey(a.exchange, a.accountLabel, a.exchangeOrderId);
-        const bKey = this.toKey(b.exchange, b.accountLabel, b.exchangeOrderId);
+        const aKey = this.toOrderKey(a);
+        const bKey = this.toOrderKey(b);
 
         return (
           (this.lastPolledAtByOrderKey.get(aKey) ?? 0) -
@@ -750,9 +747,7 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
 
     for (const order of this.orders.values()) {
       if (this.isOrderPollable(order)) {
-        activeKeys.add(
-          this.toKey(order.exchange, order.accountLabel, order.exchangeOrderId),
-        );
+        activeKeys.add(this.toOrderKey(order));
       }
     }
 
@@ -1116,6 +1111,141 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
     );
   }
 
+  private async reconcilePendingCreateByClientOrderId(
+    order: TrackedOrder,
+    orderKey: string,
+    ts: string,
+  ): Promise<void> {
+    if (!this.exchangeConnectorAdapterService) {
+      return;
+    }
+
+    let latest: Awaited<
+      ReturnType<ExchangeConnectorAdapterService['fetchOrderByClientOrderId']>
+    >;
+
+    try {
+      latest = this.runtimeTimingService
+        ? await this.runtimeTimingService.measureAsync(
+            'order-tracker.fetch-order-by-client-order-id',
+            {
+              accountLabel: order.accountLabel || 'default',
+              exchange: order.exchange,
+              clientOrderId: order.clientOrderId,
+              pair: order.pair,
+            },
+            () =>
+              this.exchangeConnectorAdapterService?.fetchOrderByClientOrderId(
+                order.exchange,
+                order.pair,
+                order.clientOrderId || '',
+                order.accountLabel,
+              ) as Promise<
+                Awaited<
+                  ReturnType<
+                    ExchangeConnectorAdapterService['fetchOrderByClientOrderId']
+                  >
+                >
+              >,
+            { warnThresholdMs: 500 },
+          )
+        : await this.exchangeConnectorAdapterService.fetchOrderByClientOrderId(
+            order.exchange,
+            order.pair,
+            order.clientOrderId,
+            order.accountLabel,
+          );
+    } catch (error) {
+      if (error instanceof ServiceUnavailableException) {
+        return;
+      }
+
+      throw error;
+    }
+
+    this.lastPolledAtByOrderKey.set(orderKey, Date.now());
+
+    if (!latest) {
+      await this.releaseUnplacedLimitOrderReservation(order);
+      this.upsertOrder(
+        {
+          ...order,
+          status: 'failed',
+          updatedAt: getRFC3339Timestamp(),
+        },
+        { releaseReservation: false },
+      );
+      return;
+    }
+
+    const exchangeOrderId = this.extractExchangeOrderId(latest);
+
+    if (!exchangeOrderId) {
+      return;
+    }
+
+    const normalizedStatus = this.normalizeStatus(
+      String(latest.status || 'open'),
+    );
+    const nextFilledQty =
+      this.normalizeFilledValue(latest?.filled) || order.cumulativeFilledQty;
+    const adjustedStatus = this.adjustPartialFillStatus(
+      normalizedStatus,
+      order.qty,
+      nextFilledQty,
+    );
+    const nextOrder: TrackedOrder = {
+      ...order,
+      exchangeOrderId,
+      cumulativeFilledQty: nextFilledQty,
+      status: adjustedStatus,
+      updatedAt: getRFC3339Timestamp(),
+    };
+    const fillDelta = this.recordFill(order, nextOrder, ts);
+
+    this.removeTrackedOrderByKey(orderKey);
+    this.upsertOrder(nextOrder, { settleFill: false });
+
+    if (ExchangeOrderTrackerService.terminalStates.has(normalizedStatus)) {
+      this.lastPolledAtByOrderKey.delete(this.toOrderKey(nextOrder));
+    }
+
+    if (fillDelta) {
+      await this.routeRecoveredFill(order, nextOrder, fillDelta, ts);
+    }
+  }
+
+  private async releaseUnplacedLimitOrderReservation(
+    order: TrackedOrder,
+  ): Promise<void> {
+    if (!this.orderReservationService) {
+      return;
+    }
+
+    const marketMakingOrder = await this.marketMakingOrderRepository?.findOne({
+      where: { orderId: order.orderId },
+    });
+    const userId =
+      String(marketMakingOrder?.userId || '').trim() ||
+      this.extractUserIdFromStrategyKey(order.strategyKey);
+
+    if (!userId) {
+      return;
+    }
+
+    await this.orderReservationService.releaseLimitOrderReservation({
+      orderId: order.orderId,
+      userId,
+      intentId: order.clientOrderId || order.orderId,
+      releaseId: order.clientOrderId,
+      pair: order.pair,
+      side: order.side,
+      price: order.price,
+      qty: order.qty,
+      reason: 'exchange_create_not_found',
+    });
+  }
+
   private async releaseReservationForTerminalOrderAsync(
     order: TrackedOrder,
   ): Promise<void> {
@@ -1185,6 +1315,38 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
     exchangeOrderId: string,
   ): string {
     return `${exchange}:${accountLabel || 'default'}:${exchangeOrderId}`;
+  }
+
+  private toOrderKey(order: TrackedOrder): string {
+    if (order.exchangeOrderId) {
+      return this.toKey(
+        order.exchange,
+        order.accountLabel,
+        order.exchangeOrderId,
+      );
+    }
+
+    return `${order.exchange}:${order.accountLabel || 'default'}:client:${
+      order.clientOrderId || order.orderId
+    }`;
+  }
+
+  private removeTrackedOrderByKey(key: string): void {
+    const existingOrder = this.orders.get(key);
+
+    if (!existingOrder) {
+      return;
+    }
+
+    this.orders.delete(key);
+    this.lastPolledAtByOrderKey.delete(key);
+    this.decrementTrackedOrderStatus(existingOrder.status);
+
+    const sampleIndex = this.trackedOrderSampleKeys.indexOf(key);
+
+    if (sampleIndex >= 0) {
+      this.trackedOrderSampleKeys.splice(sampleIndex, 1);
+    }
   }
 
   private extractExchangeOrderId(order: Record<string, unknown>): string {

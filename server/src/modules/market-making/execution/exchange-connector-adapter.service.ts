@@ -145,6 +145,67 @@ export class ExchangeConnectorAdapterService {
     );
   }
 
+  async fetchOrderByClientOrderId(
+    exchangeName: string,
+    pair: string,
+    clientOrderId: string,
+    accountLabel?: string,
+  ): Promise<any | null> {
+    return await this.withRateLimit(
+      this.toRateLimitKey(exchangeName, accountLabel),
+      'stateRead',
+      `fetchOrderByClientOrderId ${exchangeName}:${
+        accountLabel || 'default'
+      } ${pair}`,
+      async () => {
+        const exchange = this.exchangeInitService.getExchange(
+          exchangeName,
+          accountLabel,
+        );
+
+        try {
+          const fetched = await exchange.fetchOrder(undefined, pair, {
+            clientOrderId,
+          });
+
+          if (this.matchesClientOrderId(fetched, clientOrderId)) {
+            return fetched;
+          }
+        } catch (error) {
+          this.logger.warn(
+            `fetchOrder by clientOrderId failed for ${exchangeName}:${
+              accountLabel || 'default'
+            } ${pair} ${clientOrderId}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+
+        const openMatch = this.findOrderByClientOrderId(
+          await exchange.fetchOpenOrders(pair),
+          clientOrderId,
+        );
+
+        if (openMatch) {
+          return openMatch;
+        }
+
+        if (typeof exchange.fetchClosedOrders === 'function') {
+          const closedMatch = this.findOrderByClientOrderId(
+            await exchange.fetchClosedOrders(pair),
+            clientOrderId,
+          );
+
+          if (closedMatch) {
+            return closedMatch;
+          }
+        }
+
+        return null;
+      },
+    );
+  }
+
   async fetchOpenOrders(
     exchangeName: string,
     pair?: string,
@@ -165,6 +226,39 @@ export class ExchangeConnectorAdapterService {
         return await exchange.fetchOpenOrders(pair);
       },
     );
+  }
+
+  private findOrderByClientOrderId(
+    orders: unknown,
+    clientOrderId: string,
+  ): Record<string, unknown> | null {
+    if (!Array.isArray(orders)) {
+      return null;
+    }
+
+    return (
+      orders.find((order) => this.matchesClientOrderId(order, clientOrderId)) ||
+      null
+    );
+  }
+
+  private matchesClientOrderId(order: unknown, clientOrderId: string): boolean {
+    if (!order || typeof order !== 'object') {
+      return false;
+    }
+
+    const record = order as Record<string, any>;
+    const value =
+      record.clientOrderId ??
+      record.clientOrderID ??
+      record.client_order_id ??
+      record.info?.clientOrderId ??
+      record.info?.clientOrderID ??
+      record.info?.client_order_id ??
+      record.info?.clientOid ??
+      record.info?.clOrdId;
+
+    return String(value || '') === clientOrderId;
   }
 
   async fetchMyTrades(
