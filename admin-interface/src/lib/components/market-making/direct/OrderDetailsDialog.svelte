@@ -19,7 +19,6 @@
         formatDirectTimeAgo,
         isBestCapacityDirectOrderControllerType,
         isDualAccountOrder,
-        isEfficientDualAccountControllerType,
         isKnownDirectStrategyControllerType,
         getStateLabel,
         explainDirectOrderWarning,
@@ -124,9 +123,6 @@
     });
     $: isBestCapacityStrategy =
         isBestCapacityDirectOrderControllerType(resolvedControllerType);
-    $: isEfficientDualAccountStrategy =
-        isEfficientDualAccountControllerType(resolvedControllerType) ||
-        Boolean(data?.cycles?.length && isDualAccountStrategy);
     $: isKnownStrategy =
         isKnownDirectStrategyControllerType(resolvedControllerType);
     $: fills = performance?.summary.fillCount ?? 0;
@@ -200,10 +196,8 @@
             />
         {:else if activeView === "routing" && data}
             <OrderRoutingDialog
-                {order}
                 {data}
                 {isDualAccountStrategy}
-                {isEfficientDualAccountStrategy}
                 onBack={backToOverview}
                 {onClose}
             />

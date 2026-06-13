@@ -1,16 +1,12 @@
 <script lang="ts">
     import { _ } from "svelte-i18n";
     import OrderDetailSubShell from "$lib/components/market-making/direct/OrderDetailSubShell.svelte";
-    import RuntimeCyclePanel from "$lib/components/market-making/direct/RuntimeCyclePanel.svelte";
     import type {
-        DirectOrderSummary,
         DirectOrderStatus,
     } from "$lib/types/hufi/admin-direct-market-making";
 
-    export let order: DirectOrderSummary;
     export let data: DirectOrderStatus;
     export let isDualAccountStrategy = false;
-    export let isEfficientDualAccountStrategy = false;
     export let onBack: () => void;
     export let onClose: () => void;
 </script>
@@ -106,12 +102,6 @@
                     >
                 {/if}
             </div>
-        </div>
-    {/if}
-
-    {#if isEfficientDualAccountStrategy}
-        <div class="mt-4">
-            <RuntimeCyclePanel {data} warnings={order.warnings || []} />
         </div>
     {/if}
 </OrderDetailSubShell>

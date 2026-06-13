@@ -167,10 +167,8 @@ describe("Order detail sub-dialogs", () => {
   it("renders single-account routing", () => {
     const { body } = render(OrderRoutingDialog, {
       props: {
-        order: baseOrder,
         data: baseStatus,
         isDualAccountStrategy: false,
-        isEfficientDualAccountStrategy: false,
         onBack: noop,
         onClose: noop,
       },
@@ -178,6 +176,34 @@ describe("Order detail sub-dialogs", () => {
 
     expect(body).toContain("Account Routing");
     expect(body).toContain("main");
+  });
+
+  it("keeps dual-account routing focused on account labels", () => {
+    const { body } = render(OrderRoutingDialog, {
+      props: {
+        data: {
+          ...stoppedEfficientStatus,
+          makerAccountName: "maker-main",
+          takerAccountName: "taker-alt",
+          cycles: [
+            {
+              cycleId: "efficient-dual-account-volume:cycle:1:2026-06-08T00:00:00.000Z",
+              aggregateStatus: "completed",
+              failureReason: null,
+              legs: [],
+            },
+          ],
+        },
+        isDualAccountStrategy: true,
+        onBack: noop,
+        onClose: noop,
+      },
+    });
+
+    expect(body).toContain("Account Routing");
+    expect(body).toContain("maker-main");
+    expect(body).toContain("taker-alt");
+    expect(body).not.toContain("Efficient Volume runtime cycles");
   });
 
   it("renders the empty state when there are no recent errors", () => {
