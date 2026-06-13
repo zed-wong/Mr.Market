@@ -1311,7 +1311,12 @@ export class DualAccountPlannerService {
       activeCycle: undefined,
     };
 
-    if (!makerFilledQty.isFinite() || makerFilledQty.isLessThanOrEqualTo(0)) {
+    if (
+      !makerFilledQty.isFinite() ||
+      !takerFilledQty.isFinite() ||
+      (makerFilledQty.isLessThanOrEqualTo(0) &&
+        takerFilledQty.isLessThanOrEqualTo(0))
+    ) {
       return { params: nextParams, underHedged: false };
     }
 
@@ -2222,6 +2227,23 @@ export class DualAccountPlannerService {
     }
 
     if (validCandidates.length === 0) {
+      const rebalanceAction = await this.maybeBuildDualAccountRebalanceAction(
+        strategyKey,
+        params,
+        'buy',
+        bestBidBn,
+        bestAskBn,
+        price,
+        feeBufferRate,
+        publishedCycles,
+        ts,
+        balanceSnapshot,
+      );
+
+      if (rebalanceAction) {
+        return [rebalanceAction];
+      }
+
       this.logger.warn(
         `Stopping optimal dual-account volume for ${strategyKey}: no sustainable candidate found`,
       );
@@ -2858,6 +2880,8 @@ export class DualAccountPlannerService {
           makerBalances,
           takerBalances,
           feeBufferRate,
+          bestBid,
+          bestAsk,
           publishedCycles,
           ts,
         ),
@@ -2872,6 +2896,8 @@ export class DualAccountPlannerService {
           makerBalances,
           takerBalances,
           feeBufferRate,
+          bestBid,
+          bestAsk,
           publishedCycles,
           ts,
         ),
@@ -2886,6 +2912,8 @@ export class DualAccountPlannerService {
           makerBalances,
           takerBalances,
           feeBufferRate,
+          bestBid,
+          bestAsk,
           publishedCycles,
           ts,
         ),
@@ -2900,6 +2928,8 @@ export class DualAccountPlannerService {
           makerBalances,
           takerBalances,
           feeBufferRate,
+          bestBid,
+          bestAsk,
           publishedCycles,
           ts,
         ),
@@ -2922,6 +2952,8 @@ export class DualAccountPlannerService {
           makerBalances,
           takerBalances,
           feeBufferRate,
+          bestBid,
+          bestAsk,
           publishedCycles,
           ts,
         ),
@@ -2936,6 +2968,8 @@ export class DualAccountPlannerService {
           makerBalances,
           takerBalances,
           feeBufferRate,
+          bestBid,
+          bestAsk,
           publishedCycles,
           ts,
         ),
@@ -2950,6 +2984,8 @@ export class DualAccountPlannerService {
           makerBalances,
           takerBalances,
           feeBufferRate,
+          bestBid,
+          bestAsk,
           publishedCycles,
           ts,
         ),
@@ -2964,6 +3000,8 @@ export class DualAccountPlannerService {
           makerBalances,
           takerBalances,
           feeBufferRate,
+          bestBid,
+          bestAsk,
           publishedCycles,
           ts,
         ),
@@ -3056,6 +3094,8 @@ export class DualAccountPlannerService {
     makerBalances: DualAccountPairBalances,
     takerBalances: DualAccountPairBalances,
     feeBufferRate: BigNumber,
+    bestBid: BigNumber,
+    bestAsk: BigNumber,
     publishedCycles: number,
     ts: string,
   ): Promise<DualAccountRebalanceCandidate | null> {
@@ -3102,22 +3142,44 @@ export class DualAccountPlannerService {
       return null;
     }
 
+    const rebalanceNotionalQuote = adjustedQuote.qty.multipliedBy(
+      adjustedQuote.price,
+    );
+
     if (side === 'buy') {
+      // Spend quote, receive base. Debiting the spent quote prevents the
+      // simulation from overstating future capacity (false positives).
+      selectedBalances.quote = BigNumber.max(
+        new BigNumber(0),
+        selectedBalances.quote.minus(rebalanceNotionalQuote),
+      );
       selectedBalances.base = selectedBalances.base.plus(adjustedQuote.qty);
     } else {
-      selectedBalances.quote = selectedBalances.quote.plus(
-        adjustedQuote.qty.multipliedBy(adjustedQuote.price),
+      // Spend base, receive quote.
+      selectedBalances.base = BigNumber.max(
+        new BigNumber(0),
+        selectedBalances.base.minus(adjustedQuote.qty),
       );
+      selectedBalances.quote =
+        selectedBalances.quote.plus(rebalanceNotionalQuote);
     }
 
-    const futureExecution = this.resolveBestDualAccountTradeabilityFromBalances(
-      params,
-      preferredSide,
-      futurePrice,
-      nextMakerBalances,
-      nextTakerBalances,
-      feeBufferRate,
-    );
+    // Validate the post-rebalance state with the SAME executable predicate the
+    // normal cycle uses (exchange minimums, quantization, capacity). A weaker
+    // capacity-only check causes infinite rebalancing on dust states that can
+    // never clear exchange minimums.
+    const futureExecution =
+      await this.resolveBestExecutableDualAccountTradeabilityFromBalances(
+        strategyKey,
+        params,
+        preferredSide,
+        futurePrice,
+        bestBid,
+        bestAsk,
+        nextMakerBalances,
+        nextTakerBalances,
+        feeBufferRate,
+      );
 
     if (!futureExecution) {
       return null;
@@ -3180,75 +3242,70 @@ export class DualAccountPlannerService {
     };
   }
 
-  private resolveBestDualAccountTradeabilityFromBalances(
+  /**
+   * Validates that the given (simulated post-rebalance) balances can produce a
+   * genuinely executable dual-account cycle, using the SAME execution predicate
+   * as the normal cycle path (exchange minimums, price normalization, and
+   * quantization via {@link quantizeAndAdaptDualAccountQuote}).
+   *
+   * This must NOT be weakened to a capacity-only check: capacity > 0 admits dust
+   * states that can never clear exchange minimums, which makes the rebalance
+   * planner schedule rebalances forever (fee-burning infinite loop).
+   */
+  private async resolveBestExecutableDualAccountTradeabilityFromBalances(
+    strategyKey: string,
     params: DualAccountVolumeStrategyParams,
     preferredSide: 'buy' | 'sell',
     price: BigNumber,
+    bestBid: BigNumber,
+    bestAsk: BigNumber,
     makerBalances: DualAccountPairBalances,
     takerBalances: DualAccountPairBalances,
     feeBufferRate: BigNumber,
-  ): DualAccountTradeabilityPlan | null {
-    const preferredTradeability =
-      this.evaluateDualAccountTradeabilityForSideFromBalances(
+  ): Promise<DualAccountTradeabilityPlan | null> {
+    const sides: Array<'buy' | 'sell'> = [
+      preferredSide,
+      preferredSide === 'buy' ? 'sell' : 'buy',
+    ];
+
+    for (const side of sides) {
+      const resolvedAccounts = this.resolveDualAccountCycleAccountsFromBalances(
         params,
-        preferredSide,
+        side,
         price,
         makerBalances,
         takerBalances,
         feeBufferRate,
       );
 
-    if (preferredTradeability) {
-      return preferredTradeability;
+      const execution =
+        await this.evaluateDualAccountExecutionForSideWithAccounts(
+          strategyKey,
+          params,
+          side,
+          resolvedAccounts,
+          price,
+          // Deterministic variance sample: validation must not depend on luck.
+          0.5,
+          bestBid,
+          bestAsk,
+          feeBufferRate,
+        );
+
+      if (!execution) {
+        continue;
+      }
+
+      return {
+        side: execution.side,
+        resolvedAccounts: execution.resolvedAccounts,
+        profile: execution.profile,
+        capacity:
+          execution.resolvedAccounts.capacity ?? execution.adjustedQuote.qty,
+      };
     }
 
-    return this.evaluateDualAccountTradeabilityForSideFromBalances(
-      params,
-      preferredSide === 'buy' ? 'sell' : 'buy',
-      price,
-      makerBalances,
-      takerBalances,
-      feeBufferRate,
-    );
-  }
-
-  private evaluateDualAccountTradeabilityForSideFromBalances(
-    params: DualAccountVolumeStrategyParams,
-    side: 'buy' | 'sell',
-    price: BigNumber,
-    makerBalances: DualAccountPairBalances,
-    takerBalances: DualAccountPairBalances,
-    feeBufferRate: BigNumber,
-  ): DualAccountTradeabilityPlan | null {
-    const resolvedAccounts = this.resolveDualAccountCycleAccountsFromBalances(
-      params,
-      side,
-      price,
-      makerBalances,
-      takerBalances,
-      feeBufferRate,
-    );
-    const profile = this.resolveBehaviorProfile(
-      params,
-      resolvedAccounts.makerAccountLabel,
-    );
-
-    if (!this.isWithinProfileWindow(profile)) {
-      return null;
-    }
-
-    const capacity = resolvedAccounts.capacity;
-
-    if (!capacity || !capacity.isFinite() || capacity.isLessThanOrEqualTo(0)) {
-      return null;
-    }
-
-    return {
-      side,
-      resolvedAccounts,
-      profile,
-      capacity,
-    };
+    return null;
   }
 
   private cloneDualAccountPairBalances(

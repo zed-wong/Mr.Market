@@ -3,6 +3,7 @@
 ## 2026-06-13
 
 - Remove the efficient dual-account runtime cycle panel from the admin direct order details account-routing dialog so that routing focuses only on maker/taker account labels.
+- Fix efficient dual-account taker-only mismatch recovery: when the inline taker leg fills but the maker leg has zero fill, the settled cycle now enters `paired_fill_mismatch` repair mode, and the optimal planner now attempts an IOC rebalance before returning empty actions when no sustainable candidate has base inventory.
 - Fix partial IOC fill settlement without a matched tracked-order snapshot: when the first settlement payload carries `qty` larger than `cumulativeQty`, settlement now caps the delta at cumulative fill so repair rebalance orders do not over-credit inventory and trip reservation mismatch pauses, while normal delta fills keep their original cumulative idempotency key.
 - Fix efficient dual-account repair ticks after paired fill mismatches: repair mode now builds IOC rebalance intents from tracked best bid/ask prices instead of passing zero prices to the planner, so strategies no longer remain `running` while returning empty actions after `repairRequired=true`.
 

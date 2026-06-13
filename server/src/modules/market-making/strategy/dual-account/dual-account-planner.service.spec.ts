@@ -510,6 +510,45 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
     }
   });
 
+  it('does not schedule a rebalance when the post-rebalance state still cannot sustain an executable cycle', async () => {
+    // Reproduces the production infinite-rebalance loop: the rebalance ORDER
+    // itself clears exchange minimums ($10 notional), so a capacity-only future
+    // check would schedule it forever. But the counterparty account holds only
+    // dust quote (0.5), so no post-rebalance pairing can ever clear costMin.
+    const { planner, intentStore } = buildPlanner({
+      bestBid: '99',
+      bestAsk: '101',
+      balances: {
+        'account-a': buildBalances(0, 50),
+        'account-b': buildBalances(0, 0.5),
+      },
+      rules: {
+        amountMin: 0.001,
+        costMin: 10,
+        makerFee: 0.001,
+        takerFee: 0.001,
+      },
+    });
+    const randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0.5);
+
+    try {
+      await expect(
+        planner.buildDualAccountBestCapacityVolumeActions(
+          'rebalance-loop-strategy',
+          {
+            ...baseParams,
+            baseTradeAmount: 0.1,
+            maxOrderAmount: 0.1,
+          },
+          '2026-06-13T13:19:00.000Z',
+        ),
+      ).resolves.toEqual([]);
+      expect(intentStore.createLimitOrderIntent).not.toHaveBeenCalled();
+    } finally {
+      randomSpy.mockRestore();
+    }
+  });
+
   it('does not schedule optimal volume when capacity falls below exchange notional minimum', async () => {
     const { planner, intentStore } = buildPlanner({
       bestBid: '53',
@@ -543,6 +582,49 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
         ),
       ).resolves.toEqual([]);
       expect(intentStore.createLimitOrderIntent).not.toHaveBeenCalled();
+    } finally {
+      randomSpy.mockRestore();
+    }
+  });
+
+  it('schedules an optimal rebalance when no sustainable candidate has base inventory', async () => {
+    const { planner } = buildPlanner({
+      bestBid: '100',
+      bestAsk: '101',
+      balances: {
+        'account-a': buildBalances(0, 1_000),
+        'account-b': buildBalances(0, 500),
+      },
+      rules: {
+        amountMin: 0.001,
+        costMin: 10,
+        makerFee: 0.001,
+        takerFee: 0.001,
+      },
+    });
+    const randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0.5);
+
+    try {
+      const actions = await planner.buildOptimalDualAccountVolumeActions(
+        'quote-only-optimal-strategy',
+        baseParams,
+        '2026-06-13T14:10:00.000Z',
+      );
+
+      expect(actions).toEqual([
+        expect.objectContaining({
+          type: 'CREATE_LIMIT_ORDER',
+          side: 'buy',
+          postOnly: false,
+          timeInForce: 'IOC',
+          metadata: expect.objectContaining({
+            role: 'rebalance',
+            rebalance: true,
+            rebalanceReason: 'no_tradable_side',
+            preferredSide: 'buy',
+          }),
+        }),
+      ]);
     } finally {
       randomSpy.mockRestore();
     }

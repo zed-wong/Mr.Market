@@ -3436,6 +3436,34 @@ describe('StrategyService', () => {
     expect(nextParams.repairReason).toBe('paired_fill_mismatch');
   });
 
+  it('marks repair mode when only the inline taker leg fills', async () => {
+    const nextParams =
+      await dualAccountVolumeStrategyController.finalizeSettledDualAccountCycle(
+        { strategyKey: 'dual-key' } as any,
+        {
+          completedCycles: 0,
+          activeCycle: {
+            cycleId: 'cycle-taker-only',
+            tickId: 'tick-1',
+            orderId: 'order-1',
+            makerSide: 'buy',
+            makerAccountLabel: 'maker',
+            takerAccountLabel: 'taker',
+            price: '100',
+            requestedQty: '1',
+            makerFilledQty: '0',
+            takerFilledQty: '0.2',
+            matchedFilledQty: '0',
+            matchedQuoteVolume: '0',
+          },
+        } as any,
+      );
+
+    expect(nextParams.completedCycles).toBe(0);
+    expect(nextParams.repairRequired).toBe(true);
+    expect(nextParams.repairReason).toBe('paired_fill_mismatch');
+  });
+
   it('accumulates matched quote volume when a dual-account cycle settles with symmetric fills', async () => {
     const nextParams =
       await dualAccountVolumeStrategyController.finalizeSettledDualAccountCycle(
