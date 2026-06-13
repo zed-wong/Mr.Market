@@ -2,7 +2,6 @@ import { Injectable, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
-import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
 
@@ -23,6 +22,7 @@ import { StrategyMarketDataProviderService } from '../data/strategy-market-data-
 import * as dualAccountConfig from '../dual-account/dual-account-config';
 import { DualAccountPlannerService } from '../dual-account/dual-account-planner.service';
 import { RuntimeObservationService } from '../observation/runtime-observation.service';
+import { DualAccountRuntimeStateService } from '../runtime/dual-account-runtime-state.service';
 import { StrategySessionRegistryService } from '../runtime/strategy-session-registry.service';
 import { sanitizeVolumeCadenceMs } from './volume-controller.helpers';
 
@@ -50,6 +50,8 @@ export class DualAccountVolumeStrategyController implements StrategyController {
     private readonly strategyMarketDataProviderService?: StrategyMarketDataProviderService,
     @Optional()
     private readonly runtimeObservationService?: RuntimeObservationService,
+    @Optional()
+    private readonly dualAccountRuntimeStateService?: DualAccountRuntimeStateService,
   ) {}
 
   getCadenceMs(parameters: Record<string, unknown>): number {
@@ -210,57 +212,9 @@ export class DualAccountVolumeStrategyController implements StrategyController {
     session: StrategyRuntimeSession,
     actions: ExecutorAction[],
   ): Promise<void> {
-    if (actions.length === 0) {
-      return;
-    }
-
-    const activeBeforePersist = this.getActiveSession(session.strategyKey);
-
-    if (!this.isSameActiveSession(activeBeforePersist, session)) {
-      this.logger.warn(
-        `Skipping stale dual-account volume tick before persist for ${session.strategyKey}: active session changed`,
-      );
-
-      return;
-    }
-
-    const params =
-      activeBeforePersist.params as DualAccountVolumeStrategyParams;
-    const persistedStrategy =
-      await this.getStrategyInstanceRepository().findOne({
-        where: { strategyKey: session.strategyKey },
-      });
-    const persistedParams = persistedStrategy?.parameters as
-      | Partial<DualAccountVolumeStrategyParams>
-      | undefined;
-    const mergedParams = dualAccountConfig.mergeDualAccountConfigIntoRuntime(
-      params,
-      persistedParams,
-    );
-    const nextParams = this.getDualAccountPlanner().buildPublishedParams(
-      mergedParams,
+    await this.getDualAccountRuntimeStateService().onActionsPublished(
+      session,
       actions,
-      this.strategyMarketDataProviderService?.hasTrackedOrderBook(
-        mergedParams.exchangeName,
-        mergedParams.symbol,
-      ) || false,
-    );
-
-    await this.persistStrategyParams(session.strategyKey, nextParams);
-
-    const currentSession = this.getActiveSession(session.strategyKey);
-
-    if (this.isSameActiveSession(currentSession, session)) {
-      currentSession.params = nextParams;
-      currentSession.cadenceMs =
-        dualAccountConfig.resolveNextDualAccountCadenceMs(nextParams);
-      this.setActiveSession(session.strategyKey, currentSession);
-
-      return;
-    }
-
-    this.logger.warn(
-      `Skipping stale dual-account volume tick write-back for ${session.strategyKey}: active session changed`,
     );
   }
 
@@ -292,32 +246,10 @@ export class DualAccountVolumeStrategyController implements StrategyController {
     session: StrategyRuntimeSession,
     params: DualAccountVolumeStrategyParams,
   ): Promise<DualAccountVolumeStrategyParams> {
-    const result = this.getDualAccountPlanner().finalizeSettledCycle(params);
-
-    if (!params.activeCycle || result.params === params) {
-      return params;
-    }
-
-    if (result.underHedged) {
-      const makerFilledQty = new BigNumber(
-        params.activeCycle.makerFilledQty || 0,
-      );
-      const takerFilledQty = new BigNumber(
-        params.activeCycle.takerFilledQty || 0,
-      );
-
-      this.logger.warn(
-        `Dual-account cycle settled under-hedged for ${
-          session.strategyKey
-        }: cycle=${
-          params.activeCycle.cycleId
-        } makerFilledQty=${makerFilledQty.toFixed()} takerFilledQty=${takerFilledQty.toFixed()}`,
-      );
-    }
-
-    await this.persistStrategyParams(session.strategyKey, result.params);
-
-    return result.params;
+    return await this.getDualAccountRuntimeStateService().finalizeSettledCycle(
+      session,
+      params,
+    );
   }
 
   private async buildDualAccountSessionActions(
@@ -473,19 +405,6 @@ export class DualAccountVolumeStrategyController implements StrategyController {
     );
   }
 
-  private async persistStrategyParams(
-    strategyKey: string,
-    params: DualAccountVolumeStrategyParams,
-  ): Promise<void> {
-    await this.getStrategyInstanceRepository().update(
-      { strategyKey },
-      {
-        parameters: params as Record<string, any>,
-        updatedAt: getRFC3339Timestamp(),
-      },
-    );
-  }
-
   private getStrategyInstanceRepository(): Repository<StrategyInstance> {
     if (!this.strategyInstanceRepository) {
       throw new Error('StrategyInstance repository is not available');
@@ -616,5 +535,13 @@ export class DualAccountVolumeStrategyController implements StrategyController {
     }
 
     return this.dualAccountPlannerService;
+  }
+
+  private getDualAccountRuntimeStateService(): DualAccountRuntimeStateService {
+    if (!this.dualAccountRuntimeStateService) {
+      throw new Error('DualAccountRuntimeStateService is not available');
+    }
+
+    return this.dualAccountRuntimeStateService;
   }
 }

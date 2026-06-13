@@ -47,6 +47,7 @@ import { RuntimeObservationService } from './observation/runtime-observation.ser
 import { AdaptivePmmStateService } from './pmm/adaptive-pmm-state.service';
 import { QuotePlannerService } from './quote/quote-planner.service';
 import { StrategyStartupRecoveryService } from './recovery/strategy-startup-recovery.service';
+import { DualAccountRuntimeStateService } from './runtime/dual-account-runtime-state.service';
 import { StrategyInstanceLifecycleService } from './runtime/strategy-instance-lifecycle.service';
 import { StrategySessionRegistryService } from './runtime/strategy-session-registry.service';
 import { StrategyWatcherManagerService } from './runtime/strategy-watcher-manager.service';
@@ -99,6 +100,7 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
     StrategyInstanceLifecycleService,
     StrategySessionRegistryService,
     StrategyWatcherManagerService,
+    DualAccountRuntimeStateService,
     OrderScopedBalanceQueryService,
     DualAccountPlannerService,
     ArbitrageStrategyController,

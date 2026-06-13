@@ -5,16 +5,28 @@ describe('Efficient Dual Account Volume architecture invariants', () => {
   const readSource = (relativePath: string): string =>
     readFileSync(join(process.cwd(), 'src', relativePath), 'utf8');
 
+  const controllerPaths = [
+    'modules/market-making/strategy/controllers/arbitrage-strategy.controller.ts',
+    'modules/market-making/strategy/controllers/pure-market-making-strategy.controller.ts',
+    'modules/market-making/strategy/controllers/volume-strategy.controller.ts',
+    'modules/market-making/strategy/controllers/efficient-dual-account-volume-strategy.controller.ts',
+    'modules/market-making/strategy/controllers/dual-account-volume-strategy.controller.ts',
+    'modules/market-making/strategy/controllers/dual-account-best-capacity-volume-strategy.controller.ts',
+    'modules/market-making/strategy/controllers/time-indicator-strategy.controller.ts',
+  ];
+  const forbiddenControllerIo = [
+    'placeLimitOrder',
+    'cancelOrder',
+    'fetchBalance',
+    'fetchOrderBook',
+    'fetchOrder(',
+    'fetchOrderByClientOrderId',
+    'loadTradingRules',
+  ];
+
   it('keeps strategy controllers free of balance and exchange mutations', () => {
-    const controllerSources = [
-      'modules/market-making/strategy/controllers/efficient-dual-account-volume-strategy.controller.ts',
-      'modules/market-making/strategy/controllers/dual-account-volume-strategy.controller.ts',
-      'modules/market-making/strategy/controllers/dual-account-best-capacity-volume-strategy.controller.ts',
-    ].map(readSource);
+    const controllerSources = controllerPaths.map(readSource);
     const forbiddenControllerCalls = [
-      'placeLimitOrder',
-      'cancelOrder',
-      'fetchBalance',
       'creditDeposit',
       'lockFunds',
       'unlockFunds',
@@ -28,7 +40,10 @@ describe('Efficient Dual Account Volume architecture invariants', () => {
       expect(source).not.toContain('trackedOrderShutdownService');
       expect(source).not.toContain('stopStrategyForUser');
 
-      for (const forbiddenCall of forbiddenControllerCalls) {
+      for (const forbiddenCall of [
+        ...forbiddenControllerIo,
+        ...forbiddenControllerCalls,
+      ]) {
         expect(source).not.toContain(forbiddenCall);
       }
     }
@@ -48,9 +63,9 @@ describe('Efficient Dual Account Volume architecture invariants', () => {
       plannerSource.split('async evaluateEfficientDualAccountReadiness')[0] +
       plannerSource.split('async buildDualAccountVolumeActions')[1];
 
-    expect(actionPlanningSource).not.toContain('fetchBalance');
-    expect(actionPlanningSource).not.toContain('fetchOrderBook');
-    expect(actionPlanningSource).not.toContain('loadTradingRules');
+    for (const forbiddenCall of forbiddenControllerIo) {
+      expect(actionPlanningSource).not.toContain(forbiddenCall);
+    }
   });
 
   it('keeps generic ledger adjustment confined to typed fill settlement', () => {
