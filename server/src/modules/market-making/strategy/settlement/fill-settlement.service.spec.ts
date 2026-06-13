@@ -333,4 +333,73 @@ describe('FillSettlementService', () => {
       expect.stringContaining('Fill fee debit requires manual review'),
     );
   });
+
+  it('caps an unmatched first settlement delta at cumulative quantity', async () => {
+    const service = new FillSettlementService(balanceLedgerService as any);
+
+    const settlementFill = service.buildIncrementalSettlementFill(undefined, {
+      exchangeOrderId: 'ex-1',
+      side: 'buy',
+      price: '53.35',
+      qty: '0.334',
+      cumulativeQty: '0.138',
+    });
+
+    expect(settlementFill).toEqual(
+      expect.objectContaining({
+        qty: '0.138',
+        cumulativeQty: '0.138',
+      }),
+    );
+
+    await expect(
+      service.settleFill({
+        strategyKey: 'strategy-1',
+        orderId: 'order-1',
+        userId: 'user-1',
+        pair: 'XIN/USDT',
+        fill: settlementFill!,
+      }),
+    ).resolves.toBe(true);
+
+    expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(1, {
+      orderId: 'order-1',
+      userId: 'user-1',
+      assetId: 'USDT',
+      amount: '-7.3623',
+      idempotencyKey:
+        'mm-fill:strategy-1:order-1:default:ex-1:buy:0.138:quote',
+      refType: 'market_making_fill',
+      refId: 'ex-1',
+    });
+    expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(2, {
+      orderId: 'order-1',
+      userId: 'user-1',
+      assetId: 'XIN',
+      amount: '0.138',
+      idempotencyKey:
+        'mm-fill:strategy-1:order-1:default:ex-1:buy:0.138:base',
+      refType: 'market_making_fill',
+      refId: 'ex-1',
+    });
+  });
+
+  it('keeps explicit delta quantity when it is below cumulative quantity', () => {
+    const service = new FillSettlementService(balanceLedgerService as any);
+
+    const settlementFill = service.buildIncrementalSettlementFill(undefined, {
+      exchangeOrderId: 'ex-1',
+      side: 'buy',
+      price: '100',
+      qty: '0.5',
+      cumulativeQty: '1.5',
+    });
+
+    expect(settlementFill).toEqual(
+      expect.objectContaining({
+        qty: '0.5',
+        cumulativeQty: '1.5',
+      }),
+    );
+  });
 });

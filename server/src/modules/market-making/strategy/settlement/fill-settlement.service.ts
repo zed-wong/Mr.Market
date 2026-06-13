@@ -213,6 +213,22 @@ export class FillSettlementService {
     fill: SettlementFill,
   ): SettlementFill | null {
     if (!trackedOrder) {
+      const fillCumulative = new BigNumber(this.readString(fill.cumulativeQty));
+      const fillQty = new BigNumber(this.readString(fill.qty));
+
+      if (
+        fillCumulative.isFinite() &&
+        fillCumulative.isGreaterThan(0) &&
+        fillQty.isFinite() &&
+        fillQty.isGreaterThan(fillCumulative)
+      ) {
+        return {
+          ...fill,
+          qty: fillCumulative.toFixed(),
+          cumulativeQty: fillCumulative.toFixed(),
+        };
+      }
+
       return {
         ...fill,
         cumulativeQty: fill.cumulativeQty || fill.qty,

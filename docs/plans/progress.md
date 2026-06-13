@@ -1,5 +1,10 @@
 # Execution Flow Changelog
 
+## 2026-06-13
+
+- Fix partial IOC fill settlement without a matched tracked-order snapshot: when the first settlement payload carries `qty` larger than `cumulativeQty`, settlement now caps the delta at cumulative fill so repair rebalance orders do not over-credit inventory and trip reservation mismatch pauses, while normal delta fills keep their original cumulative idempotency key.
+- Fix efficient dual-account repair ticks after paired fill mismatches: repair mode now builds IOC rebalance intents from tracked best bid/ask prices instead of passing zero prices to the planner, so strategies no longer remain `running` while returning empty actions after `repairRequired=true`.
+
 ## 2026-06-11
 
 - Add an in-doubt create-order path for market-making intent execution: ambiguous placement errors now reconcile by deterministic `clientOrderId` before releasing reservations, unresolved placements persist as `pending_create` tracked orders without generic balance adjustment, and the tracker can recover those orders by client id on later polling.
