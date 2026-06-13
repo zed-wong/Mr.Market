@@ -7,6 +7,7 @@
 3. Fix order id inconsistency
 4. Design DEX support to support hyperliquid and PancakeSwap/Uniswap etc.. 
 5. Design a great bussiness model
+6. Add Exin-like spot support
 ---
 
 ## 3. Volume Strategy
@@ -22,6 +23,7 @@
 ## 4. Product Loop / Funding Lifecycle
 
 - Complete funding lifecycle: withdraw to exchange, track exchange deposit, auto-join campaign, then start market making.
+- Add Exin-like spot support as a simple spot trading product path.
 - Complete Mixin campaign flow in `web3-interface`.
 - Complete EVM wallet campaign flow in `web3-interface`.
 - Improve market-making order list/detail pages so users can see joined campaigns, created orders, and produced volume.
