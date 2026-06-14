@@ -122,7 +122,7 @@ The map is based on the root wiring in `server/src/app.module.ts` and each `*.mo
   - Main role: build parseable local clientOrderId values and exchange-safe submitted clientOrderId values.
 - `modules/market-making/ledger/ledger.module.ts`
   - Depends on: TypeORM ledger entities, `DurabilityModule`.
-  - Main role: order-scoped market-making balance ledger. Mutations append immutable `LedgerEntry` rows keyed by `orderId + assetId`, update `MarketMakingOrderBalance`, reject same-key/different-payload idempotency replays, and can rebuild an order balance from ledger facts.
+  - Main role: order-scoped market-making balance ledger. Mutations append immutable `LedgerEntry` rows keyed by `ledgerOrderId + assetId`, update `MarketMakingOrderBalance`, reject same-key/different-payload idempotency replays, and can rebuild an order balance from ledger facts. The current ledger/balance storage column named `orderId` semantically stores `ledgerOrderId`; `userOrderId` is the user-facing aggregation identity.
   - Reservation boundary: `OrderReservationService` converts limit-order intents into `reserve_lock` / `reserve_release` mutations before exchange placement.
 - `modules/market-making/durability/durability.module.ts`
   - Depends on: TypeORM durability entities.

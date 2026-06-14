@@ -12,7 +12,7 @@ Source of truth: `docs/` yellowpaper.
 
 ## Invariants
 - **Ledger is the balance source of truth.** No in-memory-only balances.
-- **Market-making balance is scoped by `orderId + asset`**, not `userId + asset`.
+- **Market-making balance is scoped by `ledgerOrderId + asset`**, not `userId + asset`; user-facing reads aggregate by `userOrderId`.
 - **All balance changes** → immutable ledger entries, idempotent, transactional.
 - **External orders** → risk check → order-level reservation before proceeding.
 - **Strategy controllers** produce actions/intents only. They must **never** place exchange orders or mutate balances.

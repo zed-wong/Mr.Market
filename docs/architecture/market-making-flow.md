@@ -16,7 +16,9 @@ Market making is split into three layers:
 Core invariants:
 
 - Ledger is the balance source of truth.
-- Market-making balances are scoped by `orderId + assetId`.
+- Market-making balances are scoped by `ledgerOrderId + assetId`.
+- User-facing order reads aggregate by `userOrderId`; dual-account maker/taker
+  ledger scopes may share one `userOrderId`.
 - All balance changes are immutable, idempotent ledger entries.
 - Strategy controllers only produce actions/intents.
 - Intent execution owns risk checks, reservation, exchange mutation, tracked
@@ -95,7 +97,7 @@ The active runtime is tick-driven, intent-driven, and uses pooled executors.
 flowchart TD
   A[User creates MM intent] --> B[Mixin snapshot intake]
   B --> C[Validate payer, pair, fee requirements]
-  C --> D[Ledger deposit_credit orderId + assetId]
+  C --> D[Ledger deposit_credit ledgerOrderId + assetId]
   D --> E[check_payment_complete]
   E -->|incomplete timeout invalid| F[failed + refund]
   E -->|complete| G[Persist MarketMakingOrder with strategySnapshot]
@@ -137,7 +139,9 @@ reserved/system-managed fields before accepting overrides.
 6. Updates `PaymentState`.
 7. Queues `check_payment_complete`.
 
-Ledger entry scope is `orderId + assetId`, not `userId + assetId`.
+Ledger entry scope is `ledgerOrderId + assetId`, not `userId + assetId`.
+The current ledger and balance storage column named `orderId` semantically
+stores `ledgerOrderId`.
 
 ### 2. Payment Completion
 
@@ -462,10 +466,10 @@ Common ledger entry types:
 
 Rules:
 
-- Balance read model is `MarketMakingOrderBalance(orderId, assetId)`.
+- Balance read model is `MarketMakingOrderBalance(ledgerOrderId, assetId)`.
 - Ledger entries are append-only.
 - Mutations are idempotent by key and reject same-key/different-payload replays.
-- Mutation locking is scoped by `orderId + assetId`.
+- Mutation locking is scoped by `ledgerOrderId + assetId`.
 - Rebuild can compare read model against ledger facts.
 - Reservation can be paused when reconciliation finds mismatches.
 

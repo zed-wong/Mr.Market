@@ -187,7 +187,7 @@
         <rect x="205" y="575" width="140" height="80" rx="8" fill="rgba(76, 29, 149, 0.4)" stroke="#a78bfa" stroke-width="1.5"/>
         <text x="275" y="600" fill="white" font-size="12" font-weight="600" text-anchor="middle">LedgerEntry</text>
         <text x="275" y="620" fill="#94a3b8" font-size="9" text-anchor="middle">deposit_credit</text>
-        <text x="275" y="636" fill="#94a3b8" font-size="9" text-anchor="middle">orderId + asset</text>
+        <text x="275" y="636" fill="#94a3b8" font-size="9" text-anchor="middle">ledgerOrderId + asset</text>
 
         <!-- OrderBalance -->
         <rect x="465" y="575" width="120" height="80" rx="8" fill="#0f172a"/>
@@ -272,7 +272,7 @@
         <ul>
           <li>• Ledger remains the balance source of truth.</li>
           <li>• OrderFunded confirmations create typed deposit_credit.</li>
-          <li>• Balance is scoped by orderId + asset, never by wallet alone.</li>
+          <li>• Balance is scoped by ledgerOrderId + asset, never by wallet alone.</li>
           <li>• idempotency key: chainId + txHash + logIndex.</li>
           <li>• Any mismatch enters manual_review, not generic adjustment.</li>
         </ul>

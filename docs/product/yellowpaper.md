@@ -93,7 +93,7 @@ Near term: Mixin deposits and refunds. Later: EVM, Solana, and other on-chain en
 
 ### 2.3 Order Balance Model
 
-Order Balance is the read model for runtime quota checks and reservation. Balances are bound to specific Mr.Market orders, not merely to users or exchange accounts. Orders, fills, cancellations, fees, and PnL must all be expressed through Ledger Entry and update the order-level balance view.
+Order Balance is the read model for runtime quota checks and reservation. Balances are bound to a ledger order scope, not merely to users or exchange accounts. `userOrderId` is the user-facing order identity used for order detail, PnL, and reporting aggregation. `ledgerOrderId` is the balance bucket identity used by Ledger Entry and OrderBalance. Single-account orders usually have the same `userOrderId` and `ledgerOrderId`; dual-account orders may share one `userOrderId` while using separate ledger scopes such as maker and taker. Orders, fills, cancellations, fees, and PnL must all be expressed through Ledger Entry and update the order-level balance view.
 
 ### 2.4 Balance Fields
 
@@ -183,7 +183,7 @@ Reservation itself is not the final balance source of truth. All balance effects
 
 1. Before creating an external order, order-level `reserve_lock` must succeed;
 2. One active reservation can bind only one explicit intent or one external order;
-3. `reserve_lock` must be serialized by `orderId + asset` and must not make `available` less than 0;
+3. `reserve_lock` must be serialized by `ledgerOrderId + asset` and must not make `available` less than 0;
 4. If external order placement fails, is rejected, or does not return a valid order ID, the locked quota must be released or moved to `manual_review`;
 5. When an order is cancelled, the unfilled portion must be `reserve_release`;
 6. When an external order partially fills, the filled portion is `consumed`, and the unfilled portion remains `locked` or is `released`;
@@ -268,7 +268,7 @@ Every operation that changes a balance must provide a stable `idempotencyKey`. W
 
 #### Concurrency Control
 
-`OrderBalance` updates must be serialized by `orderId + asset`. The implementation may use database row locks, optimistic lock versioning, or an equivalent mechanism. Regardless of the mechanism, it must guarantee:
+`OrderBalance` updates must be serialized by `ledgerOrderId + asset`. The implementation may use database row locks, optimistic lock versioning, or an equivalent mechanism. Regardless of the mechanism, it must guarantee:
 
 1. `available` cannot be deducted below zero by concurrent operations;
 2. The same available balance cannot be locked by two reservations at the same time;
@@ -645,7 +645,7 @@ Tick
 | Different exchange + pair | May run in parallel |
 | Same exchange + pair | Share orderbook and account state; must be serialized or explicitly locked |
 | Same strategy | Intents execute serially |
-| Same `orderId + asset` | Reservation / balance mutation executes serially |
+| Same `ledgerOrderId + asset` | Reservation / balance mutation executes serially |
 
 #### 4.4.5 Invariants
 
