@@ -409,8 +409,6 @@ export class StrategySessionRegistryService {
 
     if (
       strategyType === 'volume' ||
-      strategyType === 'dualAccountVolume' ||
-      strategyType === 'dualAccountBestCapacityVolume' ||
       strategyType === 'efficientDualAccountVolume'
     ) {
       const exchange = String(

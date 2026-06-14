@@ -363,31 +363,12 @@ export const EFFICIENT_DUAL_ACCOUNT_STRATEGY_KEY =
 
 const EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPES = new Set([
   EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE,
-  "optimalDualAccountVolume",
 ]);
 
 const EFFICIENT_DUAL_ACCOUNT_STRATEGY_KEYS = new Set([
   EFFICIENT_DUAL_ACCOUNT_STRATEGY_KEY,
   "efficient-dual-account-volume",
   "efficient_dual_account_volume",
-  "optimal-dual-account-volume",
-  "optimal_dual_account_volume",
-]);
-
-const LEGACY_DUAL_ACCOUNT_CONTROLLER_TYPES = new Set([
-  "dualAccountVolume",
-  "dualAccountBestCapacityVolume",
-]);
-
-const LEGACY_DUAL_ACCOUNT_STRATEGY_NAMES = new Set([
-  "dual account volume",
-  "dual account volume best capacity",
-  "dual account best capacity volume",
-]);
-
-const LEGACY_DUAL_ACCOUNT_STRATEGY_KEYS = new Set([
-  "dual-account-volume",
-  "dual-account-best-capacity-volume",
 ]);
 
 const SUPPORTED_EFFICIENT_DUAL_ACCOUNT_MODES: EfficientDualAccountVolumeMode[] =
@@ -463,12 +444,6 @@ export function isEfficientDualAccountControllerType(
   );
 }
 
-export function isLegacyDualAccountControllerType(
-  controllerType: unknown,
-): boolean {
-  return LEGACY_DUAL_ACCOUNT_CONTROLLER_TYPES.has(String(controllerType || ""));
-}
-
 export function isEfficientDualAccountStrategy(
   strategy: DirectStrategyOptionLike | null | undefined,
 ): boolean {
@@ -483,7 +458,7 @@ export function isEfficientDualAccountStrategy(
     isEfficientDualAccountControllerType(strategy.controllerType) ||
     EFFICIENT_DUAL_ACCOUNT_STRATEGY_KEYS.has(key) ||
     EFFICIENT_DUAL_ACCOUNT_STRATEGY_KEYS.has(normalizedKey) ||
-    /(?:efficient|optimal)\s+dual\s+account\s+volume/i.test(name)
+    /efficient\s+dual\s+account\s+volume/i.test(name)
   );
 }
 
@@ -493,19 +468,6 @@ function normalizeDirectStrategyText(value: unknown): string {
     .toLowerCase()
     .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ");
-}
-
-function isLegacyDualAccountStrategy(
-  strategy: DirectStrategyOptionLike | null | undefined,
-): boolean {
-  if (!strategy) return false;
-  const key = normalizeDirectStrategyText(strategy.key).replace(/\s+/g, "-");
-  const name = normalizeDirectStrategyText(strategy.name);
-  return (
-    isLegacyDualAccountControllerType(strategy.controllerType) ||
-    LEGACY_DUAL_ACCOUNT_STRATEGY_KEYS.has(key) ||
-    LEGACY_DUAL_ACCOUNT_STRATEGY_NAMES.has(name)
-  );
 }
 
 function isPureMarketMakingStrategy(
@@ -526,7 +488,6 @@ export function filterDirectCreateStrategies<T extends DirectStrategyOptionLike>
   return strategies.filter(
     (strategy) =>
       isPureMarketMakingStrategy(strategy) ||
-      isLegacyDualAccountStrategy(strategy) ||
       isEfficientDualAccountStrategy(strategy),
   );
 }
@@ -1208,19 +1169,13 @@ export function resolveInventorySkewAllocation(
 }
 
 export function isDualDirectOrderControllerType(controllerType: unknown): boolean {
-  return (
-    isLegacyDualAccountControllerType(controllerType) ||
-    isEfficientDualAccountControllerType(controllerType)
-  );
+  return isEfficientDualAccountControllerType(controllerType);
 }
 
 export function isBestCapacityDirectOrderControllerType(
   controllerType: unknown,
 ): boolean {
-  return (
-    controllerType === "dualAccountBestCapacityVolume" ||
-    isEfficientDualAccountControllerType(controllerType)
-  );
+  return isEfficientDualAccountControllerType(controllerType);
 }
 
 export function isSchemaDrivenDirectOrderControllerType(
@@ -1316,13 +1271,8 @@ export function normalizeConfigOverrides(
     const num = Number(orderAmount);
     const value = isNaN(num) ? orderAmount : num;
 
-    if (
-      controllerType === "dualAccountBestCapacityVolume" ||
-      isEfficientDualAccountStrategy
-    ) {
+    if (isEfficientDualAccountStrategy) {
       accumulator["maxOrderAmount"] = value;
-    } else if (isDualAccountStrategy) {
-      accumulator["baseTradeAmount"] = value;
     } else {
       accumulator["orderAmount"] = value;
     }
@@ -1332,13 +1282,8 @@ export function normalizeConfigOverrides(
     const value = isNaN(num) ? orderSpread : num;
     const fractionalSpread = isNaN(num) ? orderSpread : num / 100;
 
-    if (
-      controllerType === "dualAccountBestCapacityVolume" ||
-      isEfficientDualAccountStrategy
-    ) {
-      // Best-capacity strategy does not use spread configuration.
-    } else if (isDualAccountStrategy) {
-      accumulator["baseIncrementPercentage"] = value;
+    if (isEfficientDualAccountStrategy) {
+      // Efficient dual-account does not use spread configuration.
     } else {
       accumulator["bidSpread"] = fractionalSpread;
       accumulator["askSpread"] = fractionalSpread;
@@ -1367,53 +1312,6 @@ export function normalizeConfigOverrides(
       return accumulator;
     }
 
-    if (controllerType === "dualAccountBestCapacityVolume") {
-      if (dualFields.intervalTime) {
-        const num = Number(dualFields.intervalTime);
-        if (!isNaN(num)) accumulator["interval"] = num;
-      }
-      if (dualFields.targetQuoteVolume) {
-        const num = Number(dualFields.targetQuoteVolume);
-        if (!isNaN(num)) accumulator["dailyVolumeTarget"] = num;
-      }
-
-      return accumulator;
-    }
-
-    if (dualFields.intervalTime) {
-      const num = Number(dualFields.intervalTime);
-      if (!isNaN(num)) accumulator["baseIntervalTime"] = num;
-    }
-    if (dualFields.numTrades) {
-      const num = Number(dualFields.numTrades);
-      if (!isNaN(num)) accumulator["numTrades"] = num;
-    }
-    if (dualFields.pricePushRate) {
-      const num = Number(dualFields.pricePushRate);
-      if (!isNaN(num)) accumulator["pricePushRate"] = num;
-    }
-    if (dualFields.postOnlySide) {
-      accumulator["postOnlySide"] = dualFields.postOnlySide;
-    }
-    if (dualFields.dynamicRoleSwitching) {
-      accumulator["dynamicRoleSwitching"] = true;
-    }
-    if (dualFields.targetQuoteVolume) {
-      const num = Number(dualFields.targetQuoteVolume);
-      if (!isNaN(num)) accumulator["targetQuoteVolume"] = num;
-    }
-    if (dualFields.cadenceVariance) {
-      const num = Number(dualFields.cadenceVariance);
-      if (!isNaN(num)) accumulator["cadenceVariance"] = num;
-    }
-    if (dualFields.tradeAmountVariance) {
-      const num = Number(dualFields.tradeAmountVariance);
-      if (!isNaN(num)) accumulator["tradeAmountVariance"] = num;
-    }
-    if (dualFields.priceOffsetVariance) {
-      const num = Number(dualFields.priceOffsetVariance);
-      if (!isNaN(num)) accumulator["priceOffsetVariance"] = num;
-    }
   }
   return accumulator;
 }

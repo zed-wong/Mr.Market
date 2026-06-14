@@ -2,8 +2,6 @@ export interface StrategyKey {
   type:
     | 'arbitrage'
     | 'pureMarketMaking'
-    | 'dualAccountVolume'
-    | 'dualAccountBestCapacityVolume'
     | 'efficientDualAccountVolume'
     | 'volume'
     | 'timeIndicator'

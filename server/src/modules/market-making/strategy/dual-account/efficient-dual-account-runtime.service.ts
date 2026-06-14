@@ -10,31 +10,37 @@ import {
   TrackedOrder,
 } from '../../trackers/exchange-order-tracker.service';
 import { ExecutorAction } from '../config/executor-action.types';
-import { ExecuteDualAccountVolumeStrategyDto } from '../config/strategy.dto';
-import type {
-  StrategyController,
-  StrategyControllerFacade,
-  StrategyRuntimeSession,
-  StrategyTickContext,
-} from '../config/strategy-controller.types';
+import type { StrategyRuntimeSession } from '../config/strategy-controller.types';
 import type { DualAccountVolumeStrategyParams } from '../config/strategy-params.types';
-import { StrategyMarketDataProviderService } from '../data/strategy-market-data-provider.service';
-import * as dualAccountConfig from '../dual-account/dual-account-config';
-import { DualAccountPlannerService } from '../dual-account/dual-account-planner.service';
 import { RuntimeObservationService } from '../observation/runtime-observation.service';
 import { DualAccountRuntimeStateService } from '../runtime/dual-account-runtime-state.service';
 import { StrategySessionRegistryService } from '../runtime/strategy-session-registry.service';
-import { sanitizeVolumeCadenceMs } from './volume-controller.helpers';
+import { StrategyMarketDataProviderService } from '../data/strategy-market-data-provider.service';
+import * as dualAccountConfig from './dual-account-config';
+import {
+  DualAccountPlannerService,
+  type DualAccountReadinessBlockingReason,
+} from './dual-account-planner.service';
 
 const DUAL_ACCOUNT_SOFT_FAILURE_THRESHOLD = 3;
 const DUAL_ACCOUNT_UNSAFE_OUTCOME_THRESHOLD = 5;
 const DUAL_ACCOUNT_SOFT_FAILURE_WINDOW_MS = 5 * 60 * 1000;
+const DUAL_ACCOUNT_NO_PROGRESS_STOP_THRESHOLD = 3;
+
+type EfficientNoProgressReasonCode =
+  | DualAccountReadinessBlockingReason['code']
+  | 'empty_decision_after_ready'
+  | 'empty_decision_without_reason';
+
+type EfficientNoProgressReason = {
+  code: EfficientNoProgressReasonCode;
+  message: string;
+};
 
 @Injectable()
-export class DualAccountVolumeStrategyController implements StrategyController {
-  readonly strategyType = 'dualAccountVolume' as const;
+export class EfficientDualAccountRuntimeService {
   private readonly logger = new CustomLogger(
-    DualAccountVolumeStrategyController.name,
+    EfficientDualAccountRuntimeService.name,
   );
 
   constructor(
@@ -55,64 +61,7 @@ export class DualAccountVolumeStrategyController implements StrategyController {
     private readonly dualAccountRuntimeStateService?: DualAccountRuntimeStateService,
   ) {}
 
-  getCadenceMs(parameters: Record<string, unknown>): number {
-    return sanitizeVolumeCadenceMs(parameters?.baseIntervalTime);
-  }
-
-  async start(
-    config: Record<string, unknown>,
-    service: StrategyControllerFacade,
-  ): Promise<void> {
-    await service.executeDualAccountVolumeStrategy(
-      config as unknown as ExecuteDualAccountVolumeStrategyDto,
-    );
-  }
-
-  async decideActions(ctx: StrategyTickContext): Promise<ExecutorAction[]> {
-    return await this.buildDualAccountVolumeSessionActions(ctx.session, ctx.ts);
-  }
-
-  async onActionsPublished(
-    ctx: StrategyTickContext,
-    actions: ExecutorAction[],
-  ): Promise<void> {
-    await this.onDualAccountVolumeActionsPublished(ctx.session, actions);
-  }
-
-  async rerun(
-    strategyInstance: StrategyInstance,
-    service: StrategyControllerFacade,
-  ): Promise<void> {
-    await service.executeDualAccountVolumeStrategy({
-      ...(strategyInstance.parameters as ExecuteDualAccountVolumeStrategyDto),
-      userId: strategyInstance.userId,
-      clientId: strategyInstance.clientId,
-    });
-  }
-
-  async buildDualAccountVolumeSessionActions(
-    session: StrategyRuntimeSession,
-    ts: string,
-  ): Promise<ExecutorAction[]> {
-    return await this.buildDualAccountSessionActions(
-      session,
-      ts,
-      'classic',
-    );
-  }
-
-  async buildDualAccountBestCapacityVolumeSessionActions(
-    session: StrategyRuntimeSession,
-    ts: string,
-  ): Promise<ExecutorAction[]> {
-    return await this.buildDualAccountSessionActions(
-      session,
-      ts,
-      'best_capacity',
-    );
-  }
-
-  async buildOptimalDualAccountVolumeSessionActions(
+  async buildEfficientDualAccountVolumeSessionActions(
     session: StrategyRuntimeSession,
     ts: string,
   ): Promise<ExecutorAction[]> {
@@ -142,7 +91,7 @@ export class DualAccountVolumeStrategyController implements StrategyController {
     );
 
     if (activeTrackedOrders.length === 0) {
-      latestParams = await this.finalizeSettledDualAccountCycle(
+      latestParams = await this.finalizeSettledEfficientDualAccountCycle(
         session,
         latestParams,
       );
@@ -164,7 +113,6 @@ export class DualAccountVolumeStrategyController implements StrategyController {
       const repairActions = await this.buildRepairOrResumeActions(
         session,
         latestParams,
-        'optimal',
         ts,
       );
 
@@ -202,7 +150,7 @@ export class DualAccountVolumeStrategyController implements StrategyController {
       }
 
       this.logger.warn(
-        `Optimal dual-account volume ${session.strategyKey}: publishing cancel intent for timed-out maker order ${oldestOrder.orderId} age=${orderAge}ms`,
+        `Efficient dual-account volume ${session.strategyKey}: publishing cancel intent for timed-out maker order ${oldestOrder.orderId} age=${orderAge}ms`,
       );
 
       return [
@@ -213,14 +161,20 @@ export class DualAccountVolumeStrategyController implements StrategyController {
       ];
     }
 
-    return await this.getDualAccountPlanner().buildOptimalDualAccountVolumeActions(
+    const actions = await this.buildEfficientDualAccountVolumeActions(
       session.strategyKey,
       latestParams,
       ts,
     );
+
+    if (actions.length > 0) {
+      return actions;
+    }
+
+    return await this.buildNoProgressActionOrWait(session, latestParams, ts);
   }
 
-  async onDualAccountVolumeActionsPublished(
+  async onEfficientDualAccountActionsPublished(
     session: StrategyRuntimeSession,
     actions: ExecutorAction[],
   ): Promise<void> {
@@ -230,31 +184,19 @@ export class DualAccountVolumeStrategyController implements StrategyController {
     );
   }
 
-  async buildDualAccountVolumeActions(
+  async buildEfficientDualAccountVolumeActions(
     strategyKey: string,
     params: DualAccountVolumeStrategyParams,
     ts: string,
   ): Promise<ExecutorAction[]> {
-    return await this.getDualAccountPlanner().buildDualAccountVolumeActions(
+    return await this.getDualAccountPlanner().buildEfficientDualAccountVolumeActions(
       strategyKey,
       params,
       ts,
     );
   }
 
-  async buildDualAccountBestCapacityVolumeActions(
-    strategyKey: string,
-    params: DualAccountVolumeStrategyParams,
-    ts: string,
-  ): Promise<ExecutorAction[]> {
-    return await this.getDualAccountPlanner().buildDualAccountBestCapacityVolumeActions(
-      strategyKey,
-      params,
-      ts,
-    );
-  }
-
-  async finalizeSettledDualAccountCycle(
+  async finalizeSettledEfficientDualAccountCycle(
     session: StrategyRuntimeSession,
     params: DualAccountVolumeStrategyParams,
   ): Promise<DualAccountVolumeStrategyParams> {
@@ -264,139 +206,18 @@ export class DualAccountVolumeStrategyController implements StrategyController {
     );
   }
 
-  private async buildDualAccountSessionActions(
-    session: StrategyRuntimeSession,
-    ts: string,
-    selectionModel: 'classic' | 'best_capacity',
-  ): Promise<ExecutorAction[]> {
-    const activeSession = this.getActiveSession(session.strategyKey);
-    const persistedParams = (
-      await this.getStrategyInstanceRepository().findOne({
-        where: { strategyKey: session.strategyKey },
-      })
-    )?.parameters as Partial<DualAccountVolumeStrategyParams> | undefined;
-    const runtimeParams =
-      (activeSession?.params as DualAccountVolumeStrategyParams) ||
-      (session.params as DualAccountVolumeStrategyParams);
-    let latestParams = dualAccountConfig.mergeDualAccountConfigIntoRuntime(
-      runtimeParams,
-      persistedParams,
-    );
-
-    if (!latestParams.marketMakingOrderId && session.marketMakingOrderId) {
-      latestParams = {
-        ...latestParams,
-        marketMakingOrderId: session.marketMakingOrderId,
-      };
-    }
-
-    const activeTrackedOrders = this.getCancelableTrackedOrders(
-      session.strategyKey,
-    );
-
-    if (activeTrackedOrders.length === 0) {
-      latestParams = await this.finalizeSettledDualAccountCycle(
-        session,
-        latestParams,
-      );
-    }
-
-    if (this.isSameActiveSession(activeSession, session) && activeSession) {
-      activeSession.params = latestParams;
-      activeSession.cadenceMs =
-        dualAccountConfig.resolveNextDualAccountCadenceMs(latestParams);
-      this.setActiveSession(session.strategyKey, activeSession);
-    }
-
-    const completedCycles = Number(latestParams.completedCycles || 0);
-    const tradedQuoteVolume = Number(
-      latestParams.tradedQuoteVolume || activeSession?.tradedQuoteVolume || 0,
-    );
-    const targetQuoteVolume = Number(latestParams.targetQuoteVolume || 0);
-
-    if (latestParams.repairRequired) {
-      const repairActions = await this.buildRepairOrResumeActions(
-        session,
-        latestParams,
-        selectionModel,
-        ts,
-      );
-
-      return repairActions;
-    }
-
-    const maxCompletedCycles = Number(latestParams.numTrades || 0);
-
-    if (maxCompletedCycles > 0 && completedCycles >= maxCompletedCycles) {
-      const activeBeforeStop = this.getActiveSession(session.strategyKey);
-
-      if (!this.isSameActiveSession(activeBeforeStop, session)) {
-        this.logger.warn(
-          `Skipping stale dual-account volume stop for ${session.strategyKey}: active session changed`,
-        );
-
-        return [];
-      }
-
-      return [
-        this.buildStopControllerAction(session, ts, 'completed_cycles_reached'),
-      ];
-    }
-
-    if (targetQuoteVolume > 0 && tradedQuoteVolume >= targetQuoteVolume) {
-      const activeBeforeStop = this.getActiveSession(session.strategyKey);
-
-      if (!this.isSameActiveSession(activeBeforeStop, session)) {
-        this.logger.warn(
-          `Skipping stale dual-account target-volume stop for ${session.strategyKey}: active session changed`,
-        );
-
-        return [];
-      }
-
-      return [
-        this.buildStopControllerAction(session, ts, 'target_volume_reached'),
-      ];
-    }
-
-    const softFailureStopAction = this.buildDualAccountSoftFailureStopAction(
-      session,
-      ts,
-    );
-
-    if (softFailureStopAction) {
-      return [softFailureStopAction];
-    }
-
-    if (activeTrackedOrders.length > 0) {
-      return [];
-    }
-
-    return selectionModel === 'best_capacity'
-      ? await this.buildDualAccountBestCapacityVolumeActions(
-          session.strategyKey,
-          latestParams,
-          ts,
-        )
-      : await this.buildDualAccountVolumeActions(
-          session.strategyKey,
-          latestParams,
-          ts,
-        );
-  }
-
   private async buildRepairRebalanceAction(
     strategyKey: string,
     params: DualAccountVolumeStrategyParams,
     preferredSide: 'buy' | 'sell',
     ts: string,
-  ): Promise<ExecutorAction | null> {
+  ): Promise<{ attempted: boolean; action: ExecutorAction | null }> {
     if (!this.strategyMarketDataProviderService) {
       this.logger.warn(
         `Skipping dual-account repair for ${strategyKey}: market data provider is not available`,
       );
 
-      return null;
+      return { attempted: false, action: null };
     }
 
     const bestBidAsk =
@@ -410,7 +231,7 @@ export class DualAccountVolumeStrategyController implements StrategyController {
         `Skipping dual-account repair for ${strategyKey}: tracked best bid/ask is unavailable`,
       );
 
-      return null;
+      return { attempted: false, action: null };
     }
 
     const bestBid = new BigNumber(bestBidAsk.bestBid);
@@ -429,29 +250,31 @@ export class DualAccountVolumeStrategyController implements StrategyController {
         `Skipping dual-account repair for ${strategyKey}: invalid tracked best bid/ask bid=${bestBidAsk.bestBid} ask=${bestBidAsk.bestAsk}`,
       );
 
-      return null;
+      return { attempted: false, action: null };
     }
 
-    return await this.getDualAccountPlanner().maybeBuildDualAccountRebalanceAction(
-      strategyKey,
-      params,
-      preferredSide,
-      bestBid,
-      bestAsk,
-      price,
-      await this.getDualAccountPlanner().resolveFeeBufferRate(
-        params.exchangeName,
-        params.symbol,
-      ),
-      Number(params.publishedCycles || 0),
-      ts,
-    );
+    const action =
+      await this.getDualAccountPlanner().maybeBuildDualAccountRebalanceAction(
+        strategyKey,
+        params,
+        preferredSide,
+        bestBid,
+        bestAsk,
+        price,
+        await this.getDualAccountPlanner().resolveFeeBufferRate(
+          params.exchangeName,
+          params.symbol,
+        ),
+        Number(params.publishedCycles || 0),
+        ts,
+      );
+
+    return { attempted: true, action };
   }
 
   private async buildRepairOrResumeActions(
     session: StrategyRuntimeSession,
     params: DualAccountVolumeStrategyParams,
-    selectionModel: 'classic' | 'best_capacity' | 'optimal',
     ts: string,
   ): Promise<ExecutorAction[]> {
     const resumedParams: DualAccountVolumeStrategyParams = {
@@ -459,10 +282,9 @@ export class DualAccountVolumeStrategyController implements StrategyController {
       repairRequired: false,
       repairReason: undefined,
     };
-    const resumedActions = await this.buildSelectionModelActions(
+    const resumedActions = await this.buildEfficientDualAccountVolumeActions(
       session.strategyKey,
       resumedParams,
-      selectionModel,
       ts,
     );
     const hasTradeAction = resumedActions.some(
@@ -479,39 +301,143 @@ export class DualAccountVolumeStrategyController implements StrategyController {
       return resumedActions;
     }
 
-    const repairAction = await this.buildRepairRebalanceAction(
+    const repairResult = await this.buildRepairRebalanceAction(
       session.strategyKey,
       params,
       'buy',
       ts,
     );
 
-    return repairAction ? [repairAction] : [];
+    if (repairResult.action) {
+      return [repairResult.action];
+    }
+
+    if (!repairResult.attempted) {
+      return [];
+    }
+
+    const repairNoProgressReason = await this.resolveNoProgressReason(params);
+
+    if (!this.shouldStopRepairAsUnexecutable(repairNoProgressReason)) {
+      return await this.buildNoProgressActionOrWait(
+        session,
+        params,
+        ts,
+        repairNoProgressReason,
+      );
+    }
+
+    return [
+      this.buildStopControllerAction(
+        session,
+        ts,
+        'dual_account_repair_unexecutable',
+      ),
+    ];
   }
 
-  private async buildSelectionModelActions(
-    strategyKey: string,
+  private async buildNoProgressActionOrWait(
+    session: StrategyRuntimeSession,
     params: DualAccountVolumeStrategyParams,
-    selectionModel: 'classic' | 'best_capacity' | 'optimal',
     ts: string,
+    resolvedReason?: EfficientNoProgressReason,
   ): Promise<ExecutorAction[]> {
-    if (selectionModel === 'optimal') {
-      return await this.getDualAccountPlanner().buildOptimalDualAccountVolumeActions(
-        strategyKey,
-        params,
-        ts,
-      );
+    const reason =
+      resolvedReason || (await this.resolveNoProgressReason(params));
+
+    if (this.shouldWaitWithoutCountingNoProgress(params, reason)) {
+      return [];
     }
 
-    if (selectionModel === 'best_capacity') {
-      return await this.buildDualAccountBestCapacityVolumeActions(
-        strategyKey,
-        params,
-        ts,
-      );
+    const nextTickCount =
+      params.lastNoProgressReason === reason.code
+        ? Number(params.consecutiveNoProgressTicks || 0) + 1
+        : 1;
+    const nextParams: DualAccountVolumeStrategyParams = {
+      ...params,
+      consecutiveNoProgressTicks: nextTickCount,
+      lastNoProgressReason: reason.code,
+    };
+    const activeSession = this.getActiveSession(session.strategyKey);
+
+    if (activeSession && !this.isSameActiveSession(activeSession, session)) {
+      return [];
     }
 
-    return await this.buildDualAccountVolumeActions(strategyKey, params, ts);
+    await this.persistStrategyParams(session.strategyKey, nextParams);
+    this.updateActiveSessionParams(session, nextParams);
+
+    if (nextTickCount < DUAL_ACCOUNT_NO_PROGRESS_STOP_THRESHOLD) {
+      this.logger.warn(
+        `Efficient dual-account volume ${session.strategyKey}: no executable action reason=${reason.code} streak=${nextTickCount}/${DUAL_ACCOUNT_NO_PROGRESS_STOP_THRESHOLD} message=${reason.message}`,
+      );
+
+      return [];
+    }
+
+    return [
+      this.buildStopControllerAction(
+        session,
+        ts,
+        `dual_account_no_progress_${reason.code}`,
+        {
+          noProgressReason: reason.code,
+          noProgressMessage: reason.message,
+          noProgressTicks: nextTickCount,
+        },
+      ),
+    ];
+  }
+
+  private async resolveNoProgressReason(
+    params: DualAccountVolumeStrategyParams,
+  ): Promise<EfficientNoProgressReason> {
+    const readiness =
+      await this.getDualAccountPlanner().evaluateEfficientDualAccountReadiness(
+        params,
+      );
+    const [blockingReason] = readiness.blockingReasons;
+
+    if (blockingReason) {
+      return {
+        code: blockingReason.code,
+        message: blockingReason.message,
+      };
+    }
+
+    if (readiness.canStart) {
+      return {
+        code: 'empty_decision_after_ready',
+        message:
+          'Planner returned no action even though readiness found an executable first action',
+      };
+    }
+
+    return {
+      code: 'empty_decision_without_reason',
+      message: 'Planner returned no action without a readiness blocking reason',
+    };
+  }
+
+  private shouldWaitWithoutCountingNoProgress(
+    params: DualAccountVolumeStrategyParams,
+    reason: EfficientNoProgressReason,
+  ): boolean {
+    return (
+      !params.orderBookReady &&
+      (reason.code === 'market_data_missing' ||
+        reason.code === 'market_data_stale')
+    );
+  }
+
+  private shouldStopRepairAsUnexecutable(
+    reason: EfficientNoProgressReason,
+  ): boolean {
+    return (
+      reason.code === 'below_exchange_minimums' ||
+      reason.code === 'empty_decision_after_ready' ||
+      reason.code === 'empty_decision_without_reason'
+    );
   }
 
   private async persistStrategyParams(
@@ -633,6 +559,7 @@ export class DualAccountVolumeStrategyController implements StrategyController {
     session: StrategyRuntimeSession,
     ts: string,
     reason: string,
+    metadata?: Record<string, unknown>,
   ): ExecutorAction {
     return {
       type: 'STOP_CONTROLLER',
@@ -646,7 +573,7 @@ export class DualAccountVolumeStrategyController implements StrategyController {
       side: 'buy',
       price: '0',
       qty: '0',
-      metadata: { reason },
+      metadata: { reason, ...(metadata || {}) },
       createdAt: ts,
     };
   }

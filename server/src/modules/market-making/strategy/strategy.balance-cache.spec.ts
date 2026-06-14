@@ -148,8 +148,8 @@ describe('StrategyService balance cache helpers', () => {
         dualAccountPlannerService.resolvePreferredSide.bind(
           dualAccountPlannerService,
         ),
-      buildDualAccountVolumeActions:
-        dualAccountPlannerService.buildDualAccountVolumeActions.bind(
+      buildEfficientSpreadVolumeActions:
+        dualAccountPlannerService.buildEfficientSpreadVolumeActions.bind(
           dualAccountPlannerService,
         ),
       advanceDualAccountCycleRolesAfterSuccess:
@@ -463,7 +463,7 @@ describe('StrategyService balance cache helpers', () => {
       },
     });
 
-    const actions = await (service as any).buildDualAccountVolumeActions(
+    const actions = await (service as any).buildEfficientSpreadVolumeActions(
       'dual-key',
       {
         exchangeName: 'binance',
@@ -527,7 +527,7 @@ describe('StrategyService balance cache helpers', () => {
       },
     });
 
-    const actions = await (service as any).buildDualAccountVolumeActions(
+    const actions = await (service as any).buildEfficientSpreadVolumeActions(
       'dual-key',
       {
         exchangeName: 'binance',

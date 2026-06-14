@@ -125,8 +125,6 @@ export class StrategyWatcherManagerService {
     params: StrategyRuntimeSession['params'],
   ): string | undefined {
     if (
-      strategyType === 'dualAccountVolume' ||
-      strategyType === 'dualAccountBestCapacityVolume' ||
       strategyType === 'efficientDualAccountVolume'
     ) {
       return undefined;
@@ -149,8 +147,6 @@ export class StrategyWatcherManagerService {
     params: StrategyRuntimeSession['params'],
   ): string[] {
     if (
-      strategyType === 'dualAccountVolume' ||
-      strategyType === 'dualAccountBestCapacityVolume' ||
       strategyType === 'efficientDualAccountVolume'
     ) {
       const dualParams = params as unknown as DualAccountVolumeStrategyParams;
@@ -168,8 +164,6 @@ export class StrategyWatcherManagerService {
   private usesPrivateOrderStreams(strategyType: StrategyType): boolean {
     return (
       strategyType === 'pureMarketMaking' ||
-      strategyType === 'dualAccountVolume' ||
-      strategyType === 'dualAccountBestCapacityVolume' ||
       strategyType === 'efficientDualAccountVolume'
     );
   }
@@ -178,8 +172,6 @@ export class StrategyWatcherManagerService {
     return (
       strategyType === 'pureMarketMaking' ||
       strategyType === 'timeIndicator' ||
-      strategyType === 'dualAccountVolume' ||
-      strategyType === 'dualAccountBestCapacityVolume' ||
       strategyType === 'efficientDualAccountVolume'
     );
   }

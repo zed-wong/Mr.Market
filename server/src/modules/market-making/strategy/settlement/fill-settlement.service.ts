@@ -80,8 +80,6 @@ export class FillSettlementService {
   ): Promise<void> {
     if (
       session.strategyType !== 'pureMarketMaking' &&
-      session.strategyType !== 'dualAccountVolume' &&
-      session.strategyType !== 'dualAccountBestCapacityVolume' &&
       session.strategyType !== 'efficientDualAccountVolume'
     ) {
       return;
@@ -118,8 +116,6 @@ export class FillSettlementService {
     });
 
     if (
-      session.strategyType === 'dualAccountVolume' ||
-      session.strategyType === 'dualAccountBestCapacityVolume' ||
       session.strategyType === 'efficientDualAccountVolume'
     ) {
       const persistedParams = (

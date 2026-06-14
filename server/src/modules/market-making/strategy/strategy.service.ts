@@ -25,8 +25,6 @@ import { ExecutorAction } from './config/executor-action.types';
 import {
   ArbitrageStrategyDto,
   DexAdapterId,
-  ExecuteDualAccountBestCapacityVolumeStrategyDto,
-  ExecuteDualAccountVolumeStrategyDto,
   ExecuteEfficientDualAccountVolumeStrategyDto,
   PureMarketMakingStrategyDto,
   VolumeExecutionVenue,
@@ -442,24 +440,6 @@ export class StrategyService
       slippageBps,
       recipient,
       executionCategoryInput,
-      this.getSessionRegistryCallbacks(),
-    );
-  }
-
-  async executeDualAccountVolumeStrategy(
-    params: ExecuteDualAccountVolumeStrategyDto,
-  ): Promise<void> {
-    await this.strategyInstanceLifecycle.executeDualAccountVolumeStrategy(
-      params,
-      this.getSessionRegistryCallbacks(),
-    );
-  }
-
-  async executeDualAccountBestCapacityVolumeStrategy(
-    params: ExecuteDualAccountBestCapacityVolumeStrategyDto,
-  ): Promise<void> {
-    await this.strategyInstanceLifecycle.executeDualAccountBestCapacityVolumeStrategy(
-      params,
       this.getSessionRegistryCallbacks(),
     );
   }

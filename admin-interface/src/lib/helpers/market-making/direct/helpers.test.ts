@@ -415,74 +415,14 @@ describe('normalizeConfigOverrides', () => {
     });
   });
 
-  it('maps dual-account quick fields to base trade amount and increment percentage', () => {
-    expect(
-      normalizeConfigOverrides(
-        'dualAccountVolume',
-        [],
-        '5',
-        '0.4',
-      ),
-    ).toEqual({
-      baseTradeAmount: 5,
-      baseIncrementPercentage: 0.4,
-    });
-  });
-
-  it('maps dual-account variance quick fields into config overrides', () => {
-    expect(
-      normalizeConfigOverrides(
-        'dualAccountVolume',
-        [],
-        '5',
-        '0.4',
-        {
-          intervalTime: '30',
-          numTrades: '100',
-          pricePushRate: '0',
-          postOnlySide: 'buy',
-          dynamicRoleSwitching: false,
-          targetQuoteVolume: '',
-          cadenceVariance: '0.25',
-          tradeAmountVariance: '0.15',
-          priceOffsetVariance: '0.2',
-        },
-      ),
-    ).toEqual({
-      baseTradeAmount: 5,
-      baseIncrementPercentage: 0.4,
-      baseIntervalTime: 30,
-      numTrades: 100,
-      pricePushRate: 0,
-      postOnlySide: 'buy',
-      cadenceVariance: 0.25,
-      tradeAmountVariance: 0.15,
-      priceOffsetVariance: 0.2,
-    });
-  });
-
   it('drops reserved system-managed fields from manual config rows', () => {
     expect(
       normalizeConfigOverrides(
-        'dualAccountVolume',
+        EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE,
         [
           { key: 'userId', value: 'spoofed-user' },
           { key: 'exchangeName', value: 'kraken' },
         ],
-        '5',
-        '0.4',
-      ),
-    ).toEqual({
-      baseTradeAmount: 5,
-      baseIncrementPercentage: 0.4,
-    });
-  });
-
-  it('maps best-capacity dual-account quick fields to base trade amount and increment percentage', () => {
-    expect(
-      normalizeConfigOverrides(
-        'dualAccountBestCapacityVolume',
-        [],
         '5',
         '0.4',
       ),
@@ -551,26 +491,17 @@ describe('normalizeConfigOverrides', () => {
 });
 
 describe('direct controller helpers', () => {
-  it('recognizes both dual direct-order controller types', () => {
-    expect(isDualDirectOrderControllerType('dualAccountVolume')).toBe(true);
-    expect(
-      isDualDirectOrderControllerType('dualAccountBestCapacityVolume'),
-    ).toBe(true);
+  it('recognizes efficient dual direct-order controller types', () => {
     expect(
       isDualDirectOrderControllerType(EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE),
     ).toBe(true);
     expect(isDualDirectOrderControllerType('optimalDualAccountVolume')).toBe(
-      true,
+      false,
     );
     expect(isDualDirectOrderControllerType('pureMarketMaking')).toBe(false);
   });
 
-  it('recognizes the best-capacity direct-order controller type', () => {
-    expect(
-      isBestCapacityDirectOrderControllerType(
-        'dualAccountBestCapacityVolume',
-      ),
-    ).toBe(true);
+  it('recognizes efficient controller types as capacity-planned direct orders', () => {
     expect(
       isBestCapacityDirectOrderControllerType(
         EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE,
@@ -578,10 +509,8 @@ describe('direct controller helpers', () => {
     ).toBe(true);
     expect(
       isBestCapacityDirectOrderControllerType('optimalDualAccountVolume'),
-    ).toBe(true);
-    expect(isBestCapacityDirectOrderControllerType('dualAccountVolume')).toBe(
-      false,
-    );
+    ).toBe(false);
+    expect(isBestCapacityDirectOrderControllerType('volume')).toBe(false);
   });
 
   it('detects controller types that should use schema-driven direct forms', () => {
@@ -596,7 +525,7 @@ describe('direct controller helpers', () => {
     );
   });
 
-  it('filters new-order strategies to direct-compatible PMM and dual-account variants', () => {
+  it('filters new-order strategies to direct-compatible PMM and efficient dual-account variants', () => {
     const strategies = [
       { id: 'legacy-classic', key: 'dual-account-volume', name: 'dual account volume', controllerType: 'dualAccountVolume' },
       { id: 'legacy-best', key: 'dual-account-best-capacity-volume', name: 'dual account volume best capacity', controllerType: 'dualAccountBestCapacityVolume' },
@@ -606,11 +535,8 @@ describe('direct controller helpers', () => {
     ];
 
     expect(filterDirectCreateStrategies(strategies).map((strategy) => strategy.id)).toEqual([
-      'legacy-classic',
-      'legacy-best',
       'pmm',
       'efficient',
-      'optimal',
     ]);
   });
 
@@ -626,8 +552,6 @@ describe('direct controller helpers', () => {
 
     expect(selectableStrategies.map((strategy) => strategy.id)).toEqual([
       'pmm',
-      'legacy-classic',
-      'legacy-best',
       'efficient-backfilled',
     ]);
     expect(selectableStrategies).toEqual(
@@ -636,16 +560,6 @@ describe('direct controller helpers', () => {
           id: 'pmm',
           name: 'Pure Market Making',
           controllerType: 'pureMarketMaking',
-        }),
-        expect.objectContaining({
-          id: 'legacy-classic',
-          name: 'Dual Account Volume',
-          controllerType: 'dualAccountVolume',
-        }),
-        expect.objectContaining({
-          id: 'legacy-best',
-          name: 'Dual Account Best Capacity Volume',
-          controllerType: 'dualAccountBestCapacityVolume',
         }),
         expect.objectContaining({
           id: 'efficient-backfilled',
@@ -1239,7 +1153,7 @@ describe('isDualAccountOrder', () => {
     expect(
       isDualAccountOrder({
         directExecutionMode: 'single_account',
-        controllerType: 'dualAccountVolume',
+        controllerType: EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE,
       }),
     ).toBe(false);
   });
@@ -1248,7 +1162,7 @@ describe('isDualAccountOrder', () => {
     expect(
       isDualAccountOrder({
         directExecutionMode: null,
-        controllerType: 'dualAccountVolume',
+        controllerType: EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE,
       }),
     ).toBe(true);
   });
@@ -1256,7 +1170,7 @@ describe('isDualAccountOrder', () => {
   it('falls back to controller type when directExecutionMode is undefined', () => {
     expect(
       isDualAccountOrder({
-        controllerType: 'dualAccountBestCapacityVolume',
+        controllerType: EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE,
         makerAccountLabel: '',
         takerAccountLabel: '',
       }),

@@ -111,15 +111,6 @@ export class StrategyStartupRecoveryService {
     };
 
     if (
-      strategy.strategyType === 'dualAccountVolume' ||
-      strategy.strategyType === 'dualAccountBestCapacityVolume'
-    ) {
-      await this.restoreDualAccountVolumeRuntimeState(strategy);
-
-      return result;
-    }
-
-    if (
       strategy.strategyType !== 'pureMarketMaking' ||
       !this.exchangeConnectorAdapterService
     ) {

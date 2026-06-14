@@ -256,89 +256,96 @@ export const CONFIG_SCHEMA_TEMPLATES: Record<string, object> = {
     },
     additionalProperties: false,
   },
-  dualAccountVolume: {
+  efficientDualAccountVolume: {
     type: "object",
-    required: [
-      "exchangeName",
-      "symbol",
-      "baseTradeAmount",
-      "baseIntervalTime",
-      "numTrades",
-      "baseIncrementPercentage",
-      "pricePushRate",
-    ],
+    required: ["symbol", "maxOrderAmount"],
     properties: {
-      exchangeName: {
-        type: "string",
-        description: "Exchange name shared by maker and taker accounts",
-      },
       symbol: {
         type: "string",
         description: "Trading pair symbol (e.g. BTC/USDT)",
       },
-      baseTradeAmount: {
-        type: "number",
-        description: "Base amount to trade per cycle",
-      },
-      baseIntervalTime: {
-        type: "number",
-        description: "Seconds between execution cycles",
-      },
-      numTrades: {
-        type: "number",
-        description: "Total successful cycles to execute",
-      },
-      baseIncrementPercentage: {
-        type: "number",
-        description: "Offset from mid price (percent)",
-      },
-      pricePushRate: {
-        type: "number",
-        description: "Per-cycle price push rate (percent)",
-      },
-      postOnlySide: {
-        type: "string",
-        enum: ["buy", "sell"],
-        description: "Maker side for the first cycle",
-      },
-      dynamicRoleSwitching: {
-        type: "boolean",
-        description: "Switch maker/taker roles dynamically based on balances",
-      },
-      targetQuoteVolume: {
-        type: "number",
-        description: "Stop once cumulative executed quote volume reaches this cap",
-      },
-      tradeAmountVariance: {
-        type: "number",
-        description: "Fractional variance applied to trade amount",
-      },
-      priceOffsetVariance: {
-        type: "number",
-        description: "Fractional variance applied to maker price offset",
-      },
-      cadenceVariance: {
-        type: "number",
-        description: "Fractional variance applied to execution cadence",
-      },
-    },
-    additionalProperties: false,
-  },
-  dualAccountBestCapacityVolume: {
-    type: "object",
-    required: ["maxOrderAmount"],
-    properties: {
       maxOrderAmount: {
         type: "number",
-        description: "Maximum base amount to trade per cycle; live balance/capacity can reduce the executed amount",
+        description:
+          "Maximum base amount to trade per cycle; live balance/capacity can reduce the executed amount",
+        minimum: 0,
+      },
+      mode: {
+        type: "string",
+        enum: ["cheapest_capital", "balanced", "fastest_volume"],
+        description: "Capital/volume tradeoff mode. Defaults to balanced.",
       },
       interval: {
         type: "number",
         description: "Optional seconds between execution cycles",
+        minimum: 1,
       },
       dailyVolumeTarget: {
         type: "number",
         description: "Optional quote-volume cap for the session",
+        minimum: 0,
+      },
+      tradeAmountVariance: {
+        type: "number",
+        description: "Fractional variance applied to selected cycle quantity",
+        minimum: 0,
+      },
+      priceOffsetVariance: {
+        type: "number",
+        description: "Fractional variance applied to maker price offset",
+        minimum: 0,
+      },
+      cycleMode: {
+        type: "string",
+        enum: ["alternating", "static"],
+        description: "Cycle role mode. Unified direct orders default to alternating.",
+      },
+      dynamicRoleSwitching: {
+        type: "boolean",
+        description:
+          "Switch maker/taker roles dynamically based on balances. Unified direct orders default to true.",
+      },
+      strategyContract: {
+        type: "string",
+        enum: ["efficientDualAccountVolume"],
+        description: "Unified Efficient Dual Account Volume backend contract marker",
+      },
+      safetyBuffer: {
+        type: "object",
+        properties: {
+          kind: { type: "string", enum: ["default_formula"] },
+          exchangeCostMinMultiplier: { type: "number", minimum: 0 },
+          feeCostMultiplier: { type: "number", minimum: 0 },
+        },
+        additionalProperties: false,
+      },
+      makerAccountLabel: {
+        type: "string",
+        description: "Maker account label injected by admin direct start",
+      },
+      takerAccountLabel: {
+        type: "string",
+        description: "Taker account label injected by admin direct start",
+      },
+      pair: {
+        type: "string",
+        description: "Pair alias injected by admin direct start",
+      },
+      exchangeName: {
+        type: "string",
+        description: "Exchange injected by admin direct start",
+      },
+      userId: {
+        type: "string",
+        description: "Runtime user id injected by admin direct start",
+      },
+      clientId: {
+        type: "string",
+        description: "Runtime client/order id injected by admin direct start",
+      },
+      marketMakingOrderId: {
+        type: "string",
+        description: "Runtime market-making order id injected by admin direct start",
       },
     },
     additionalProperties: false,

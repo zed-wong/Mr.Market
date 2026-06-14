@@ -29,11 +29,7 @@
         { value: "pureMarketMaking", labelKey: "admin_strategy_controller_market_making" },
         { value: "arbitrage", labelKey: "admin_strategy_controller_arbitrage" },
         { value: "volume", labelKey: "admin_strategy_controller_volume" },
-        {
-            value: "dualAccountBestCapacityVolume",
-            labelKey: "admin_strategy_controller_dual_account_best_capacity",
-        },
-        { value: "dualAccountVolume", labelKey: "admin_strategy_controller_dual_account_volume" },
+        { value: "efficientDualAccountVolume", labelKey: "admin_direct_mm_strategy_efficient_dual_account_volume" },
         { value: "timeIndicator", labelKey: "admin_strategy_controller_time_indicator" },
     ];
 

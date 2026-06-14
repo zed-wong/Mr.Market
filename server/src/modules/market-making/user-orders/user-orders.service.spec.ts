@@ -174,10 +174,10 @@ describe('UserOrdersService', () => {
         } as unknown as StrategyDefinition,
         {
           id: 'strategy-2',
-          key: 'dual-volume',
-          name: 'Dual Volume',
+          key: 'efficient_dual_account_volume',
+          name: 'Efficient Dual Account Volume',
           description: 'paired direct volume',
-          controllerType: 'dualAccountVolume',
+          controllerType: 'efficientDualAccountVolume',
           visibility: 'admin',
           defaultConfig: { baseTradeAmount: 5 },
           configSchema: { type: 'object' },

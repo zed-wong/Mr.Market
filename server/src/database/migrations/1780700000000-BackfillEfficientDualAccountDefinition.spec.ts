@@ -37,7 +37,7 @@ describe('BackfillEfficientDualAccountDefinition1780700000000', () => {
     await dataSource.destroy();
   });
 
-  it('inserts Efficient Dual Account Volume for existing DBs that only have legacy direct strategies', async () => {
+  it('inserts Efficient Dual Account Volume for existing DBs without it', async () => {
     await dataSource.query(
       `INSERT INTO "strategy_definitions" (
         "id",
@@ -52,8 +52,7 @@ describe('BackfillEfficientDualAccountDefinition1780700000000', () => {
         "createdAt",
         "updatedAt"
       ) VALUES
-        (?, ?, ?, ?, ?, ?, ?, 1, 'public', ?, ?),
-        (?, ?, ?, ?, ?, ?, ?, 1, 'admin', ?, ?)`,
+        (?, ?, ?, ?, ?, ?, ?, 1, 'public', ?, ?)`,
       [
         'strategy-pmm',
         'pure_market_making',
@@ -64,18 +63,6 @@ describe('BackfillEfficientDualAccountDefinition1780700000000', () => {
         JSON.stringify({
           launchSurfaces: ['strategy_settings', 'admin_direct_mm'],
           directExecutionMode: 'single_account',
-        }),
-        '2026-06-01T00:00:00.000Z',
-        '2026-06-01T00:00:00.000Z',
-        'strategy-legacy-dual',
-        'dual_account_volume',
-        'Dual Account Volume',
-        'dualAccountVolume',
-        '{}',
-        '{}',
-        JSON.stringify({
-          launchSurfaces: ['strategy_settings', 'admin_direct_mm'],
-          directExecutionMode: 'dual_account',
         }),
         '2026-06-01T00:00:00.000Z',
         '2026-06-01T00:00:00.000Z',

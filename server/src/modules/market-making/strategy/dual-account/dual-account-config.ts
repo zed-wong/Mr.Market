@@ -3,8 +3,6 @@ import BigNumber from 'bignumber.js';
 import type {
   DualAccountBehaviorProfileDto,
   DualAccountBehaviorProfilesDto,
-  ExecuteDualAccountBestCapacityVolumeStrategyDto,
-  ExecuteDualAccountVolumeStrategyDto,
   ExecuteEfficientDualAccountVolumeStrategyDto,
 } from '../config/strategy.dto';
 import type {
@@ -197,129 +195,6 @@ export function resolveDualAccountBehaviorProfile(
       : undefined;
 
   return candidate ? normalizeBehaviorProfile(candidate) : {};
-}
-
-export function normalizeDualAccountStrategyParams(
-  params: ExecuteDualAccountVolumeStrategyDto,
-): DualAccountVolumeStrategyParams {
-  const makerAccountLabel = String(params.makerAccountLabel || '').trim();
-  const takerAccountLabel = String(params.takerAccountLabel || '').trim();
-
-  if (!makerAccountLabel || !takerAccountLabel) {
-    throw new Error(
-      'Dual account volume strategy requires makerAccountLabel and takerAccountLabel',
-    );
-  }
-
-  if (makerAccountLabel === takerAccountLabel) {
-    throw new Error(
-      'Dual account volume strategy requires different maker and taker account labels',
-    );
-  }
-
-  const pair = resolveStrategyInputPair(params.symbol, params.pair);
-
-  return {
-    exchangeName: String(params.exchangeName || '').trim(),
-    symbol: pair,
-    pair,
-    baseIncrementPercentage: Number(params.baseIncrementPercentage || 0),
-    baseIntervalTime: Number(params.baseIntervalTime || 10),
-    baseTradeAmount: Number(params.baseTradeAmount || 0),
-    numTrades: Number(params.numTrades || 0),
-    userId: params.userId,
-    clientId: params.clientId,
-    marketMakingOrderId: params.marketMakingOrderId || params.clientId,
-    pricePushRate: Number(params.pricePushRate || 0),
-    executionCategory: 'clob_cex',
-    executionVenue: 'cex',
-    postOnlySide: params.postOnlySide,
-    makerAccountLabel,
-    takerAccountLabel,
-    tradeAmountVariance: readNonNegativeNumber(params.tradeAmountVariance),
-    priceOffsetVariance: readNonNegativeNumber(params.priceOffsetVariance),
-    cadenceVariance: readNonNegativeNumber(params.cadenceVariance),
-    buyBias: readUnitIntervalNumber(params.buyBias),
-    accountProfiles: params.accountProfiles,
-    dynamicRoleSwitching: Boolean(params.dynamicRoleSwitching),
-    targetQuoteVolume:
-      params.targetQuoteVolume !== undefined
-        ? Number(params.targetQuoteVolume)
-        : undefined,
-    publishedCycles: 0,
-    completedCycles: 0,
-    cycleMode: params.cycleMode || 'alternating',
-    makerProtectionMode: params.makerProtectionMode || 'alive_only',
-    nextMakerAccountLabel: params.makerAccountLabel,
-    nextTakerAccountLabel: params.takerAccountLabel,
-    orderBookReady: false,
-    consecutiveFallbackCycles: 0,
-    tradedQuoteVolume: 0,
-    realizedPnlQuote: 0,
-    inventoryBaseQty: 0,
-    inventoryCostQuote: 0,
-  };
-}
-
-export function normalizeDualAccountBestCapacityStrategyParams(
-  params: ExecuteDualAccountBestCapacityVolumeStrategyDto,
-): DualAccountVolumeStrategyParams {
-  const makerAccountLabel = String(params.makerAccountLabel || '').trim();
-  const takerAccountLabel = String(params.takerAccountLabel || '').trim();
-
-  if (!makerAccountLabel || !takerAccountLabel) {
-    throw new Error(
-      'Dual account best-capacity strategy requires makerAccountLabel and takerAccountLabel',
-    );
-  }
-
-  if (makerAccountLabel === takerAccountLabel) {
-    throw new Error(
-      'Dual account best-capacity strategy requires different maker and taker account labels',
-    );
-  }
-
-  const maxOrderAmount = Number(params.maxOrderAmount || 0);
-  const interval = Number(params.interval || 10);
-  const dailyVolumeTarget =
-    params.dailyVolumeTarget !== undefined
-      ? Number(params.dailyVolumeTarget)
-      : undefined;
-  const pair = resolveStrategyInputPair(params.symbol, params.pair);
-
-  return {
-    exchangeName: String(params.exchangeName || '').trim(),
-    symbol: pair,
-    pair,
-    baseIncrementPercentage: 0,
-    baseIntervalTime: interval,
-    baseTradeAmount: maxOrderAmount,
-    maxOrderAmount,
-    interval,
-    numTrades: 0,
-    userId: params.userId,
-    clientId: params.clientId,
-    marketMakingOrderId: params.marketMakingOrderId || params.clientId,
-    pricePushRate: 0,
-    executionCategory: 'clob_cex',
-    executionVenue: 'cex',
-    makerAccountLabel,
-    takerAccountLabel,
-    dailyVolumeTarget,
-    targetQuoteVolume: dailyVolumeTarget,
-    publishedCycles: 0,
-    completedCycles: 0,
-    cycleMode: params.cycleMode || 'alternating',
-    makerProtectionMode: params.makerProtectionMode || 'alive_only',
-    nextMakerAccountLabel: params.makerAccountLabel,
-    nextTakerAccountLabel: params.takerAccountLabel,
-    orderBookReady: false,
-    consecutiveFallbackCycles: 0,
-    tradedQuoteVolume: 0,
-    realizedPnlQuote: 0,
-    inventoryBaseQty: 0,
-    inventoryCostQuote: 0,
-  };
 }
 
 export function normalizeEfficientDualAccountVolumeStrategyParams(

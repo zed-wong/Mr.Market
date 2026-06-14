@@ -51,10 +51,8 @@ export function getControllerTypeLabel(type: string): string {
       return $_("admin_strategy_controller_arbitrage");
     case "volume":
       return $_("admin_strategy_controller_volume");
-    case "dualAccountBestCapacityVolume":
-      return $_("admin_strategy_controller_dual_account_best_capacity");
-    case "dualAccountVolume":
-      return $_("admin_strategy_controller_dual_account_volume");
+    case "efficientDualAccountVolume":
+      return $_("admin_direct_mm_strategy_efficient_dual_account_volume");
     case "timeIndicator":
       return $_("admin_strategy_controller_time_indicator");
     default:
@@ -70,9 +68,7 @@ export function getControllerTypeClasses(type: string): string {
       return "bg-base-300 text-base-content";
     case "volume":
       return "bg-base-300 text-base-content";
-    case "dualAccountBestCapacityVolume":
-      return "bg-base-300 text-base-content";
-    case "dualAccountVolume":
+    case "efficientDualAccountVolume":
       return "bg-base-300 text-base-content";
     case "timeIndicator":
       return "bg-base-300 text-base-content";

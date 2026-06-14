@@ -22,8 +22,6 @@ import { ExecutorAction } from '../config/executor-action.types';
 import {
   ArbitrageStrategyDto,
   DexAdapterId,
-  ExecuteDualAccountBestCapacityVolumeStrategyDto,
-  ExecuteDualAccountVolumeStrategyDto,
   ExecuteEfficientDualAccountVolumeStrategyDto,
   PureMarketMakingStrategyDto,
   VolumeExecutionVenue,
@@ -122,25 +120,6 @@ export class StrategyInstanceLifecycleService {
     }
 
     const orderId = String(strategy.marketMakingOrderId || '').trim();
-
-    if (!orderId) {
-      const isLegacyDualAdminDirect =
-        (strategy.strategyType === 'dualAccountVolume' ||
-          strategy.strategyType === 'dualAccountBestCapacityVolume') &&
-        String(strategy.userId || '').trim() === 'admin-direct';
-
-      if (isLegacyDualAdminDirect) {
-        await this.strategyInstanceRepository.update(
-          { strategyKey: strategy.strategyKey },
-          { status: 'failed', updatedAt: getRFC3339Timestamp() },
-        );
-        logger.warn(
-          `Skipping orphan admin-direct dual-account strategy ${strategy.strategyKey}: missing marketMakingOrderId binding`,
-        );
-
-        return false;
-      }
-    }
 
     if (!orderId || !this.marketMakingOrderRepository) {
       return true;
@@ -459,92 +438,6 @@ export class StrategyInstanceLifecycleService {
     );
   }
 
-  async executeDualAccountVolumeStrategy(
-    params: ExecuteDualAccountVolumeStrategyDto,
-    callbacks: StrategySessionRegistryCallbacks,
-  ): Promise<void> {
-    const normalizedParams =
-      dualAccountConfig.normalizeDualAccountStrategyParams(params);
-    const strategyKey = createStrategyKey({
-      type: 'dualAccountVolume',
-      user_id: params.userId,
-      client_id: params.clientId,
-    });
-    const cadenceMs =
-      dualAccountConfig.resolveNextDualAccountCadenceMs(normalizedParams);
-
-    await this.upsertStrategyInstance(
-      strategyKey,
-      params.userId,
-      params.clientId,
-      'dualAccountVolume',
-      normalizedParams,
-      params.marketMakingOrderId || params.clientId,
-    );
-    try {
-      await this.upsertSession(
-        strategyKey,
-        'dualAccountVolume',
-        params.userId,
-        params.clientId,
-        cadenceMs,
-        normalizedParams,
-        callbacks,
-        params.marketMakingOrderId || params.clientId,
-      );
-    } catch (error) {
-      await this.rollbackFailedStrategyStart(
-        strategyKey,
-        params.userId,
-        params.clientId,
-      );
-      throw error;
-    }
-  }
-
-  async executeDualAccountBestCapacityVolumeStrategy(
-    params: ExecuteDualAccountBestCapacityVolumeStrategyDto,
-    callbacks: StrategySessionRegistryCallbacks,
-  ): Promise<void> {
-    const normalizedParams =
-      dualAccountConfig.normalizeDualAccountBestCapacityStrategyParams(params);
-    const strategyKey = createStrategyKey({
-      type: 'dualAccountBestCapacityVolume',
-      user_id: params.userId,
-      client_id: params.clientId,
-    });
-    const cadenceMs =
-      dualAccountConfig.resolveNextDualAccountCadenceMs(normalizedParams);
-
-    await this.upsertStrategyInstance(
-      strategyKey,
-      params.userId,
-      params.clientId,
-      'dualAccountBestCapacityVolume',
-      normalizedParams,
-      params.marketMakingOrderId || params.clientId,
-    );
-    try {
-      await this.upsertSession(
-        strategyKey,
-        'dualAccountBestCapacityVolume',
-        params.userId,
-        params.clientId,
-        cadenceMs,
-        normalizedParams,
-        callbacks,
-        params.marketMakingOrderId || params.clientId,
-      );
-    } catch (error) {
-      await this.rollbackFailedStrategyStart(
-        strategyKey,
-        params.userId,
-        params.clientId,
-      );
-      throw error;
-    }
-  }
-
   async executeEfficientDualAccountVolumeStrategy(
     params: ExecuteEfficientDualAccountVolumeStrategyDto,
     callbacks: StrategySessionRegistryCallbacks,
@@ -696,8 +589,6 @@ export class StrategyInstanceLifecycleService {
   ): Promise<number> {
     if (
       strategyType === 'volume' ||
-      strategyType === 'dualAccountVolume' ||
-      strategyType === 'dualAccountBestCapacityVolume' ||
       strategyType === 'efficientDualAccountVolume'
     ) {
       const venue = String(parameters.executionVenue || '').toLowerCase();
@@ -964,8 +855,6 @@ export class StrategyInstanceLifecycleService {
 
         if (
           session.strategyType === 'pureMarketMaking' ||
-          session.strategyType === 'dualAccountVolume' ||
-          session.strategyType === 'dualAccountBestCapacityVolume' ||
           session.strategyType === 'efficientDualAccountVolume'
         ) {
           await this.trackedOrderShutdownService?.cancelTrackedOrdersForStrategy(

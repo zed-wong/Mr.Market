@@ -1,6 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
-import dualAccountVolumeSeedDefinition from 'src/database/seeder/data/strategies/dual-account-volume.json';
 import efficientDualAccountVolumeSeedDefinition from 'src/database/seeder/data/strategies/efficient-dual-account-volume.json';
 import { Repository } from 'typeorm';
 
@@ -17,10 +16,6 @@ describe('StrategyConfigResolverService', () => {
     toStrategyType: jest.fn((controllerType: string) => {
       if (controllerType === 'arbitrage') return 'arbitrage';
       if (controllerType === 'pureMarketMaking') return 'pureMarketMaking';
-      if (controllerType === 'dualAccountVolume') return 'dualAccountVolume';
-      if (controllerType === 'dualAccountBestCapacityVolume') {
-        return 'dualAccountBestCapacityVolume';
-      }
       if (controllerType === 'efficientDualAccountVolume') {
         return 'efficientDualAccountVolume';
       }
@@ -296,46 +291,6 @@ describe('StrategyConfigResolverService', () => {
         userId: 'user-1',
         clientId: 'order-1',
       },
-      resolvedAt: expect.any(String),
-    });
-  });
-
-  it('accepts dual-account volume variance overrides defined by the seeded schema', async () => {
-    strategyDefinitionRepository.findOne = jest.fn().mockResolvedValueOnce({
-      id: 'definition-dual-volume',
-      key: 'dual-account-volume',
-      name: 'Dual Account Volume',
-      enabled: true,
-      controllerType: 'dualAccountVolume',
-      defaultConfig: {
-        symbol: 'BTC/USDT',
-        baseTradeAmount: 0.1,
-        baseIntervalTime: 30,
-        numTrades: 100,
-        baseIncrementPercentage: 0.5,
-        pricePushRate: 0,
-      },
-      configSchema: dualAccountVolumeSeedDefinition.configSchema,
-    } as unknown as StrategyDefinition);
-
-    const result = await service.resolveForOrderSnapshot(
-      'definition-dual-volume',
-      {
-        tradeAmountVariance: 0.15,
-        priceOffsetVariance: 0.2,
-      },
-    );
-
-    expect(result).toEqual({
-      strategyDefinitionId: 'definition-dual-volume',
-      definitionKey: 'dual-account-volume',
-      definitionName: 'Dual Account Volume',
-      controllerType: 'dualAccountVolume',
-      resolvedConfig: expect.objectContaining({
-        symbol: 'BTC/USDT',
-        tradeAmountVariance: 0.15,
-        priceOffsetVariance: 0.2,
-      }),
       resolvedAt: expect.any(String),
     });
   });

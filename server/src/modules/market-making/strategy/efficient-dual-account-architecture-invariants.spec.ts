@@ -10,8 +10,6 @@ describe('Efficient Dual Account Volume architecture invariants', () => {
     'modules/market-making/strategy/controllers/pure-market-making-strategy.controller.ts',
     'modules/market-making/strategy/controllers/volume-strategy.controller.ts',
     'modules/market-making/strategy/controllers/efficient-dual-account-volume-strategy.controller.ts',
-    'modules/market-making/strategy/controllers/dual-account-volume-strategy.controller.ts',
-    'modules/market-making/strategy/controllers/dual-account-best-capacity-volume-strategy.controller.ts',
     'modules/market-making/strategy/controllers/time-indicator-strategy.controller.ts',
   ];
   const forbiddenControllerIo = [
@@ -61,7 +59,7 @@ describe('Efficient Dual Account Volume architecture invariants', () => {
     );
     const actionPlanningSource =
       plannerSource.split('async evaluateEfficientDualAccountReadiness')[0] +
-      plannerSource.split('async buildDualAccountVolumeActions')[1];
+      plannerSource.split('async buildEfficientDualAccountVolumeActions')[1];
 
     for (const forbiddenCall of forbiddenControllerIo) {
       expect(actionPlanningSource).not.toContain(forbiddenCall);
@@ -71,7 +69,7 @@ describe('Efficient Dual Account Volume architecture invariants', () => {
   it('keeps generic ledger adjustment confined to typed fill settlement', () => {
     const strategySources = [
       'modules/market-making/strategy/controllers/efficient-dual-account-volume-strategy.controller.ts',
-      'modules/market-making/strategy/controllers/dual-account-volume-strategy.controller.ts',
+      'modules/market-making/strategy/dual-account/efficient-dual-account-runtime.service.ts',
       'modules/market-making/strategy/dual-account/dual-account-planner.service.ts',
       'modules/market-making/strategy/execution/strategy-intent-execution.service.ts',
       'modules/market-making/strategy/execution/strategy-intent-worker.service.ts',

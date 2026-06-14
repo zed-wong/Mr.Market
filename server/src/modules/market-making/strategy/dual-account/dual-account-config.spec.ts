@@ -1,6 +1,5 @@
 import {
   EFFICIENT_DUAL_ACCOUNT_VOLUME_MODES,
-  normalizeDualAccountStrategyParams,
   normalizeEfficientDualAccountVolumeStrategyParams,
 } from './dual-account-config';
 
@@ -64,22 +63,6 @@ describe('efficient dual-account volume config normalization', () => {
 
     expect(params.cycleMode).toBe('alternating');
     expect(params.dynamicRoleSwitching).toBe(true);
-  });
-
-  it('preserves legacy dual-account mechanics outside the unified contract', () => {
-    const params = normalizeDualAccountStrategyParams({
-      exchangeName: 'binance',
-      symbol: 'BTC/USDT',
-      baseTradeAmount: 0.5,
-      baseIntervalTime: 30,
-      makerAccountLabel: 'maker-desk',
-      takerAccountLabel: 'taker-desk',
-      cycleMode: 'static',
-      dynamicRoleSwitching: false,
-    } as any);
-
-    expect(params.cycleMode).toBe('static');
-    expect(params.dynamicRoleSwitching).toBe(false);
   });
 
   it.each(EFFICIENT_DUAL_ACCOUNT_VOLUME_MODES)(

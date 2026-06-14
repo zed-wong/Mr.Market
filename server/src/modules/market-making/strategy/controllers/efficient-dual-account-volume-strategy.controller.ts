@@ -8,7 +8,7 @@ import type {
   StrategyControllerFacade,
   StrategyTickContext,
 } from '../config/strategy-controller.types';
-import { DualAccountVolumeStrategyController } from './dual-account-volume-strategy.controller';
+import { EfficientDualAccountRuntimeService } from '../dual-account/efficient-dual-account-runtime.service';
 import { sanitizeVolumeCadenceMs } from './volume-controller.helpers';
 
 @Injectable()
@@ -19,7 +19,7 @@ export class EfficientDualAccountVolumeStrategyController
 
   constructor(
     @Optional()
-    private readonly dualAccountVolumeStrategyController?: DualAccountVolumeStrategyController,
+    private readonly efficientDualAccountRuntimeService?: EfficientDualAccountRuntimeService,
   ) {}
 
   getCadenceMs(parameters: Record<string, unknown>): number {
@@ -38,7 +38,7 @@ export class EfficientDualAccountVolumeStrategyController
   }
 
   async decideActions(ctx: StrategyTickContext): Promise<ExecutorAction[]> {
-    return await this.getDualAccountVolumeStrategyController().buildOptimalDualAccountVolumeSessionActions(
+    return await this.getEfficientDualAccountRuntimeService().buildEfficientDualAccountVolumeSessionActions(
       ctx.session,
       ctx.ts,
     );
@@ -48,7 +48,7 @@ export class EfficientDualAccountVolumeStrategyController
     ctx: StrategyTickContext,
     actions: ExecutorAction[],
   ): Promise<void> {
-    await this.getDualAccountVolumeStrategyController().onDualAccountVolumeActionsPublished(
+    await this.getEfficientDualAccountRuntimeService().onEfficientDualAccountActionsPublished(
       ctx.session,
       actions,
     );
@@ -65,11 +65,11 @@ export class EfficientDualAccountVolumeStrategyController
     });
   }
 
-  private getDualAccountVolumeStrategyController(): DualAccountVolumeStrategyController {
-    if (!this.dualAccountVolumeStrategyController) {
-      throw new Error('DualAccountVolumeStrategyController is not available');
+  private getEfficientDualAccountRuntimeService(): EfficientDualAccountRuntimeService {
+    if (!this.efficientDualAccountRuntimeService) {
+      throw new Error('EfficientDualAccountRuntimeService is not available');
     }
 
-    return this.dualAccountVolumeStrategyController;
+    return this.efficientDualAccountRuntimeService;
   }
 }

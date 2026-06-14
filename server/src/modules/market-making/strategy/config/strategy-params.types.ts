@@ -76,14 +76,13 @@ export type DualAccountVolumeStrategyParams = CexVolumeStrategyParams & {
   activeCycle?: DualAccountActiveCycleState;
   repairRequired?: boolean;
   repairReason?: string;
+  consecutiveNoProgressTicks?: number;
+  lastNoProgressReason?: string;
   cycleMode?: 'alternating' | 'static';
   makerProtectionMode?: 'alive_only' | 'strict_top';
   nextMakerAccountLabel?: string;
   nextTakerAccountLabel?: string;
 };
-
-export type DualAccountBestCapacityVolumeStrategyParams =
-  DualAccountVolumeStrategyParams;
 
 export type EfficientDualAccountVolumeMode =
   | 'cheapest_capital'

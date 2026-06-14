@@ -524,8 +524,8 @@ start flow.
   mutation.
 - The intent worker decouples tick from exchange I/O.
 - Orders require `strategySnapshot` before runtime start.
-- `dualAccountVolume` uses maker/taker account labels under the same pooled
-  `exchange:pair` executor.
+- `efficientDualAccountVolume` uses maker/taker account labels under the same
+  pooled `exchange:pair` executor.
 - Immediate dual-account safe no-fill and small maker/taker mismatch outcomes
   are recorded as dual-account-scoped runtime observations, not generic intent
   failures. The dual-account controller may stop after repeated soft outcomes;
@@ -559,8 +559,7 @@ server/src/modules/market-making/
 ├── strategy/
 │   ├── controllers/
 │   │   ├── arbitrage-strategy.controller.ts
-│   │   ├── dual-account-best-capacity-volume-strategy.controller.ts
-│   │   ├── dual-account-volume-strategy.controller.ts
+│   │   ├── efficient-dual-account-volume-strategy.controller.ts
 │   │   ├── pure-market-making-strategy.controller.ts
 │   │   ├── time-indicator-strategy.controller.ts
 │   │   └── volume-strategy.controller.ts
@@ -568,6 +567,9 @@ server/src/modules/market-making/
 │   │   └── strategy-market-data-provider.service.ts
 │   ├── dex/
 │   │   └── strategy-config-resolver.service.ts
+│   ├── dual-account/
+│   │   ├── dual-account-planner.service.ts
+│   │   └── efficient-dual-account-runtime.service.ts
 │   ├── execution/
 │   │   ├── exchange-pair-executor.ts
 │   │   ├── executor-registry.ts
@@ -598,6 +600,6 @@ server/src/modules/market-making/
 
 ## Last Updated
 
-- Date: 2026-05-21
+- Date: 2026-06-14
 - Status: Active
 - Architecture: Yellowpaper-aligned market-making runtime

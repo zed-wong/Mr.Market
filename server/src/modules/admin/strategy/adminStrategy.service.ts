@@ -246,6 +246,7 @@ export class AdminStrategyService {
     if (!controllerType) {
       throw new BadRequestException('controllerType is required');
     }
+    this.strategyRuntimeDispatcher.toStrategyType(controllerType);
 
     const existing = await this.strategyDefinitionRepository.findOne({
       where: { key: dto.key },
@@ -312,6 +313,7 @@ export class AdminStrategyService {
     definition.controllerType = dto.controllerType
       ? normalizeControllerType(dto.controllerType)
       : definition.controllerType;
+    this.strategyRuntimeDispatcher.toStrategyType(definition.controllerType);
 
     return attachStrategyDefinitionCapabilities(
       await this.strategyDefinitionRepository.save(definition),

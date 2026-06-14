@@ -4,8 +4,6 @@ import type { ExecutorAction } from './executor-action.types';
 import type {
   ArbitrageStrategyDto,
   DexAdapterId,
-  ExecuteDualAccountBestCapacityVolumeStrategyDto,
-  ExecuteDualAccountVolumeStrategyDto,
   ExecuteEfficientDualAccountVolumeStrategyDto,
   PureMarketMakingStrategyDto,
   VolumeExecutionVenue,
@@ -15,8 +13,6 @@ import type { TimeIndicatorStrategyDto } from './timeIndicator.dto';
 export type StrategyType =
   | 'arbitrage'
   | 'pureMarketMaking'
-  | 'dualAccountVolume'
-  | 'dualAccountBestCapacityVolume'
   | 'efficientDualAccountVolume'
   | 'volume'
   | 'timeIndicator';
@@ -73,12 +69,6 @@ export type StrategyControllerFacade = {
     slippageBps?: number,
     recipient?: string,
     executionCategoryInput?: string,
-  ): Promise<void>;
-  executeDualAccountVolumeStrategy(
-    strategyParamsDto: ExecuteDualAccountVolumeStrategyDto,
-  ): Promise<void>;
-  executeDualAccountBestCapacityVolumeStrategy(
-    strategyParamsDto: ExecuteDualAccountBestCapacityVolumeStrategyDto,
   ): Promise<void>;
   executeEfficientDualAccountVolumeStrategy(
     strategyParamsDto: ExecuteEfficientDualAccountVolumeStrategyDto,

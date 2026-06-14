@@ -22,7 +22,7 @@ import { TrackedOrderShutdownService } from '../trackers/tracked-order-shutdown.
 import { UserStreamIngestionService } from '../trackers/user-stream-ingestion.service';
 import { PureMarketMakingStrategyDto } from './config/strategy.dto';
 import { ArbitrageStrategyController } from './controllers/arbitrage-strategy.controller';
-import { DualAccountVolumeStrategyController } from './controllers/dual-account-volume-strategy.controller';
+import { EfficientDualAccountRuntimeService } from './dual-account/efficient-dual-account-runtime.service';
 import { PureMarketMakingStrategyController } from './controllers/pure-market-making-strategy.controller';
 import { StrategyControllerRegistry } from './controllers/strategy-controller.registry';
 import { TimeIndicatorStrategyController } from './controllers/time-indicator-strategy.controller';
@@ -92,7 +92,7 @@ class ExchangeInitServiceMock {
 describe('StrategyService', () => {
   let service: StrategyService;
   let volumeStrategyController: VolumeStrategyController;
-  let dualAccountVolumeStrategyController: DualAccountVolumeStrategyController;
+  let efficientDualAccountRuntimeService: EfficientDualAccountRuntimeService;
   let pureMarketMakingStrategyController: PureMarketMakingStrategyController;
   let timeIndicatorStrategyController: TimeIndicatorStrategyController;
   let quotePlannerService: QuotePlannerService;
@@ -235,8 +235,7 @@ describe('StrategyService', () => {
     strategyKey: string;
     strategyType:
       | 'pureMarketMaking'
-      | 'dualAccountBestCapacityVolume'
-      | 'dualAccountVolume'
+      | 'efficientDualAccountVolume'
       | 'volume'
       | 'timeIndicator';
     userId: string;
@@ -494,7 +493,7 @@ describe('StrategyService', () => {
         ArbitrageStrategyController,
         PureMarketMakingStrategyController,
         VolumeStrategyController,
-        DualAccountVolumeStrategyController,
+        EfficientDualAccountRuntimeService,
         TimeIndicatorStrategyController,
         { provide: PerformanceService, useClass: PerformanceServiceMock },
         { provide: ExchangeInitService, useClass: ExchangeInitServiceMock },
@@ -581,9 +580,9 @@ describe('StrategyService', () => {
     volumeStrategyController = module.get<VolumeStrategyController>(
       VolumeStrategyController,
     );
-    dualAccountVolumeStrategyController =
-      module.get<DualAccountVolumeStrategyController>(
-        DualAccountVolumeStrategyController,
+    efficientDualAccountRuntimeService =
+      module.get<EfficientDualAccountRuntimeService>(
+        EfficientDualAccountRuntimeService,
       );
     pureMarketMakingStrategyController = (
       service as any
@@ -1478,8 +1477,8 @@ describe('StrategyService', () => {
 
   it('preserves persisted dual-account single-leg progress when fills update pnl state', async () => {
     await registerPooledSession({
-      strategyKey: 'user1-client1-dualAccountVolume',
-      strategyType: 'dualAccountVolume',
+      strategyKey: 'user1-client1-efficientDualAccountVolume',
+      strategyType: 'efficientDualAccountVolume',
       userId: 'user1',
       clientId: 'client1',
       cadenceMs: 1000,
@@ -1509,7 +1508,7 @@ describe('StrategyService', () => {
     });
 
     mockStrategyInstanceRepository.findOne.mockResolvedValue({
-      strategyKey: 'user1-client1-dualAccountVolume',
+      strategyKey: 'user1-client1-efficientDualAccountVolume',
       parameters: {
         exchangeName: 'binance',
         symbol: 'BTC/USDT',
@@ -1545,7 +1544,7 @@ describe('StrategyService', () => {
     });
 
     expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
-      { strategyKey: 'user1-client1-dualAccountVolume' },
+      { strategyKey: 'user1-client1-efficientDualAccountVolume' },
       expect.objectContaining({
         parameters: expect.objectContaining({
           publishedCycles: 3,
@@ -1605,7 +1604,7 @@ describe('StrategyService', () => {
     };
 
     mockStrategyInstanceRepository.findOne.mockResolvedValue({
-      strategyKey: 'user1-client1-dualAccountVolume',
+      strategyKey: 'user1-client1-efficientDualAccountVolume',
       parameters: params,
     });
     exchangeOrderTrackerService.getByExchangeOrderId.mockImplementation(
@@ -1613,7 +1612,7 @@ describe('StrategyService', () => {
         exchangeOrderId === 'maker-ex-1' && accountLabel === 'maker'
           ? {
               orderId: 'client1:cycle:1',
-              strategyKey: 'user1-client1-dualAccountVolume',
+              strategyKey: 'user1-client1-efficientDualAccountVolume',
               exchange: 'binance',
               accountLabel: 'maker',
               pair: 'BTC/USDT',
@@ -1630,8 +1629,8 @@ describe('StrategyService', () => {
     );
 
     await registerPooledSession({
-      strategyKey: 'user1-client1-dualAccountVolume',
-      strategyType: 'dualAccountVolume',
+      strategyKey: 'user1-client1-efficientDualAccountVolume',
+      strategyType: 'efficientDualAccountVolume',
       userId: 'user1',
       clientId: 'client1',
       cadenceMs: 1000,
@@ -1711,7 +1710,7 @@ describe('StrategyService', () => {
     };
 
     mockStrategyInstanceRepository.findOne.mockResolvedValue({
-      strategyKey: 'user1-client1-dualAccountVolume',
+      strategyKey: 'user1-client1-efficientDualAccountVolume',
       parameters: params,
     });
     exchangeOrderTrackerService.getByExchangeOrderId.mockImplementation(
@@ -1719,7 +1718,7 @@ describe('StrategyService', () => {
         exchangeOrderId === 'taker-ex-1' && accountLabel === 'taker'
           ? {
               orderId: 'client1:cycle:1',
-              strategyKey: 'user1-client1-dualAccountVolume',
+              strategyKey: 'user1-client1-efficientDualAccountVolume',
               exchange: 'binance',
               accountLabel: 'taker',
               pair: 'BTC/USDT',
@@ -1736,8 +1735,8 @@ describe('StrategyService', () => {
     );
 
     await registerPooledSession({
-      strategyKey: 'user1-client1-dualAccountVolume',
-      strategyType: 'dualAccountVolume',
+      strategyKey: 'user1-client1-efficientDualAccountVolume',
+      strategyType: 'efficientDualAccountVolume',
       userId: 'user1',
       clientId: 'client1',
       cadenceMs: 1000,
@@ -1756,7 +1755,7 @@ describe('StrategyService', () => {
     });
 
     expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
-      { strategyKey: 'user1-client1-dualAccountVolume' },
+      { strategyKey: 'user1-client1-efficientDualAccountVolume' },
       expect.objectContaining({
         parameters: expect.objectContaining({
           tradedQuoteVolume: 40,
@@ -1804,13 +1803,13 @@ describe('StrategyService', () => {
     };
     const buildActionsSpy = jest
       .spyOn(
-        dualAccountVolumeStrategyController,
-        'buildDualAccountVolumeActions',
+        efficientDualAccountRuntimeService,
+        'buildEfficientDualAccountVolumeActions',
       )
       .mockResolvedValue([]);
     const session = await registerPooledSession({
-      strategyKey: 'user1-client1-dualAccountVolume',
-      strategyType: 'dualAccountVolume',
+      strategyKey: 'user1-client1-efficientDualAccountVolume',
+      strategyType: 'efficientDualAccountVolume',
       userId: 'user1',
       clientId: 'client1',
       cadenceMs: 1000,
@@ -1819,18 +1818,18 @@ describe('StrategyService', () => {
     });
 
     mockStrategyInstanceRepository.findOne.mockResolvedValue({
-      strategyKey: 'user1-client1-dualAccountVolume',
+      strategyKey: 'user1-client1-efficientDualAccountVolume',
       parameters: params,
     });
     exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([]);
 
-    await dualAccountVolumeStrategyController.buildDualAccountVolumeSessionActions(
+    await efficientDualAccountRuntimeService.buildEfficientDualAccountVolumeSessionActions(
       session as any,
       '2026-04-16T00:00:05.000Z',
     );
 
     expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
-      { strategyKey: 'user1-client1-dualAccountVolume' },
+      { strategyKey: 'user1-client1-efficientDualAccountVolume' },
       expect.objectContaining({
         parameters: expect.objectContaining({
           completedCycles: 1,
@@ -2048,12 +2047,12 @@ describe('StrategyService', () => {
   });
 
   it('finalizes stopping strategies once tracked orders and intents are drained', async () => {
-    const strategyKey = 'user1-client1-dualAccountVolume';
+    const strategyKey = 'user1-client1-efficientDualAccountVolume';
 
     (service as any).sessions.set(strategyKey, {
       runId: 'run-stopping',
       strategyKey,
-      strategyType: 'dualAccountVolume',
+      strategyType: 'efficientDualAccountVolume',
       userId: 'user1',
       clientId: 'client1',
       cadenceMs: 1000,
@@ -2069,7 +2068,7 @@ describe('StrategyService', () => {
         strategyKey,
         userId: 'user1',
         clientId: 'client1',
-        strategyType: 'dualAccountVolume',
+        strategyType: 'efficientDualAccountVolume',
         status: 'stopping',
         marketMakingOrderId: 'order-1',
         parameters: {},
@@ -2607,7 +2606,7 @@ describe('StrategyService', () => {
 
     expect(
       strategySessionRegistryService.canActivateStrategyImmediately({
-        strategyType: 'dualAccountVolume',
+        strategyType: 'efficientDualAccountVolume',
         clientId: 'client-1',
         parameters: {
           exchangeName: 'binance',
@@ -2620,7 +2619,7 @@ describe('StrategyService', () => {
 
     expect(
       strategySessionRegistryService.canActivateStrategyImmediately({
-        strategyType: 'dualAccountVolume',
+        strategyType: 'efficientDualAccountVolume',
         clientId: 'client-1',
         parameters: {
           exchangeName: 'binance',
@@ -2635,8 +2634,8 @@ describe('StrategyService', () => {
   it('publishes dual-account maker intents and persists published cycles', async () => {
     const session = {
       runId: 'run-dual',
-      strategyKey: 'user1-client1-dualAccountVolume',
-      strategyType: 'dualAccountVolume',
+      strategyKey: 'user1-client1-efficientDualAccountVolume',
+      strategyType: 'efficientDualAccountVolume',
       userId: 'user1',
       clientId: 'client1',
       cadenceMs: 1000,
@@ -2673,7 +2672,7 @@ describe('StrategyService', () => {
     });
 
     const actions =
-      await dualAccountVolumeStrategyController.buildDualAccountVolumeSessionActions(
+      await efficientDualAccountRuntimeService.buildEfficientDualAccountVolumeSessionActions(
         session as any,
         '2026-03-11T00:00:00.000Z',
       );
@@ -2691,7 +2690,7 @@ describe('StrategyService', () => {
     ]);
 
     (service as any).sessions.set(session.strategyKey, session);
-    await dualAccountVolumeStrategyController.onDualAccountVolumeActionsPublished(
+    await efficientDualAccountRuntimeService.onEfficientDualAccountActionsPublished(
       session as any,
       actions,
     );
@@ -2724,8 +2723,8 @@ describe('StrategyService', () => {
       completedCycles: 0,
     };
     const session = await registerPooledSession({
-      strategyKey: 'user1-client1-dualAccountVolume',
-      strategyType: 'dualAccountVolume',
+      strategyKey: 'user1-client1-efficientDualAccountVolume',
+      strategyType: 'efficientDualAccountVolume',
       userId: 'user1',
       clientId: 'client1',
       cadenceMs: 1000,
@@ -2759,11 +2758,11 @@ describe('StrategyService', () => {
       observedAtMs: Date.now() - 500,
     });
     jest
-      .spyOn(dualAccountVolumeStrategyController, 'buildDualAccountVolumeActions')
+      .spyOn(efficientDualAccountRuntimeService, 'buildEfficientDualAccountVolumeActions')
       .mockResolvedValue([]);
 
     await expect(
-      dualAccountVolumeStrategyController.buildDualAccountVolumeSessionActions(
+      efficientDualAccountRuntimeService.buildEfficientDualAccountVolumeSessionActions(
         session as any,
         '2026-06-08T00:00:00.000Z',
       ),
@@ -2781,7 +2780,7 @@ describe('StrategyService', () => {
     });
 
     await expect(
-      dualAccountVolumeStrategyController.buildDualAccountVolumeSessionActions(
+      efficientDualAccountRuntimeService.buildEfficientDualAccountVolumeSessionActions(
         session as any,
         '2026-06-08T00:00:01.000Z',
       ),
@@ -2789,7 +2788,7 @@ describe('StrategyService', () => {
       expect.objectContaining({
         type: 'STOP_CONTROLLER',
         intentId:
-          'user1-client1-dualAccountVolume:2026-06-08T00:00:01.000Z:stop-dual_account_soft_failure_threshold_exceeded',
+          'user1-client1-efficientDualAccountVolume:2026-06-08T00:00:01.000Z:stop-dual_account_soft_failure_threshold_exceeded',
         metadata: {
           reason: 'dual_account_soft_failure_threshold_exceeded',
         },
@@ -2817,8 +2816,8 @@ describe('StrategyService', () => {
       completedCycles: 0,
     };
     const session = await registerPooledSession({
-      strategyKey: 'user1-client1-dualAccountVolume',
-      strategyType: 'dualAccountVolume',
+      strategyKey: 'user1-client1-efficientDualAccountVolume',
+      strategyType: 'efficientDualAccountVolume',
       userId: 'user1',
       clientId: 'client1',
       cadenceMs: 1000,
@@ -2833,7 +2832,7 @@ describe('StrategyService', () => {
     });
     exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([]);
     jest
-      .spyOn(dualAccountVolumeStrategyController, 'buildDualAccountVolumeActions')
+      .spyOn(efficientDualAccountRuntimeService, 'buildEfficientDualAccountVolumeActions')
       .mockResolvedValue([]);
 
     for (let index = 1; index <= 4; index += 1) {
@@ -2850,7 +2849,7 @@ describe('StrategyService', () => {
     }
 
     await expect(
-      dualAccountVolumeStrategyController.buildDualAccountVolumeSessionActions(
+      efficientDualAccountRuntimeService.buildEfficientDualAccountVolumeSessionActions(
         session as any,
         '2026-06-08T00:00:00.000Z',
       ),
@@ -2868,7 +2867,7 @@ describe('StrategyService', () => {
     });
 
     await expect(
-      dualAccountVolumeStrategyController.buildDualAccountVolumeSessionActions(
+      efficientDualAccountRuntimeService.buildEfficientDualAccountVolumeSessionActions(
         session as any,
         '2026-06-08T00:00:01.000Z',
       ),
@@ -2876,7 +2875,7 @@ describe('StrategyService', () => {
       expect.objectContaining({
         type: 'STOP_CONTROLLER',
         intentId:
-          'user1-client1-dualAccountVolume:2026-06-08T00:00:01.000Z:stop-dual_account_unsafe_cycle_outcome',
+          'user1-client1-efficientDualAccountVolume:2026-06-08T00:00:01.000Z:stop-dual_account_unsafe_cycle_outcome',
         metadata: {
           reason: 'dual_account_unsafe_cycle_outcome',
         },
@@ -2942,7 +2941,7 @@ describe('StrategyService', () => {
     ]);
 
     const actions =
-      await dualAccountVolumeStrategyController.buildOptimalDualAccountVolumeSessionActions(
+      await efficientDualAccountRuntimeService.buildEfficientDualAccountVolumeSessionActions(
         session as any,
         '2026-06-08T00:00:00.000Z',
       );
@@ -3020,7 +3019,7 @@ describe('StrategyService', () => {
     });
 
     const actions =
-      await dualAccountVolumeStrategyController.buildOptimalDualAccountVolumeSessionActions(
+      await efficientDualAccountRuntimeService.buildEfficientDualAccountVolumeSessionActions(
         session as any,
         '2026-06-08T00:00:00.000Z',
       );
@@ -3041,6 +3040,295 @@ describe('StrategyService', () => {
         }),
       }),
     ]);
+  });
+
+  it('stops efficient dual-account repair mode when rebalance is below exchange minimum', async () => {
+    const params = {
+      exchangeName: 'mexc',
+      symbol: 'XIN/USDT',
+      pair: 'XIN/USDT',
+      baseIncrementPercentage: 0,
+      baseIntervalTime: 15,
+      baseTradeAmount: 0.02,
+      maxOrderAmount: 0.02,
+      interval: 15,
+      numTrades: 0,
+      userId: 'admin-direct',
+      clientId: 'order-1',
+      marketMakingOrderId: 'order-1',
+      pricePushRate: 0,
+      executionCategory: 'clob_cex',
+      executionVenue: 'cex',
+      makerAccountLabel: '4',
+      takerAccountLabel: '8',
+      targetQuoteVolume: 30000,
+      publishedCycles: 3,
+      completedCycles: 2,
+      mode: 'balanced',
+      strategyContract: 'efficientDualAccountVolume',
+      repairRequired: true,
+      repairReason: 'paired_fill_mismatch',
+    };
+    const session = {
+      runId: 'run-dual-repair-below-min',
+      strategyKey: 'admin-direct-order-1-efficientDualAccountVolume',
+      strategyType: 'efficientDualAccountVolume',
+      userId: 'admin-direct',
+      clientId: 'order-1',
+      cadenceMs: 1000,
+      nextRunAtMs: 0,
+      marketMakingOrderId: 'order-1',
+      params,
+    };
+    const scopedBalances: Record<string, Record<string, string>> = {
+      'order-1:4': { XIN: '0', USDT: '0' },
+      'order-1:8': { XIN: '0.009', USDT: '0' },
+    };
+    const randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0.5);
+
+    mockStrategyInstanceRepository.findOne.mockResolvedValue({
+      strategyKey: session.strategyKey,
+      parameters: params,
+    });
+    balanceLedgerService.getExistingBalance.mockImplementation(
+      async (orderId: string, assetId: string) => {
+        const available = scopedBalances[orderId]?.[assetId] || '0';
+
+        return { available, total: available };
+      },
+    );
+    exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([]);
+    strategyMarketDataProviderService.getTrackedBestBidAsk.mockReturnValue({
+      bestBid: 53.8,
+      bestAsk: 53.82,
+    });
+    exchangeConnectorAdapterService.getCachedTradingRules.mockReturnValue({
+      amountMin: 0.001,
+      costMin: 1,
+      makerFee: 0.001,
+      takerFee: 0.001,
+    });
+    exchangeConnectorAdapterService.loadTradingRules.mockResolvedValue({
+      amountMin: 0.001,
+      costMin: 1,
+      makerFee: 0.001,
+      takerFee: 0.001,
+    });
+
+    try {
+      const actions =
+        await efficientDualAccountRuntimeService.buildEfficientDualAccountVolumeSessionActions(
+          session as any,
+          '2026-06-14T11:47:00.000Z',
+        );
+
+      expect(actions).toEqual([
+        expect.objectContaining({
+          type: 'STOP_CONTROLLER',
+          intentId:
+            'admin-direct-order-1-efficientDualAccountVolume:2026-06-14T11:47:00.000Z:stop-dual_account_repair_unexecutable',
+          metadata: { reason: 'dual_account_repair_unexecutable' },
+        }),
+      ]);
+      expect(mockStrategyInstanceRepository.update).not.toHaveBeenCalledWith(
+        { strategyKey: session.strategyKey },
+        {
+          parameters: expect.objectContaining({
+            repairRequired: false,
+          }),
+        },
+      );
+    } finally {
+      randomSpy.mockRestore();
+    }
+  });
+
+  it('keeps efficient dual-account repair mode waiting when trading rule cache is missing', async () => {
+    const params = {
+      exchangeName: 'binance',
+      symbol: 'BTC/USDT',
+      pair: 'BTC/USDT',
+      baseIncrementPercentage: 0,
+      baseIntervalTime: 15,
+      baseTradeAmount: 0.4,
+      maxOrderAmount: 0.4,
+      interval: 15,
+      numTrades: 0,
+      userId: 'admin-direct',
+      clientId: 'order-1',
+      marketMakingOrderId: 'order-1',
+      pricePushRate: 0,
+      executionCategory: 'clob_cex',
+      executionVenue: 'cex',
+      makerAccountLabel: 'maker',
+      takerAccountLabel: 'taker',
+      targetQuoteVolume: 30000,
+      publishedCycles: 3,
+      completedCycles: 2,
+      mode: 'balanced',
+      strategyContract: 'efficientDualAccountVolume',
+      repairRequired: true,
+      repairReason: 'paired_fill_mismatch',
+    };
+    const session = await registerPooledSession({
+      runId: 'run-dual-repair-missing-rules',
+      strategyKey: 'admin-direct-order-1-efficientDualAccountVolume',
+      strategyType: 'efficientDualAccountVolume',
+      userId: 'admin-direct',
+      clientId: 'order-1',
+      cadenceMs: 1000,
+      nextRunAtMs: 0,
+      marketMakingOrderId: 'order-1',
+      params,
+    });
+    const randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0.5);
+
+    mockStrategyInstanceRepository.findOne.mockResolvedValue({
+      strategyKey: session.strategyKey,
+      parameters: params,
+    });
+    exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([]);
+    strategyMarketDataProviderService.getTrackedBestBidAsk.mockReturnValue({
+      bestBid: 100,
+      bestAsk: 101,
+    });
+    exchangeConnectorAdapterService.getCachedTradingRules.mockReturnValue(
+      undefined,
+    );
+    exchangeConnectorAdapterService.loadTradingRules.mockResolvedValue({
+      amountMin: 0.001,
+      costMin: 10,
+      makerFee: 0.001,
+      takerFee: 0.001,
+    });
+
+    try {
+      const actions =
+        await efficientDualAccountRuntimeService.buildEfficientDualAccountVolumeSessionActions(
+          session as any,
+          '2026-06-14T11:47:00.000Z',
+        );
+
+      expect(actions).toEqual([]);
+      expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
+        { strategyKey: session.strategyKey },
+        expect.objectContaining({
+          parameters: expect.objectContaining({
+            repairRequired: true,
+            consecutiveNoProgressTicks: 1,
+            lastNoProgressReason: 'trading_rules_missing',
+          }),
+        }),
+      );
+    } finally {
+      randomSpy.mockRestore();
+    }
+  });
+
+  it('stops efficient dual-account after repeated no-progress below exchange minimums', async () => {
+    const params = {
+      exchangeName: 'mexc',
+      symbol: 'XIN/USDT',
+      pair: 'XIN/USDT',
+      baseIncrementPercentage: 0,
+      baseIntervalTime: 15,
+      baseTradeAmount: 0.02,
+      maxOrderAmount: 0.02,
+      interval: 15,
+      numTrades: 0,
+      userId: 'admin-direct',
+      clientId: 'order-1',
+      marketMakingOrderId: 'order-1',
+      pricePushRate: 0,
+      executionCategory: 'clob_cex',
+      executionVenue: 'cex',
+      makerAccountLabel: '4',
+      takerAccountLabel: '8',
+      targetQuoteVolume: 30000,
+      publishedCycles: 3,
+      completedCycles: 2,
+      mode: 'balanced',
+      strategyContract: 'efficientDualAccountVolume',
+    };
+    const session = await registerPooledSession({
+      runId: 'run-dual-no-progress',
+      strategyKey: 'admin-direct-order-1-efficientDualAccountVolume',
+      strategyType: 'efficientDualAccountVolume',
+      userId: 'admin-direct',
+      clientId: 'order-1',
+      cadenceMs: 1000,
+      nextRunAtMs: 0,
+      marketMakingOrderId: 'order-1',
+      params,
+    });
+    const scopedBalances: Record<string, Record<string, string>> = {
+      'order-1:4': { XIN: '0', USDT: '0' },
+      'order-1:8': { XIN: '0.009', USDT: '0' },
+    };
+    const randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0.5);
+
+    mockStrategyInstanceRepository.findOne.mockResolvedValue({
+      strategyKey: session.strategyKey,
+      parameters: params,
+    });
+    balanceLedgerService.getExistingBalance.mockImplementation(
+      async (orderId: string, assetId: string) => {
+        const available = scopedBalances[orderId]?.[assetId] || '0';
+
+        return { available, total: available };
+      },
+    );
+    exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([]);
+    strategyMarketDataProviderService.getTrackedBestBidAsk.mockReturnValue({
+      bestBid: 53.8,
+      bestAsk: 53.82,
+    });
+    exchangeConnectorAdapterService.getCachedTradingRules.mockReturnValue({
+      amountMin: 0.001,
+      costMin: 1,
+      makerFee: 0.001,
+      takerFee: 0.001,
+    });
+    exchangeConnectorAdapterService.loadTradingRules.mockResolvedValue({
+      amountMin: 0.001,
+      costMin: 1,
+      makerFee: 0.001,
+      takerFee: 0.001,
+    });
+
+    try {
+      await expect(
+        efficientDualAccountRuntimeService.buildEfficientDualAccountVolumeSessionActions(
+          session as any,
+          '2026-06-14T11:47:00.000Z',
+        ),
+      ).resolves.toEqual([]);
+      await expect(
+        efficientDualAccountRuntimeService.buildEfficientDualAccountVolumeSessionActions(
+          session as any,
+          '2026-06-14T11:47:01.000Z',
+        ),
+      ).resolves.toEqual([]);
+      await expect(
+        efficientDualAccountRuntimeService.buildEfficientDualAccountVolumeSessionActions(
+          session as any,
+          '2026-06-14T11:47:02.000Z',
+        ),
+      ).resolves.toEqual([
+        expect.objectContaining({
+          type: 'STOP_CONTROLLER',
+          intentId:
+            'admin-direct-order-1-efficientDualAccountVolume:2026-06-14T11:47:02.000Z:stop-dual_account_no_progress_below_exchange_minimums',
+          metadata: expect.objectContaining({
+            reason: 'dual_account_no_progress_below_exchange_minimums',
+            noProgressReason: 'below_exchange_minimums',
+            noProgressTicks: 3,
+          }),
+        }),
+      ]);
+    } finally {
+      randomSpy.mockRestore();
+    }
   });
 
   it('clears efficient dual-account repair mode when paired execution is tradable again', async () => {
@@ -3106,7 +3394,7 @@ describe('StrategyService', () => {
 
     try {
       const actions =
-        await dualAccountVolumeStrategyController.buildOptimalDualAccountVolumeSessionActions(
+        await efficientDualAccountRuntimeService.buildEfficientDualAccountVolumeSessionActions(
           session as any,
           '2026-06-14T07:48:13.000Z',
         );
@@ -3140,7 +3428,7 @@ describe('StrategyService', () => {
     }
   });
 
-  it('returns a stop intent instead of directly stopping completed dual-account strategies', async () => {
+  it('returns a stop intent when efficient dual-account reaches target volume', async () => {
     const params = {
       exchangeName: 'binance',
       symbol: 'BTC/USDT',
@@ -3156,13 +3444,14 @@ describe('StrategyService', () => {
       executionVenue: 'cex' as const,
       makerAccountLabel: 'maker',
       takerAccountLabel: 'taker',
-      targetQuoteVolume: 0,
+      targetQuoteVolume: 100,
+      tradedQuoteVolume: 100,
       publishedCycles: 2,
       completedCycles: 2,
     };
     const session = await registerPooledSession({
-      strategyKey: 'user1-client1-dualAccountVolume',
-      strategyType: 'dualAccountVolume',
+      strategyKey: 'user1-client1-efficientDualAccountVolume',
+      strategyType: 'efficientDualAccountVolume',
       userId: 'user1',
       clientId: 'client1',
       cadenceMs: 1000,
@@ -3177,7 +3466,7 @@ describe('StrategyService', () => {
     exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([]);
 
     const actions =
-      await dualAccountVolumeStrategyController.buildDualAccountVolumeSessionActions(
+      await efficientDualAccountRuntimeService.buildEfficientDualAccountVolumeSessionActions(
         session as any,
         '2026-06-08T00:00:00.000Z',
       );
@@ -3186,17 +3475,92 @@ describe('StrategyService', () => {
       expect.objectContaining({
         type: 'STOP_CONTROLLER',
         intentId:
-          'user1-client1-dualAccountVolume:2026-06-08T00:00:00.000Z:stop-completed_cycles_reached',
-        metadata: { reason: 'completed_cycles_reached' },
+          'user1-client1-efficientDualAccountVolume:2026-06-08T00:00:00.000Z:stop-target_volume_reached',
+        metadata: { reason: 'target_volume_reached' },
       }),
     ]);
+  });
+
+  it('does not count efficient dual-account stop intents as published cycles', async () => {
+    const params = {
+      exchangeName: 'binance',
+      symbol: 'BTC/USDT',
+      pair: 'BTC/USDT',
+      baseIncrementPercentage: 0.1,
+      baseIntervalTime: 10,
+      baseTradeAmount: 1,
+      numTrades: 2,
+      userId: 'user1',
+      clientId: 'client1',
+      pricePushRate: 0,
+      executionCategory: 'clob_cex' as const,
+      executionVenue: 'cex' as const,
+      makerAccountLabel: 'maker',
+      takerAccountLabel: 'taker',
+      targetQuoteVolume: 100,
+      tradedQuoteVolume: 100,
+      publishedCycles: 2,
+      completedCycles: 2,
+      consecutiveNoProgressTicks: 2,
+      lastNoProgressReason: 'below_exchange_minimums',
+    };
+    const session = await registerPooledSession({
+      strategyKey: 'user1-client1-efficientDualAccountVolume',
+      strategyType: 'efficientDualAccountVolume',
+      userId: 'user1',
+      clientId: 'client1',
+      cadenceMs: 1000,
+      nextRunAtMs: 0,
+      params,
+    });
+
+    mockStrategyInstanceRepository.findOne.mockResolvedValue({
+      strategyKey: session.strategyKey,
+      parameters: params,
+    });
+    (service as any).sessions.set(session.strategyKey, session);
+
+    await efficientDualAccountRuntimeService.onEfficientDualAccountActionsPublished(
+      session as any,
+      [
+        {
+          type: 'STOP_CONTROLLER',
+          intentId:
+            'user1-client1-efficientDualAccountVolume:2026-06-08T00:00:00.000Z:stop-target_volume_reached',
+          runtimeInstanceKey: session.strategyKey,
+          strategyKey: session.strategyKey,
+          userId: session.userId,
+          clientId: session.clientId,
+          exchange: '',
+          pair: '',
+          side: 'buy',
+          price: '0',
+          qty: '0',
+          metadata: { reason: 'target_volume_reached' },
+          createdAt: '2026-06-08T00:00:00.000Z',
+          status: 'NEW',
+        },
+      ],
+    );
+
+    expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
+      { strategyKey: session.strategyKey },
+      expect.objectContaining({
+        parameters: expect.objectContaining({
+          publishedCycles: 2,
+          activeCycle: undefined,
+          consecutiveNoProgressTicks: undefined,
+          lastNoProgressReason: undefined,
+        }),
+      }),
+    );
   });
 
   it('preserves only hot-config fields while keeping runtime dual-account counters', async () => {
     const session = {
       runId: 'run-dual-merge',
-      strategyKey: 'user1-client1-dualAccountVolume',
-      strategyType: 'dualAccountVolume',
+      strategyKey: 'user1-client1-efficientDualAccountVolume',
+      strategyType: 'efficientDualAccountVolume',
       userId: 'user1',
       clientId: 'client1',
       cadenceMs: 1000,
@@ -3234,9 +3598,28 @@ describe('StrategyService', () => {
     });
 
     (service as any).sessions.set(session.strategyKey, session);
-    await dualAccountVolumeStrategyController.onDualAccountVolumeActionsPublished(
+    await efficientDualAccountRuntimeService.onEfficientDualAccountActionsPublished(
       session as any,
-      [{ type: 'CREATE_LIMIT_ORDER' } as any],
+      [
+        {
+          type: 'CREATE_LIMIT_ORDER',
+          metadata: {
+            role: 'maker',
+            cycleId: 'cycle-1',
+            tickId: 'tick-1',
+            orderId: 'order-1:maker',
+            makerAccountLabel: 'maker',
+            takerAccountLabel: 'taker',
+          },
+          accountLabel: 'maker',
+          side: 'buy',
+          price: '100',
+          qty: '1',
+          clientId: 'client1',
+          intentId: 'maker-intent-1',
+          createdAt: '2026-06-08T00:00:00.000Z',
+        } as any,
+      ],
     );
 
     expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
@@ -3254,8 +3637,8 @@ describe('StrategyService', () => {
   it('does not let persisted dual-account counters overwrite runtime counters', async () => {
     const session = {
       runId: 'run-dual-runtime-wins',
-      strategyKey: 'user1-client1-dualAccountVolume',
-      strategyType: 'dualAccountVolume',
+      strategyKey: 'user1-client1-efficientDualAccountVolume',
+      strategyType: 'efficientDualAccountVolume',
       userId: 'user1',
       clientId: 'client1',
       cadenceMs: 1000,
@@ -3294,9 +3677,28 @@ describe('StrategyService', () => {
     });
 
     (service as any).sessions.set(session.strategyKey, session);
-    await dualAccountVolumeStrategyController.onDualAccountVolumeActionsPublished(
+    await efficientDualAccountRuntimeService.onEfficientDualAccountActionsPublished(
       session as any,
-      [{ type: 'CREATE_LIMIT_ORDER' } as any],
+      [
+        {
+          type: 'CREATE_LIMIT_ORDER',
+          metadata: {
+            role: 'maker',
+            cycleId: 'cycle-4',
+            tickId: 'tick-4',
+            orderId: 'order-1:maker',
+            makerAccountLabel: 'maker',
+            takerAccountLabel: 'taker',
+          },
+          accountLabel: 'maker',
+          side: 'buy',
+          price: '100',
+          qty: '1',
+          clientId: 'client1',
+          intentId: 'maker-intent-4',
+          createdAt: '2026-06-08T00:00:00.000Z',
+        } as any,
+      ],
     );
 
     expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
@@ -3318,8 +3720,8 @@ describe('StrategyService', () => {
       .mockReturnValue(null);
 
     const actions =
-      await dualAccountVolumeStrategyController.buildDualAccountVolumeActions(
-        'dual-key',
+      await efficientDualAccountRuntimeService.buildEfficientDualAccountVolumeActions(
+        'efficient-dual-key',
         {
           exchangeName: 'binance',
           symbol: 'BTC/USDT',
@@ -3352,20 +3754,21 @@ describe('StrategyService', () => {
         bestAsk: 101,
       });
     setCachedBalances({
-      maker: { BTC: 10, USDT: 25 },
-      taker: { BTC: 0.15, USDT: 1000 },
+      maker: { BTC: 0.15, USDT: 25 },
+      taker: { BTC: 0.15, USDT: 25 },
     });
     jest.spyOn(Math, 'random').mockReturnValue(0.5);
 
     const actions =
-      await dualAccountVolumeStrategyController.buildDualAccountVolumeActions(
-        'dual-key',
+      await efficientDualAccountRuntimeService.buildEfficientDualAccountVolumeActions(
+        'efficient-dual-key',
         {
           exchangeName: 'binance',
           symbol: 'BTC/USDT',
           baseIncrementPercentage: 0.1,
           baseIntervalTime: 10,
           baseTradeAmount: 0.4,
+          maxOrderAmount: 0.4,
           numTrades: 2,
           userId: 'user1',
           clientId: 'client1',
@@ -3389,8 +3792,8 @@ describe('StrategyService', () => {
         metadata: expect.objectContaining({
           makerAccountLabel: 'maker',
           takerAccountLabel: 'taker',
-          requestedQty: '0.4',
-          effectiveQty: '0.15',
+          selectionModel: 'optimal_sustainable',
+          sustainableQty: '0.15',
         }),
       }),
     ]);
@@ -3406,19 +3809,20 @@ describe('StrategyService', () => {
       });
     setCachedBalances({
       maker: { BTC: 10, USDT: 100.2 },
-      taker: { BTC: 10, USDT: 1000 },
+      taker: { BTC: 10, USDT: 100.2 },
     });
     jest.spyOn(Math, 'random').mockReturnValue(0.5);
 
     const actions =
-      await dualAccountVolumeStrategyController.buildDualAccountVolumeActions(
-        'dual-key',
+      await efficientDualAccountRuntimeService.buildEfficientDualAccountVolumeActions(
+        'efficient-dual-key',
         {
           exchangeName: 'binance',
           symbol: 'BTC/USDT',
           baseIncrementPercentage: 0.1,
           baseIntervalTime: 10,
           baseTradeAmount: 2,
+          maxOrderAmount: 2,
           numTrades: 2,
           userId: 'user1',
           clientId: 'client1',
@@ -3439,15 +3843,15 @@ describe('StrategyService', () => {
     expect(actions[0]).toEqual(
       expect.objectContaining({
         accountLabel: 'maker',
-        qty: '0.99601791044776119403164',
         metadata: expect.objectContaining({
           makerAccountLabel: 'maker',
           takerAccountLabel: 'taker',
-          requestedQty: '2',
-          effectiveQty: '0.99601791044776119403164',
+          selectionModel: 'optimal_sustainable',
         }),
       }),
     );
+    expect(new BigNumber(actions[0].qty).isGreaterThan(0.99)).toBe(true);
+    expect(new BigNumber(actions[0].qty).isLessThan(1)).toBe(true);
     jest.restoreAllMocks();
   });
 
@@ -3465,8 +3869,8 @@ describe('StrategyService', () => {
     jest.spyOn(Math, 'random').mockReturnValue(0.5);
 
     const actions =
-      await dualAccountVolumeStrategyController.buildDualAccountVolumeActions(
-        'dual-key',
+      await efficientDualAccountRuntimeService.buildEfficientDualAccountVolumeActions(
+        'efficient-dual-key',
         {
           exchangeName: 'binance',
           symbol: 'BTC/USDT',
@@ -3513,8 +3917,8 @@ describe('StrategyService', () => {
 
   it('marks repair mode when a dual-account cycle settles with mismatched fills', async () => {
     const nextParams =
-      await dualAccountVolumeStrategyController.finalizeSettledDualAccountCycle(
-        { strategyKey: 'dual-key' } as any,
+      await efficientDualAccountRuntimeService.finalizeSettledEfficientDualAccountCycle(
+        { strategyKey: 'efficient-dual-key' } as any,
         {
           completedCycles: 0,
           activeCycle: {
@@ -3541,8 +3945,8 @@ describe('StrategyService', () => {
 
   it('marks repair mode when only the inline taker leg fills', async () => {
     const nextParams =
-      await dualAccountVolumeStrategyController.finalizeSettledDualAccountCycle(
-        { strategyKey: 'dual-key' } as any,
+      await efficientDualAccountRuntimeService.finalizeSettledEfficientDualAccountCycle(
+        { strategyKey: 'efficient-dual-key' } as any,
         {
           completedCycles: 0,
           activeCycle: {
@@ -3569,8 +3973,8 @@ describe('StrategyService', () => {
 
   it('accumulates matched quote volume when a dual-account cycle settles with symmetric fills', async () => {
     const nextParams =
-      await dualAccountVolumeStrategyController.finalizeSettledDualAccountCycle(
-        { strategyKey: 'dual-key' } as any,
+      await efficientDualAccountRuntimeService.finalizeSettledEfficientDualAccountCycle(
+        { strategyKey: 'efficient-dual-key' } as any,
         {
           completedCycles: 0,
           totalMatchedBaseVolume: 0,

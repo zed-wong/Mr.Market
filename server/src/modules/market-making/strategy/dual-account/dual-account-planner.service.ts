@@ -1140,11 +1140,8 @@ export class DualAccountPlannerService {
     actions: ExecutorAction[],
     orderBookReady: boolean,
   ): DualAccountVolumeStrategyParams {
-    const shouldIncrementPublishedCycles = actions.some(
-      (action) => !this.isRebalanceAction(action),
-    );
-    const tradeAction = actions.find(
-      (action) => !this.isRebalanceAction(action),
+    const tradeAction = actions.find((action) =>
+      this.isPublishedCycleAction(action),
     );
     const metadata =
       tradeAction &&
@@ -1161,12 +1158,14 @@ export class DualAccountPlannerService {
       ...params,
       publishedCycles:
         Number(params.publishedCycles || 0) +
-        (shouldIncrementPublishedCycles ? 1 : 0),
+        (tradeAction ? 1 : 0),
       consecutiveFallbackCycles: Number.isFinite(consecutiveFallbackCycles)
         ? consecutiveFallbackCycles
         : Number(params.consecutiveFallbackCycles || 0),
       orderBookReady,
       activeCycle: this.buildActiveCycleState(tradeAction),
+      consecutiveNoProgressTicks: undefined,
+      lastNoProgressReason: undefined,
     };
   }
 
@@ -1407,6 +1406,19 @@ export class DualAccountPlannerService {
     return metadata.role === 'rebalance' || metadata.rebalance === true;
   }
 
+  private isPublishedCycleAction(action: ExecutorAction): boolean {
+    if (action.type !== 'CREATE_LIMIT_ORDER' || this.isRebalanceAction(action)) {
+      return false;
+    }
+
+    const metadata =
+      action.metadata && typeof action.metadata === 'object'
+        ? (action.metadata as Record<string, unknown>)
+        : undefined;
+
+    return metadata?.role === 'maker';
+  }
+
   private getQuotePlanner(): QuotePlannerService {
     if (!this.quotePlannerService) {
       throw new Error('QuotePlannerService is not available');
@@ -1484,7 +1496,7 @@ export class DualAccountPlannerService {
     };
   }
 
-  async buildDualAccountVolumeActions(
+  async buildEfficientSpreadVolumeActions(
     strategyKey: string,
     params: DualAccountVolumeStrategyParams,
     ts: string,
@@ -1700,7 +1712,7 @@ export class DualAccountPlannerService {
         adjustedQuote.price,
         adjustedQuote.qty,
         ts,
-        `dual-account-volume-maker-${publishedCycles}`,
+        `efficient-dual-account-volume-maker-${publishedCycles}`,
         params.executionCategory,
         {
           cycleId,
@@ -1757,7 +1769,7 @@ export class DualAccountPlannerService {
     ];
   }
 
-  async buildDualAccountBestCapacityVolumeActions(
+  async buildEfficientBestCapacityVolumeActions(
     strategyKey: string,
     params: DualAccountVolumeStrategyParams,
     ts: string,
@@ -1956,7 +1968,7 @@ export class DualAccountPlannerService {
         adjustedQuote.price,
         adjustedQuote.qty,
         ts,
-        `dual-account-best-capacity-volume-maker-${publishedCycles}`,
+        `efficient-dual-account-capacity-maker-${publishedCycles}`,
         params.executionCategory,
         {
           cycleId,
@@ -2023,7 +2035,7 @@ export class DualAccountPlannerService {
     ];
   }
 
-  async buildOptimalDualAccountVolumeActions(
+  async buildEfficientDualAccountVolumeActions(
     strategyKey: string,
     params: DualAccountVolumeStrategyParams,
     ts: string,
@@ -2033,7 +2045,7 @@ export class DualAccountPlannerService {
     }
 
     if (
-      !this.hasFreshTrackedOrderBook(strategyKey, params, 'optimal volume')
+      !this.hasFreshTrackedOrderBook(strategyKey, params, 'efficient volume')
     ) {
       return [];
     }
@@ -2047,7 +2059,7 @@ export class DualAccountPlannerService {
     if (!trackedBestBidAsk) {
       if (params.orderBookReady) {
         this.logger.warn(
-          `Skipping optimal dual-account volume cycle for ${strategyKey}: tracked order book unavailable`,
+          `Skipping efficient dual-account volume cycle for ${strategyKey}: tracked order book unavailable`,
         );
       }
 
@@ -2061,7 +2073,7 @@ export class DualAccountPlannerService {
 
     if (spread.isLessThanOrEqualTo(0)) {
       this.logger.warn(
-        `Skipping optimal dual-account volume cycle for ${strategyKey}: no spread bestBid=${bestBid} bestAsk=${bestAsk}`,
+        `Skipping efficient dual-account volume cycle for ${strategyKey}: no spread bestBid=${bestBid} bestAsk=${bestAsk}`,
       );
 
       return [];
@@ -2083,7 +2095,7 @@ export class DualAccountPlannerService {
 
     if (!price.isFinite() || price.isLessThanOrEqualTo(0)) {
       this.logger.error(
-        `Skipping optimal dual-account volume cycle for ${strategyKey}: invalid price ${price.toFixed()}`,
+        `Skipping efficient dual-account volume cycle for ${strategyKey}: invalid price ${price.toFixed()}`,
       );
 
       return [];
@@ -2104,7 +2116,7 @@ export class DualAccountPlannerService {
 
     if (!this.hasMinimumTradingRules(rules)) {
       this.logger.warn(
-        `Skipping optimal dual-account volume cycle for ${strategyKey}: cached trading rules are missing or incomplete for ${params.exchangeName} ${params.symbol}`,
+        `Skipping efficient dual-account volume cycle for ${strategyKey}: cached trading rules are missing or incomplete for ${params.exchangeName} ${params.symbol}`,
       );
 
       return [];
@@ -2245,7 +2257,7 @@ export class DualAccountPlannerService {
       }
 
       this.logger.warn(
-        `Stopping optimal dual-account volume for ${strategyKey}: no sustainable candidate found`,
+        `Stopping efficient dual-account volume for ${strategyKey}: no sustainable candidate found`,
       );
 
       return [];
@@ -2274,7 +2286,7 @@ export class DualAccountPlannerService {
 
     if (!adjustedQuote) {
       this.logger.warn(
-        `Skipping optimal dual-account volume cycle for ${strategyKey}: quantization failed for best candidate`,
+        `Skipping efficient dual-account volume cycle for ${strategyKey}: quantization failed for best candidate`,
       );
 
       return [];
@@ -2293,7 +2305,7 @@ export class DualAccountPlannerService {
 
     this.logger.log(
       [
-        'Optimal dual-account volume decision',
+        'Efficient dual-account volume decision',
         `strategy=${strategyKey}`,
         `cycle=${cycleId}`,
         `tick=${ts}`,
@@ -2323,7 +2335,7 @@ export class DualAccountPlannerService {
         adjustedQuote.price,
         adjustedQuote.qty,
         ts,
-        `optimal-dual-account-volume-maker-${publishedCycles}`,
+        `efficient-dual-account-volume-maker-${publishedCycles}`,
         params.executionCategory,
         {
           cycleId,
@@ -3209,7 +3221,7 @@ export class DualAccountPlannerService {
         adjustedQuote.price,
         adjustedQuote.qty,
         ts,
-        `dual-account-volume-rebalance-${publishedCycles}-${accountLabel}-${side}`,
+        `efficient-dual-account-volume-rebalance-${publishedCycles}-${accountLabel}-${side}`,
         params.executionCategory,
         {
           cycleId,

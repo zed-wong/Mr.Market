@@ -409,7 +409,7 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
     const randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0.5);
 
     try {
-      const actions = await planner.buildDualAccountBestCapacityVolumeActions(
+      const actions = await planner.buildEfficientBestCapacityVolumeActions(
         'strategy-1',
         baseParams,
         '2026-06-04T00:00:00.000Z',
@@ -444,7 +444,7 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
     const randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0.5);
 
     try {
-      const actions = await planner.buildDualAccountBestCapacityVolumeActions(
+      const actions = await planner.buildEfficientBestCapacityVolumeActions(
         'architecture-strategy',
         baseParams,
         '2026-06-04T00:00:00.000Z',
@@ -495,7 +495,7 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
 
     try {
       await expect(
-        planner.buildDualAccountBestCapacityVolumeActions(
+        planner.buildEfficientBestCapacityVolumeActions(
           'dust-strategy',
           {
             ...baseParams,
@@ -533,7 +533,7 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
 
     try {
       await expect(
-        planner.buildDualAccountBestCapacityVolumeActions(
+        planner.buildEfficientBestCapacityVolumeActions(
           'rebalance-loop-strategy',
           {
             ...baseParams,
@@ -549,7 +549,7 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
     }
   });
 
-  it('does not schedule optimal volume when capacity falls below exchange notional minimum', async () => {
+  it('does not schedule efficient volume when capacity falls below exchange notional minimum', async () => {
     const { planner, intentStore } = buildPlanner({
       bestBid: '53',
       bestAsk: '55',
@@ -568,7 +568,7 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
 
     try {
       await expect(
-        planner.buildOptimalDualAccountVolumeActions(
+        planner.buildEfficientDualAccountVolumeActions(
           'xin-strategy',
           {
             ...baseParams,
@@ -587,7 +587,7 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
     }
   });
 
-  it('schedules an optimal rebalance when no sustainable candidate has base inventory', async () => {
+  it('schedules an efficient rebalance when no sustainable candidate has base inventory', async () => {
     const { planner } = buildPlanner({
       bestBid: '100',
       bestAsk: '101',
@@ -605,8 +605,8 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
     const randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0.5);
 
     try {
-      const actions = await planner.buildOptimalDualAccountVolumeActions(
-        'quote-only-optimal-strategy',
+      const actions = await planner.buildEfficientDualAccountVolumeActions(
+        'quote-only-efficient-strategy',
         baseParams,
         '2026-06-13T14:10:00.000Z',
       );
@@ -638,7 +638,7 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
 
     try {
       await expect(
-        planner.buildDualAccountBestCapacityVolumeActions(
+        planner.buildEfficientBestCapacityVolumeActions(
           'missing-rules-strategy',
           baseParams,
           '2026-06-04T00:00:00.000Z',
@@ -670,7 +670,7 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
       .mockReturnValue(0);
 
     try {
-      const actions = await planner.buildDualAccountBestCapacityVolumeActions(
+      const actions = await planner.buildEfficientBestCapacityVolumeActions(
         'variance-strategy',
         {
           ...baseParams,

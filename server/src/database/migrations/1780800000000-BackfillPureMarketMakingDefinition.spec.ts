@@ -52,25 +52,12 @@ describe('BackfillPureMarketMakingDefinition1780800000000', () => {
         "createdAt",
         "updatedAt"
       ) VALUES
-        (?, ?, ?, ?, ?, ?, ?, 1, 'admin', ?, ?),
         (?, ?, ?, ?, ?, ?, ?, 1, 'admin', ?, ?)`,
       [
         'strategy-efficient',
         'efficient_dual_account_volume',
         'Efficient Dual Account Volume',
         'efficientDualAccountVolume',
-        '{}',
-        '{}',
-        JSON.stringify({
-          launchSurfaces: ['strategy_settings', 'admin_direct_mm'],
-          directExecutionMode: 'dual_account',
-        }),
-        '2026-06-01T00:00:00.000Z',
-        '2026-06-01T00:00:00.000Z',
-        'strategy-legacy-dual',
-        'dual_account_volume',
-        'Dual Account Volume',
-        'dualAccountVolume',
         '{}',
         '{}',
         JSON.stringify({
@@ -115,11 +102,5 @@ describe('BackfillPureMarketMakingDefinition1780800000000', () => {
       launchSurfaces: ['strategy_settings', 'admin_direct_mm'],
       directExecutionMode: 'single_account',
     });
-    expect(
-      rows.find(
-        (row: { controllerType: string }) =>
-          row.controllerType === 'dualAccountVolume',
-      ),
-    ).toBeDefined();
   });
 });

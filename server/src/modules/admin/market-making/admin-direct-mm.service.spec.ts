@@ -1548,7 +1548,7 @@ describe('AdminDirectMarketMakingService', () => {
     );
   });
 
-  it('starts classic dual-account direct orders when the legacy definition is selected', async () => {
+  it('rejects legacy dual-account direct strategy definitions', async () => {
     const {
       service,
       strategyDefinitionRepository,
@@ -1583,67 +1583,8 @@ describe('AdminDirectMarketMakingService', () => {
 
     await expect(
       service.directStart(dualAccountStartDto, 'admin-user'),
-    ).resolves.toEqual({
-      orderId: expect.any(String),
-      state: 'running',
-      warnings: [],
-    });
-    expect(userOrdersService.createMarketMaking).toHaveBeenCalledWith(
-      expect.objectContaining({
-        strategySnapshot: expect.objectContaining({
-          controllerType: 'dualAccountVolume',
-        }),
-      }),
-    );
-  });
-
-  it('starts best-capacity dual-account direct orders when the legacy definition is selected', async () => {
-    const {
-      service,
-      strategyDefinitionRepository,
-      strategyConfigResolver,
-      userOrdersService,
-    } = buildService();
-
-    strategyDefinitionRepository.findOne.mockResolvedValue({
-      id: 'strategy-best',
-      enabled: true,
-      controllerType: 'dualAccountBestCapacityVolume',
-      capabilities: dualAccountLaunchConfig,
-      configSchema: {},
-    });
-    strategyConfigResolver.getDefinitionControllerType.mockReturnValue(
-      'dualAccountBestCapacityVolume',
-    );
-    strategyConfigResolver.resolveForOrderSnapshot.mockResolvedValue({
-      controllerType: 'dualAccountBestCapacityVolume',
-      resolvedConfig: {
-        exchangeName: 'binance',
-        symbol: 'BTC/USDT',
-        baseTradeAmount: 5,
-        baseIntervalTime: 10,
-        numTrades: 20,
-        baseIncrementPercentage: 0.2,
-        pricePushRate: 0,
-        balanceA: '1',
-        balanceB: '1000',
-      },
-    });
-
-    await expect(
-      service.directStart(dualAccountStartDto, 'admin-user'),
-    ).resolves.toEqual({
-      orderId: expect.any(String),
-      state: 'running',
-      warnings: [],
-    });
-    expect(userOrdersService.createMarketMaking).toHaveBeenCalledWith(
-      expect.objectContaining({
-        strategySnapshot: expect.objectContaining({
-          controllerType: 'dualAccountBestCapacityVolume',
-        }),
-      }),
-    );
+    ).rejects.toThrow('Unsupported direct strategy controller dualAccountVolume');
+    expect(userOrdersService.createMarketMaking).not.toHaveBeenCalled();
   });
 
   it('starts an efficient unified dual-account direct order with normalized contract defaults', async () => {
@@ -2772,7 +2713,7 @@ describe('AdminDirectMarketMakingService', () => {
     ]);
   });
 
-  it('resolves legacy dual-account definitions for new direct-start orders', async () => {
+  it('rejects stale best-capacity direct definitions for new direct-start orders', async () => {
     const { service, strategyDefinitionRepository, strategyConfigResolver } =
       buildService();
 
@@ -2809,16 +2750,14 @@ describe('AdminDirectMarketMakingService', () => {
         },
         'admin-user',
       ),
-    ).resolves.toEqual({
-      orderId: expect.any(String),
-      state: 'running',
-      warnings: [],
-    });
+    ).rejects.toThrow(
+      'Unsupported direct strategy controller dualAccountBestCapacityVolume',
+    );
 
-    expect(strategyConfigResolver.resolveForOrderSnapshot).toHaveBeenCalled();
+    expect(strategyConfigResolver.resolveForOrderSnapshot).not.toHaveBeenCalled();
   });
 
-  it('lists legacy dual-account variants in direct strategy definitions', async () => {
+  it('excludes legacy dual-account variants from direct strategy definitions', async () => {
     const { service, strategyDefinitionRepository } = buildService();
 
     strategyDefinitionRepository.find.mockResolvedValue([
@@ -2862,21 +2801,13 @@ describe('AdminDirectMarketMakingService', () => {
         controllerType: 'pureMarketMaking',
       }),
       expect.objectContaining({
-        id: 'strategy-classic',
-        controllerType: 'dualAccountVolume',
-      }),
-      expect.objectContaining({
-        id: 'strategy-best',
-        controllerType: 'dualAccountBestCapacityVolume',
-      }),
-      expect.objectContaining({
         id: 'strategy-efficient',
         controllerType: 'efficientDualAccountVolume',
       }),
     ]);
   });
 
-  it('backfills the efficient dual-account strategy when an existing DB only has legacy direct definitions', async () => {
+  it('backfills the efficient dual-account strategy when it is missing', async () => {
     const { service, strategyDefinitionRepository } = buildService();
 
     strategyDefinitionRepository.find.mockResolvedValue([
@@ -2888,15 +2819,6 @@ describe('AdminDirectMarketMakingService', () => {
         visibility: 'public',
         controllerType: 'pureMarketMaking',
         capabilities: singleAccountLaunchConfig,
-      },
-      {
-        id: 'strategy-classic',
-        key: 'dual_account_volume',
-        name: 'Dual Account Volume',
-        enabled: true,
-        visibility: 'admin',
-        controllerType: 'dualAccountVolume',
-        capabilities: dualAccountLaunchConfig,
       },
     ]);
     strategyDefinitionRepository.save.mockImplementation(async (payload) => ({
@@ -2921,7 +2843,6 @@ describe('AdminDirectMarketMakingService', () => {
     expect(definitions.map((definition) => definition.controllerType)).toEqual(
       expect.arrayContaining([
         'pureMarketMaking',
-        'dualAccountVolume',
         'efficientDualAccountVolume',
       ]),
     );
@@ -2952,15 +2873,6 @@ describe('AdminDirectMarketMakingService', () => {
         controllerType: 'efficientDualAccountVolume',
         capabilities: dualAccountLaunchConfig,
       },
-      {
-        id: 'strategy-classic',
-        key: 'dual_account_volume',
-        name: 'Dual Account Volume',
-        enabled: true,
-        visibility: 'admin',
-        controllerType: 'dualAccountVolume',
-        capabilities: dualAccountLaunchConfig,
-      },
     ]);
     strategyDefinitionRepository.save.mockImplementation(async (payload) => ({
       ...payload,
@@ -2984,7 +2896,6 @@ describe('AdminDirectMarketMakingService', () => {
     expect(definitions.map((definition) => definition.controllerType)).toEqual([
       'pureMarketMaking',
       'efficientDualAccountVolume',
-      'dualAccountVolume',
     ]);
     expect(
       definitions.find(

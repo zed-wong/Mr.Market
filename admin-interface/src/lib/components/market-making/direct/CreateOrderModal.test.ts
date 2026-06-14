@@ -70,7 +70,7 @@ const baseProps = {
 };
 
 describe('CreateOrderModal direct strategy rendering', () => {
-  it('renders Pure Market Making, legacy dual account, and Efficient Dual Account Volume strategy options', () => {
+  it('renders Pure Market Making and Efficient Dual Account Volume strategy options', () => {
     const strategies = filterDirectCreateStrategies([
       {
         id: 'def-pmm',
@@ -78,24 +78,6 @@ describe('CreateOrderModal direct strategy rendering', () => {
         name: 'Pure Market Making',
         controllerType: 'pureMarketMaking',
         directExecutionMode: 'single_account' as const,
-        defaultConfig: {},
-        configSchema: {},
-      },
-      {
-        id: 'def-legacy-classic',
-        key: 'dual_account_volume',
-        name: 'Dual Account Volume',
-        controllerType: 'dualAccountVolume',
-        directExecutionMode: 'dual_account' as const,
-        defaultConfig: {},
-        configSchema: {},
-      },
-      {
-        id: 'def-legacy-best',
-        key: 'dual_account_best_capacity_volume',
-        name: 'Dual Account Best Capacity Volume',
-        controllerType: 'dualAccountBestCapacityVolume',
-        directExecutionMode: 'dual_account' as const,
         defaultConfig: {},
         configSchema: {},
       },
@@ -120,8 +102,6 @@ describe('CreateOrderModal direct strategy rendering', () => {
     });
 
     expect(body).toContain('Pure Market Making');
-    expect(body).toContain('Dual Account Volume');
-    expect(body).toContain('Dual Account Best Capacity Volume');
     expect(body).toContain('Efficient Dual Account Volume');
   });
 });

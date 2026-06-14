@@ -25,8 +25,6 @@ import { TickModule } from '../tick/tick.module';
 import { TrackersModule } from '../trackers/trackers.module';
 import type { StrategyController as StrategyRuntimeController } from './config/strategy-controller.types';
 import { ArbitrageStrategyController } from './controllers/arbitrage-strategy.controller';
-import { DualAccountBestCapacityVolumeStrategyController } from './controllers/dual-account-best-capacity-volume-strategy.controller';
-import { DualAccountVolumeStrategyController } from './controllers/dual-account-volume-strategy.controller';
 import { EfficientDualAccountVolumeStrategyController } from './controllers/efficient-dual-account-volume-strategy.controller';
 import { PureMarketMakingStrategyController } from './controllers/pure-market-making-strategy.controller';
 import { StrategyControllerRegistry } from './controllers/strategy-controller.registry';
@@ -35,6 +33,7 @@ import { VolumeStrategyController } from './controllers/volume-strategy.controll
 import { StrategyMarketDataProviderService } from './data/strategy-market-data-provider.service';
 import { DexModule } from './dex/dex.module';
 import { StrategyConfigResolverService } from './dex/strategy-config-resolver.service';
+import { EfficientDualAccountRuntimeService } from './dual-account/efficient-dual-account-runtime.service';
 import { DualAccountPlannerService } from './dual-account/dual-account-planner.service';
 import { StrategyIntentExecutionService } from './execution/strategy-intent-execution.service';
 import { StrategyIntentStoreService } from './execution/strategy-intent-store.service';
@@ -103,10 +102,9 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
     DualAccountRuntimeStateService,
     OrderScopedBalanceQueryService,
     DualAccountPlannerService,
+    EfficientDualAccountRuntimeService,
     ArbitrageStrategyController,
     PureMarketMakingStrategyController,
-    DualAccountBestCapacityVolumeStrategyController,
-    DualAccountVolumeStrategyController,
     EfficientDualAccountVolumeStrategyController,
     VolumeStrategyController,
     TimeIndicatorStrategyController,
@@ -115,8 +113,6 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
       useFactory: (
         arbitrage: ArbitrageStrategyController,
         pureMarketMaking: PureMarketMakingStrategyController,
-        dualAccountBestCapacityVolume: DualAccountBestCapacityVolumeStrategyController,
-        dualAccountVolume: DualAccountVolumeStrategyController,
         efficientDualAccountVolume: EfficientDualAccountVolumeStrategyController,
         volume: VolumeStrategyController,
         timeIndicator: TimeIndicatorStrategyController,
@@ -124,16 +120,12 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
         arbitrage,
         pureMarketMaking,
         efficientDualAccountVolume,
-        dualAccountBestCapacityVolume,
-        dualAccountVolume,
         volume,
         timeIndicator,
       ],
       inject: [
         ArbitrageStrategyController,
         PureMarketMakingStrategyController,
-        DualAccountBestCapacityVolumeStrategyController,
-        DualAccountVolumeStrategyController,
         EfficientDualAccountVolumeStrategyController,
         VolumeStrategyController,
         TimeIndicatorStrategyController,

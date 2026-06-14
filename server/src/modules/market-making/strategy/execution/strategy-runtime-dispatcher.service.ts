@@ -29,12 +29,6 @@ export class StrategyRuntimeDispatcherService {
     if (normalizedControllerType === 'pureMarketMaking') {
       return 'pureMarketMaking';
     }
-    if (normalizedControllerType === 'dualAccountVolume') {
-      return 'dualAccountVolume';
-    }
-    if (normalizedControllerType === 'dualAccountBestCapacityVolume') {
-      return 'dualAccountBestCapacityVolume';
-    }
     if (normalizedControllerType === 'efficientDualAccountVolume') {
       return 'efficientDualAccountVolume';
     }

@@ -112,6 +112,10 @@ const DIRECT_RESERVED_CONFIG_FIELDS = new Set([
   'id',
 ]);
 const EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE = 'efficientDualAccountVolume';
+const SUPPORTED_DIRECT_STRATEGY_CONTROLLERS = new Set([
+  'pureMarketMaking',
+  EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE,
+]);
 
 type RuntimeSessionLike = {
   orderId: string;
@@ -259,6 +263,11 @@ export class AdminDirectMarketMakingService {
 
     const controllerType =
       this.strategyConfigResolver.getDefinitionControllerType(definition);
+    if (!SUPPORTED_DIRECT_STRATEGY_CONTROLLERS.has(controllerType)) {
+      throw new BadRequestException(
+        `Unsupported direct strategy controller ${controllerType}`,
+      );
+    }
     const capabilities = getStrategyDefinitionCapabilities(definition);
 
     if (
@@ -1353,6 +1362,7 @@ export class AdminDirectMarketMakingService {
         return (
           definition.enabled === true &&
           ['public', 'admin'].includes(visibility) &&
+          SUPPORTED_DIRECT_STRATEGY_CONTROLLERS.has(controllerType) &&
           controllerType.length > 0 &&
           definition.directOrderCompatible
         );
@@ -3804,11 +3814,7 @@ export class AdminDirectMarketMakingService {
 
     const controllerType = this.readControllerType(order);
 
-    return (
-      controllerType === 'dualAccountVolume' ||
-      controllerType === 'dualAccountBestCapacityVolume' ||
-      controllerType === EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE
-    );
+    return controllerType === EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE;
   }
 
   private resolveDirectExecutionModeFromOrder(
