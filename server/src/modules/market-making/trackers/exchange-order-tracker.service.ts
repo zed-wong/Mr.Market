@@ -1230,8 +1230,9 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
       return;
     }
 
+    const orderScope = this.resolveTrackedOrderScope(order);
     const marketMakingOrder = await this.marketMakingOrderRepository?.findOne({
-      where: { orderId: order.orderId },
+      where: { orderId: orderScope.userOrderId },
     });
     const userId =
       String(marketMakingOrder?.userId || '').trim() ||
@@ -1243,6 +1244,8 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
 
     await this.orderReservationService.releaseLimitOrderReservation({
       orderId: order.orderId,
+      userOrderId: orderScope.userOrderId,
+      accountLabel: orderScope.accountLabel,
       userId,
       intentId: order.clientOrderId || order.orderId,
       releaseId: order.clientOrderId,
@@ -1257,8 +1260,9 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
   private async releaseReservationForTerminalOrderAsync(
     order: TrackedOrder,
   ): Promise<void> {
+    const orderScope = this.resolveTrackedOrderScope(order);
     const marketMakingOrder = await this.marketMakingOrderRepository?.findOne({
-      where: { orderId: order.orderId },
+      where: { orderId: orderScope.userOrderId },
     });
     const userId =
       String(marketMakingOrder?.userId || '').trim() ||
@@ -1270,6 +1274,8 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
 
     await this.orderReservationService?.releaseRemainingLimitOrderReservation({
       orderId: order.orderId,
+      userOrderId: orderScope.userOrderId,
+      accountLabel: orderScope.accountLabel,
       userId,
       intentId: order.clientOrderId || order.exchangeOrderId,
       releaseId: order.clientOrderId || order.exchangeOrderId,
@@ -1283,6 +1289,27 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
           ? 'exchange_order_filled'
           : 'exchange_order_cancelled',
     });
+  }
+
+  private resolveTrackedOrderScope(order: TrackedOrder): {
+    userOrderId: string;
+    accountLabel: string;
+  } {
+    const inferredScope = resolveLedgerOrderScope({
+      ledgerOrderId: order.orderId,
+      accountLabel: order.accountLabel,
+    });
+    const explicitUserOrderId = String(order.userOrderId || '').trim();
+
+    if (explicitUserOrderId && explicitUserOrderId !== order.orderId) {
+      return resolveLedgerOrderScope({
+        ledgerOrderId: order.orderId,
+        userOrderId: explicitUserOrderId,
+        accountLabel: order.accountLabel,
+      });
+    }
+
+    return inferredScope;
   }
 
   private extractUserIdFromStrategyKey(strategyKey: string): string {

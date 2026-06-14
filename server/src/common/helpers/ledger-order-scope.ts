@@ -52,6 +52,24 @@ export function resolveLedgerOrderScope(params: {
     };
   }
 
+  if (
+    explicitAccountLabel !== 'default' &&
+    ledgerOrderId.endsWith(`:${explicitAccountLabel}`)
+  ) {
+    const possibleUserOrderId = ledgerOrderId.slice(
+      0,
+      ledgerOrderId.length - explicitAccountLabel.length - 1,
+    );
+
+    if (possibleUserOrderId) {
+      return {
+        userOrderId: possibleUserOrderId,
+        ledgerOrderId,
+        accountLabel: explicitAccountLabel,
+      };
+    }
+  }
+
   const separatorIndex = ledgerOrderId.lastIndexOf(':');
 
   if (separatorIndex > 0) {

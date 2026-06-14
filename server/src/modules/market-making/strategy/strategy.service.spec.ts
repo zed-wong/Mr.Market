@@ -1140,6 +1140,8 @@ describe('StrategyService', () => {
     expect(balanceLedgerService.adjust).toHaveBeenCalledTimes(2);
     expect(balanceLedgerService.adjust).toHaveBeenCalledWith({
       orderId: 'client1',
+      userOrderId: 'client1',
+      accountLabel: 'default',
       userId: '1',
       assetId: 'BTC',
       amount: '0.5',
@@ -1150,6 +1152,8 @@ describe('StrategyService', () => {
     });
     expect(balanceLedgerService.adjust).toHaveBeenCalledWith({
       orderId: 'client1',
+      userOrderId: 'client1',
+      accountLabel: 'default',
       userId: '1',
       assetId: 'USDT',
       amount: '-50',
@@ -1198,6 +1202,8 @@ describe('StrategyService', () => {
 
     expect(balanceLedgerService.debitFee).toHaveBeenCalledWith({
       orderId: 'client1',
+      userOrderId: 'client1',
+      accountLabel: 'default',
       userId: '1',
       assetId: 'BTC',
       amount: '0.0005',
@@ -3035,6 +3041,103 @@ describe('StrategyService', () => {
         }),
       }),
     ]);
+  });
+
+  it('clears efficient dual-account repair mode when paired execution is tradable again', async () => {
+    const params = {
+      exchangeName: 'binance',
+      symbol: 'BTC/USDT',
+      pair: 'BTC/USDT',
+      baseIncrementPercentage: 0,
+      baseIntervalTime: 15,
+      baseTradeAmount: 0.4,
+      maxOrderAmount: 0.4,
+      interval: 15,
+      numTrades: 0,
+      userId: 'admin-direct',
+      clientId: 'order-1',
+      marketMakingOrderId: 'order-1',
+      pricePushRate: 0,
+      executionCategory: 'clob_cex',
+      executionVenue: 'cex',
+      makerAccountLabel: '4',
+      takerAccountLabel: '8',
+      targetQuoteVolume: 30000,
+      publishedCycles: 3,
+      completedCycles: 2,
+      mode: 'balanced',
+      strategyContract: 'efficientDualAccountVolume',
+      repairRequired: true,
+      repairReason: 'paired_fill_mismatch',
+    };
+    const session = {
+      runId: 'run-dual-repair-resume',
+      strategyKey: 'admin-direct-order-1-efficientDualAccountVolume',
+      strategyType: 'efficientDualAccountVolume',
+      userId: 'admin-direct',
+      clientId: 'order-1',
+      cadenceMs: 1000,
+      nextRunAtMs: 0,
+      marketMakingOrderId: 'order-1',
+      params,
+    };
+    const scopedBalances: Record<string, Record<string, string>> = {
+      'order-1:4': { BTC: '0.4', USDT: '0.04' },
+      'order-1:8': { BTC: '0', USDT: '1000' },
+    };
+    const randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0.5);
+
+    mockStrategyInstanceRepository.findOne.mockResolvedValue({
+      strategyKey: session.strategyKey,
+      parameters: params,
+    });
+    balanceLedgerService.getExistingBalance.mockImplementation(
+      async (orderId: string, assetId: string) => {
+        const available = scopedBalances[orderId]?.[assetId] || '0';
+
+        return { available, total: available };
+      },
+    );
+    exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([]);
+    strategyMarketDataProviderService.getTrackedBestBidAsk.mockReturnValue({
+      bestBid: 100,
+      bestAsk: 101,
+    });
+
+    try {
+      const actions =
+        await dualAccountVolumeStrategyController.buildOptimalDualAccountVolumeSessionActions(
+          session as any,
+          '2026-06-14T07:48:13.000Z',
+        );
+
+      expect(actions).toHaveLength(1);
+      expect(actions[0]).toEqual(
+        expect.objectContaining({
+          type: 'CREATE_LIMIT_ORDER',
+          postOnly: true,
+          timeInForce: undefined,
+          metadata: expect.objectContaining({
+            role: 'maker',
+            baseOrderId: 'order-1',
+          }),
+        }),
+      );
+      expect(actions[0].metadata).not.toEqual(
+        expect.objectContaining({ rebalance: true }),
+      );
+      expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
+        { strategyKey: session.strategyKey },
+        {
+          parameters: expect.objectContaining({
+            repairRequired: false,
+            repairReason: undefined,
+          }),
+        },
+      );
+    } finally {
+      randomSpy.mockRestore();
+    }
   });
 
   it('returns a stop intent instead of directly stopping completed dual-account strategies', async () => {

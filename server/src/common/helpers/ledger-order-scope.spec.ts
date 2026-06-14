@@ -81,4 +81,30 @@ describe('ledger order scope helpers', () => {
       }),
     ).toBe('order-1:account-a');
   });
+
+  it('resolves explicit numeric account-label ledger ids to the root user order', () => {
+    expect(
+      resolveLedgerOrderScope({
+        ledgerOrderId: 'order-1:4',
+        accountLabel: '4',
+      }),
+    ).toEqual({
+      userOrderId: 'order-1',
+      ledgerOrderId: 'order-1:4',
+      accountLabel: '4',
+    });
+  });
+
+  it('resolves explicit named account-label ledger ids to the root user order', () => {
+    expect(
+      resolveLedgerOrderScope({
+        ledgerOrderId: 'order-1:account-a',
+        accountLabel: 'account-a',
+      }),
+    ).toEqual({
+      userOrderId: 'order-1',
+      ledgerOrderId: 'order-1:account-a',
+      accountLabel: 'account-a',
+    });
+  });
 });

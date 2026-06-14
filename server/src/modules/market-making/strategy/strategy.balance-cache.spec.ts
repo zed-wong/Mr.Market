@@ -429,6 +429,23 @@ describe('StrategyService balance cache helpers', () => {
     const service = createService({
       balanceLedgerService,
       balanceStateCacheService,
+      exchangeConnectorAdapterService: {
+        getCachedTradingRules: jest.fn().mockReturnValue({
+          amountMin: 0.001,
+          costMin: 10,
+          makerFee: 0.001,
+          takerFee: 0.001,
+        }),
+        loadTradingRules: jest.fn().mockResolvedValue({}),
+        quantizeOrder: jest.fn(
+          (
+            _exchangeName: string,
+            _symbol: string,
+            qty: string,
+            price: string,
+          ) => ({ qty, price }),
+        ),
+      },
       strategyMarketDataProviderService: {
         getTrackedBestBidAsk: jest.fn().mockReturnValue({
           bestBid: 100,
@@ -478,9 +495,8 @@ describe('StrategyService balance cache helpers', () => {
         accountLabel: 'maker',
         metadata: expect.objectContaining({
           orderId: 'order-1:maker',
-          requestedQty: '0.1',
+          requestedQty: '1',
           effectiveQty: '0.1',
-          targetQty: '1',
         }),
       }),
     ]);

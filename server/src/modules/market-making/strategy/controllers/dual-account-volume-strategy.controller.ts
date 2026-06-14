@@ -161,14 +161,14 @@ export class DualAccountVolumeStrategyController implements StrategyController {
     const targetQuoteVolume = Number(latestParams.targetQuoteVolume || 0);
 
     if (latestParams.repairRequired) {
-      const repairAction = await this.buildRepairRebalanceAction(
-        session.strategyKey,
+      const repairActions = await this.buildRepairOrResumeActions(
+        session,
         latestParams,
-        'buy',
+        'optimal',
         ts,
       );
 
-      return repairAction ? [repairAction] : [];
+      return repairActions;
     }
 
     if (targetQuoteVolume > 0 && tradedQuoteVolume >= targetQuoteVolume) {
@@ -315,14 +315,14 @@ export class DualAccountVolumeStrategyController implements StrategyController {
     const targetQuoteVolume = Number(latestParams.targetQuoteVolume || 0);
 
     if (latestParams.repairRequired) {
-      const repairAction = await this.buildRepairRebalanceAction(
-        session.strategyKey,
+      const repairActions = await this.buildRepairOrResumeActions(
+        session,
         latestParams,
-        'buy',
+        selectionModel,
         ts,
       );
 
-      return repairAction ? [repairAction] : [];
+      return repairActions;
     }
 
     const maxCompletedCycles = Number(latestParams.numTrades || 0);
@@ -446,6 +446,100 @@ export class DualAccountVolumeStrategyController implements StrategyController {
       Number(params.publishedCycles || 0),
       ts,
     );
+  }
+
+  private async buildRepairOrResumeActions(
+    session: StrategyRuntimeSession,
+    params: DualAccountVolumeStrategyParams,
+    selectionModel: 'classic' | 'best_capacity' | 'optimal',
+    ts: string,
+  ): Promise<ExecutorAction[]> {
+    const resumedParams: DualAccountVolumeStrategyParams = {
+      ...params,
+      repairRequired: false,
+      repairReason: undefined,
+    };
+    const resumedActions = await this.buildSelectionModelActions(
+      session.strategyKey,
+      resumedParams,
+      selectionModel,
+      ts,
+    );
+    const hasTradeAction = resumedActions.some(
+      (action) => !this.getDualAccountPlanner().isRebalanceAction(action),
+    );
+
+    if (hasTradeAction) {
+      await this.persistStrategyParams(session.strategyKey, resumedParams);
+      this.updateActiveSessionParams(session, resumedParams);
+      this.logger.warn(
+        `Cleared dual-account repair mode for ${session.strategyKey}: current balances can resume paired execution`,
+      );
+
+      return resumedActions;
+    }
+
+    const repairAction = await this.buildRepairRebalanceAction(
+      session.strategyKey,
+      params,
+      'buy',
+      ts,
+    );
+
+    return repairAction ? [repairAction] : [];
+  }
+
+  private async buildSelectionModelActions(
+    strategyKey: string,
+    params: DualAccountVolumeStrategyParams,
+    selectionModel: 'classic' | 'best_capacity' | 'optimal',
+    ts: string,
+  ): Promise<ExecutorAction[]> {
+    if (selectionModel === 'optimal') {
+      return await this.getDualAccountPlanner().buildOptimalDualAccountVolumeActions(
+        strategyKey,
+        params,
+        ts,
+      );
+    }
+
+    if (selectionModel === 'best_capacity') {
+      return await this.buildDualAccountBestCapacityVolumeActions(
+        strategyKey,
+        params,
+        ts,
+      );
+    }
+
+    return await this.buildDualAccountVolumeActions(strategyKey, params, ts);
+  }
+
+  private async persistStrategyParams(
+    strategyKey: string,
+    params: DualAccountVolumeStrategyParams,
+  ): Promise<void> {
+    await this.getStrategyInstanceRepository().update(
+      { strategyKey },
+      {
+        parameters: params as StrategyInstance['parameters'],
+      },
+    );
+  }
+
+  private updateActiveSessionParams(
+    session: StrategyRuntimeSession,
+    params: DualAccountVolumeStrategyParams,
+  ): void {
+    const activeSession = this.getActiveSession(session.strategyKey);
+
+    if (!this.isSameActiveSession(activeSession, session)) {
+      return;
+    }
+
+    activeSession.params = params;
+    activeSession.cadenceMs =
+      dualAccountConfig.resolveNextDualAccountCadenceMs(params);
+    this.setActiveSession(session.strategyKey, activeSession);
   }
 
   private getActiveSession(

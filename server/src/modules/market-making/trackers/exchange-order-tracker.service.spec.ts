@@ -115,6 +115,8 @@ describe('ExchangeOrderTrackerService', () => {
       orderReservationService.releaseRemainingLimitOrderReservation,
     ).toHaveBeenCalledWith({
       orderId: 'order-1',
+      userOrderId: 'order-1',
+      accountLabel: 'default',
       userId: 'admin-direct',
       intentId: 'client-1',
       releaseId: 'client-1',
@@ -124,6 +126,76 @@ describe('ExchangeOrderTrackerService', () => {
       qty: '0.02',
       filledQty: '0',
       reason: 'exchange_order_cancelled',
+    });
+  });
+
+  it('releases terminal scoped-account reservations with the root user order id', async () => {
+    const marketMakingOrderRepository = {
+      findOne: jest.fn().mockResolvedValue({ userId: 'admin-direct' }),
+    };
+    const orderReservationService = {
+      releaseRemainingLimitOrderReservation: jest.fn().mockResolvedValue({
+        applied: true,
+      }),
+    };
+    const service = new ExchangeOrderTrackerService(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      marketMakingOrderRepository as any,
+      undefined,
+      orderReservationService as any,
+    );
+
+    service.upsertOrder({
+      orderId: 'order-1:4',
+      strategyKey: 'admin-direct-order-1-efficientDualAccountVolume',
+      exchange: 'mexc',
+      accountLabel: '4',
+      pair: 'XIN/USDT',
+      exchangeOrderId: 'ex-4',
+      clientOrderId: 'client-4',
+      side: 'sell',
+      price: '54',
+      qty: '0.3',
+      cumulativeFilledQty: '0',
+      status: 'open',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:00.000Z',
+    });
+    service.upsertOrder({
+      orderId: 'order-1:4',
+      strategyKey: 'admin-direct-order-1-efficientDualAccountVolume',
+      exchange: 'mexc',
+      accountLabel: '4',
+      pair: 'XIN/USDT',
+      exchangeOrderId: 'ex-4',
+      clientOrderId: 'client-4',
+      side: 'sell',
+      price: '54',
+      qty: '0.3',
+      cumulativeFilledQty: '0',
+      status: 'cancelled',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:01.000Z',
+    });
+
+    await flushPromises();
+
+    expect(
+      orderReservationService.releaseRemainingLimitOrderReservation,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'order-1:4',
+        userOrderId: 'order-1',
+        accountLabel: '4',
+        userId: 'admin-direct',
+        reason: 'exchange_order_cancelled',
+      }),
+    );
+    expect(marketMakingOrderRepository.findOne).toHaveBeenCalledWith({
+      where: { orderId: 'order-1' },
     });
   });
 
