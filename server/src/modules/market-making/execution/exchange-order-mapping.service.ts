@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ExchangeOrderMapping } from 'src/common/entities/market-making/exchange-order-mapping.entity';
+import { resolveLedgerOrderScope } from 'src/common/helpers/ledger-order-scope';
 import { Repository } from 'typeorm';
 
 @Injectable()
@@ -16,6 +17,9 @@ export class ExchangeOrderMappingService {
 
   async reserveMapping(params: {
     orderId: string;
+    userOrderId?: string;
+    accountLabel?: string;
+    exchange?: string;
     clientOrderId: string;
   }): Promise<ExchangeOrderMapping> {
     const existing = await this.exchangeOrderMappingRepository.findOneBy({
@@ -25,10 +29,18 @@ export class ExchangeOrderMappingService {
     if (existing) {
       return existing;
     }
+    const scope = resolveLedgerOrderScope({
+      ledgerOrderId: params.orderId,
+      userOrderId: params.userOrderId,
+      accountLabel: params.accountLabel,
+    });
 
     return await this.exchangeOrderMappingRepository.save(
       this.exchangeOrderMappingRepository.create({
-        orderId: params.orderId,
+        orderId: scope.ledgerOrderId,
+        userOrderId: scope.userOrderId,
+        accountLabel: scope.accountLabel,
+        exchange: params.exchange || '',
         exchangeOrderId: null,
         clientOrderId: params.clientOrderId,
       }),
@@ -37,6 +49,9 @@ export class ExchangeOrderMappingService {
 
   async createMapping(params: {
     orderId: string;
+    userOrderId?: string;
+    accountLabel?: string;
+    exchange?: string;
     exchangeOrderId: string;
     clientOrderId: string;
   }): Promise<ExchangeOrderMapping> {
@@ -47,12 +62,20 @@ export class ExchangeOrderMappingService {
     if (existing?.exchangeOrderId === params.exchangeOrderId) {
       return existing;
     }
+    const scope = resolveLedgerOrderScope({
+      ledgerOrderId: params.orderId,
+      userOrderId: params.userOrderId,
+      accountLabel: params.accountLabel,
+    });
 
     if (existing) {
       return await this.exchangeOrderMappingRepository.save(
         this.exchangeOrderMappingRepository.create({
           ...existing,
-          orderId: params.orderId,
+          orderId: scope.ledgerOrderId,
+          userOrderId: scope.userOrderId,
+          accountLabel: scope.accountLabel,
+          exchange: params.exchange || existing.exchange || '',
           exchangeOrderId: params.exchangeOrderId,
         }),
       );
@@ -60,7 +83,10 @@ export class ExchangeOrderMappingService {
 
     return await this.exchangeOrderMappingRepository.save(
       this.exchangeOrderMappingRepository.create({
-        orderId: params.orderId,
+        orderId: scope.ledgerOrderId,
+        userOrderId: scope.userOrderId,
+        accountLabel: scope.accountLabel,
+        exchange: params.exchange || '',
         exchangeOrderId: params.exchangeOrderId,
         clientOrderId: params.clientOrderId,
       }),

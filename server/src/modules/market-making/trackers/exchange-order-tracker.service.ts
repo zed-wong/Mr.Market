@@ -9,6 +9,7 @@ import BigNumber from 'bignumber.js';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { TrackedOrderEntity } from 'src/common/entities/market-making/tracked-order.entity';
 import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
+import { resolveLedgerOrderScope } from 'src/common/helpers/ledger-order-scope';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
@@ -32,6 +33,7 @@ export type TrackedOrderState =
 
 export type TrackedOrder = {
   orderId: string;
+  userOrderId?: string;
   strategyKey: string;
   exchange: string;
   accountLabel?: string;
@@ -198,6 +200,12 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
 
     const createdOrder = {
       ...order,
+      userOrderId:
+        order.userOrderId ||
+        resolveLedgerOrderScope({
+          ledgerOrderId: order.orderId,
+          accountLabel: order.accountLabel,
+        }).userOrderId,
       createdAt: order.createdAt || order.updatedAt,
       cumulativeFilledQty: this.normalizeCumulativeFilledQty(
         order.cumulativeFilledQty,
@@ -1421,6 +1429,13 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
     return {
       ...previousOrder,
       ...nextOrder,
+      userOrderId:
+        nextOrder.userOrderId ||
+        previousOrder.userOrderId ||
+        resolveLedgerOrderScope({
+          ledgerOrderId: nextOrder.orderId || previousOrder.orderId,
+          accountLabel: nextOrder.accountLabel || previousOrder.accountLabel,
+        }).userOrderId,
       status,
       createdAt: previousOrder.createdAt || nextOrder.createdAt,
       clientOrderId: nextOrder.clientOrderId || previousOrder.clientOrderId,
@@ -1494,6 +1509,7 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
     for (const row of rows) {
       const order: TrackedOrder = {
         orderId: row.orderId,
+        userOrderId: row.userOrderId,
         strategyKey: row.strategyKey,
         exchange: row.exchange,
         accountLabel: row.accountLabel || undefined,
@@ -1544,6 +1560,12 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
     const entity = {
       trackingKey,
       orderId: order.orderId,
+      userOrderId:
+        order.userOrderId ||
+        resolveLedgerOrderScope({
+          ledgerOrderId: order.orderId,
+          accountLabel: order.accountLabel,
+        }).userOrderId,
       strategyKey: order.strategyKey,
       exchange: order.exchange,
       accountLabel: order.accountLabel,

@@ -251,20 +251,23 @@ export class UserStreamTrackerService
           fill.accountLabel,
         )
       : undefined;
-    const resolvedExecutor = resolution?.orderId
-      ? this.executorRegistry?.findExecutorByOrderId(resolution.orderId)
+    const resolvedExecutor = resolution?.ledgerOrderId
+      ? this.executorRegistry?.findExecutorByOrderId(resolution.ledgerOrderId)
       : undefined;
     const executor =
       resolvedExecutor ||
       (fill.pair
-        ? this.executorRegistry?.getExecutor(fill.exchange, fill.pair)
+        ? this.executorRegistry?.getExecutor?.(fill.exchange, fill.pair)
         : undefined) ||
       (trackedOrder
-        ? this.executorRegistry?.getExecutor(fill.exchange, trackedOrder.pair)
+        ? this.executorRegistry?.getExecutor?.(
+            fill.exchange,
+            trackedOrder.pair,
+          )
         : undefined);
     const routeOrderId = executor
       ? this.resolveFillRouteOrderId(
-          resolution?.orderId || trackedOrder?.orderId,
+          resolution?.ledgerOrderId || trackedOrder?.orderId,
           executor,
         )
       : null;
@@ -278,7 +281,7 @@ export class UserStreamTrackerService
       this.recordOrphanedFill(
         {
           ...fill,
-          orderId: resolution?.orderId,
+          orderId: resolution?.ledgerOrderId,
         },
         'account_boundary_violation',
       );
@@ -336,7 +339,7 @@ export class UserStreamTrackerService
       this.recordOrphanedFill(
         {
           ...fill,
-          orderId: resolution.orderId,
+          orderId: resolution.ledgerOrderId,
         },
         'missing_executor',
       );
@@ -348,7 +351,7 @@ export class UserStreamTrackerService
       this.recordOrphanedFill(
         {
           ...fill,
-          orderId: resolution.orderId,
+          orderId: resolution.ledgerOrderId,
         },
         'missing_session',
       );

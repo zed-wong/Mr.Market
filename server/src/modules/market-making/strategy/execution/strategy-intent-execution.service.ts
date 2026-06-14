@@ -6,6 +6,10 @@ import { StrategyExecutionHistory } from 'src/common/entities/market-making/stra
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
 import { buildSubmittedClientOrderId } from 'src/common/helpers/client-order-id';
+import {
+  buildDualAccountLedgerOrderId,
+  resolveLedgerOrderScope,
+} from 'src/common/helpers/ledger-order-scope';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
@@ -388,9 +392,11 @@ export class StrategyIntentExecutionService {
           return;
         }
 
+        const orderScope = this.resolveIntentOrderScope(intent);
         const clientOrderId = await this.reserveClientOrderId(
           orderId,
           intent.exchange,
+          orderScope,
         );
         let reservation: OrderReservationResult | undefined;
         let result: Record<string, unknown> | undefined;
@@ -401,6 +407,8 @@ export class StrategyIntentExecutionService {
           reservation = await this.orderReservationService.reserveForLimitOrder(
             {
               orderId,
+              userOrderId: orderScope.userOrderId,
+              accountLabel: orderScope.accountLabel,
               userId: intent.userId,
               intentId: intent.intentId,
               pair: intent.pair,
@@ -446,6 +454,8 @@ export class StrategyIntentExecutionService {
           if (!createResultHandled && reservation?.applied) {
             await this.orderReservationService?.releaseLimitOrderReservation({
               orderId,
+              userOrderId: orderScope.userOrderId,
+              accountLabel: orderScope.accountLabel,
               userId: intent.userId,
               intentId: intent.intentId,
               pair: intent.pair,
@@ -488,6 +498,8 @@ export class StrategyIntentExecutionService {
             if (reservation?.applied) {
               await this.orderReservationService?.releaseLimitOrderReservation({
                 orderId,
+                userOrderId: orderScope.userOrderId,
+                accountLabel: orderScope.accountLabel,
                 userId: intent.userId,
                 intentId: intent.intentId,
                 releaseId: clientOrderId,
@@ -523,10 +535,17 @@ export class StrategyIntentExecutionService {
         ) {
           if (trackedOrder.status === 'cancelled') {
             const orderId = this.resolveOrderIdForClientOrderId(intent);
+            const cancelOrderScope = resolveLedgerOrderScope({
+              ledgerOrderId: orderId,
+              userOrderId: trackedOrder.userOrderId,
+              accountLabel: trackedOrder.accountLabel || intent.accountLabel,
+            });
 
             await this.orderReservationService?.releaseRemainingLimitOrderReservation(
               {
                 orderId,
+                userOrderId: cancelOrderScope.userOrderId,
+                accountLabel: cancelOrderScope.accountLabel,
                 userId: intent.userId,
                 intentId: intent.intentId,
                 releaseId:
@@ -561,6 +580,11 @@ export class StrategyIntentExecutionService {
         );
 
         const orderId = this.resolveOrderIdForClientOrderId(intent);
+        const cancelOrderScope = resolveLedgerOrderScope({
+          ledgerOrderId: orderId,
+          userOrderId: trackedOrder?.userOrderId,
+          accountLabel: trackedOrder?.accountLabel || intent.accountLabel,
+        });
         const cancelSucceeded = this.isCancelResultFinal(
           result as Record<string, unknown> | undefined,
         );
@@ -568,6 +592,7 @@ export class StrategyIntentExecutionService {
         this.exchangeOrderTrackerService?.upsertOrder(
           {
             orderId,
+            userOrderId: cancelOrderScope.userOrderId,
             strategyKey: intent.strategyKey,
             exchange: intent.exchange,
             accountLabel: trackedOrder?.accountLabel || intent.accountLabel,
@@ -590,6 +615,8 @@ export class StrategyIntentExecutionService {
           await this.orderReservationService?.releaseRemainingLimitOrderReservation(
             {
               orderId,
+              userOrderId: cancelOrderScope.userOrderId,
+              accountLabel: cancelOrderScope.accountLabel,
               userId: intent.userId,
               intentId: intent.intentId,
               releaseId:
@@ -1028,6 +1055,20 @@ export class StrategyIntentExecutionService {
     return metadataOrderId || intent.clientId;
   }
 
+  private resolveIntentOrderScope(intent: StrategyOrderIntent): {
+    ledgerOrderId: string;
+    userOrderId: string;
+    accountLabel: string;
+  } {
+    return resolveLedgerOrderScope({
+      ledgerOrderId: this.resolveOrderIdForClientOrderId(intent),
+      userOrderId:
+        this.readMetadataString(intent, 'userOrderId') ||
+        this.readMetadataString(intent, 'baseOrderId'),
+      accountLabel: intent.accountLabel || this.resolveIntentRole(intent),
+    });
+  }
+
   private assertImmediateDualAccountTakerReservationAvailable(
     intent: StrategyOrderIntent,
   ): void {
@@ -1048,10 +1089,17 @@ export class StrategyIntentExecutionService {
     if (!takerAccountLabel || !baseOrderId || !this.orderReservationService) {
       return;
     }
+    const makerScope = this.resolveIntentOrderScope(intent);
+    const takerLedgerOrderId = buildDualAccountLedgerOrderId({
+      userOrderId: makerScope.userOrderId,
+      accountLabel: takerAccountLabel,
+    });
 
     const takerPaused =
       this.orderReservationService.isReservationPausedForLimitOrder({
-        orderId: `${baseOrderId}:${takerAccountLabel}`,
+        orderId: takerLedgerOrderId,
+        userOrderId: makerScope.userOrderId,
+        accountLabel: takerAccountLabel,
         userId: intent.userId,
         intentId: `${intent.intentId}:inline-taker`,
         pair: intent.pair,
@@ -1083,6 +1131,8 @@ export class StrategyIntentExecutionService {
     this.orderReservationService.pauseReservationForLimitOrder(
       {
         orderId,
+        userOrderId: this.resolveIntentOrderScope(intent).userOrderId,
+        accountLabel: this.resolveIntentOrderScope(intent).accountLabel,
         userId: intent.userId,
         intentId: intent.intentId,
         pair: intent.pair,
@@ -1511,6 +1561,11 @@ export class StrategyIntentExecutionService {
       intent.metadata && typeof intent.metadata === 'object'
         ? { ...(intent.metadata as Record<string, unknown>) }
         : {};
+    const makerScope = this.resolveIntentOrderScope(intent);
+    const takerLedgerOrderId = buildDualAccountLedgerOrderId({
+      userOrderId: makerScope.userOrderId,
+      accountLabel: takerAccountLabel,
+    });
 
     return {
       ...intent,
@@ -1525,9 +1580,8 @@ export class StrategyIntentExecutionService {
       metadata: {
         ...metadata,
         role: 'taker',
-        orderId: metadata.baseOrderId
-          ? `${metadata.baseOrderId}:${takerAccountLabel}`
-          : metadata.orderId,
+        orderId: takerLedgerOrderId,
+        userOrderId: makerScope.userOrderId,
         makerOrderId: makerExchangeOrderId,
         makerIntentId: intent.intentId,
         trigger: 'maker_ack',
@@ -2194,6 +2248,7 @@ export class StrategyIntentExecutionService {
   private async reserveClientOrderId(
     orderId: string,
     exchange?: string,
+    scope?: { userOrderId: string; accountLabel: string },
   ): Promise<string> {
     const current = this.nextClientOrderSeqByOrderId.get(orderId);
     const nextSeq =
@@ -2210,6 +2265,9 @@ export class StrategyIntentExecutionService {
 
     await this.exchangeOrderMappingService?.reserveMapping({
       orderId,
+      userOrderId: scope?.userOrderId,
+      accountLabel: scope?.accountLabel,
+      exchange,
       clientOrderId,
     });
 
@@ -2282,6 +2340,7 @@ export class StrategyIntentExecutionService {
         ? createAckStatus
         : 'pending_create';
     const filledQty = this.readFilledQtyFromResult(result)?.toFixed() || '0';
+    const orderScope = this.resolveIntentOrderScope(intent);
 
     await this.strategyIntentStoreService?.attachMixinOrderId(
       intent.intentId,
@@ -2289,6 +2348,9 @@ export class StrategyIntentExecutionService {
     );
     await this.exchangeOrderMappingService?.createMapping({
       orderId,
+      userOrderId: orderScope.userOrderId,
+      accountLabel: orderScope.accountLabel,
+      exchange: intent.exchange,
       exchangeOrderId,
       clientOrderId,
     });
@@ -2315,6 +2377,7 @@ export class StrategyIntentExecutionService {
     );
     this.exchangeOrderTrackerService?.upsertOrder({
       orderId,
+      userOrderId: orderScope.userOrderId,
       strategyKey: intent.strategyKey,
       exchange: intent.exchange,
       accountLabel: intent.accountLabel,
@@ -2336,6 +2399,8 @@ export class StrategyIntentExecutionService {
       if (reservation?.applied) {
         await this.orderReservationService?.releaseLimitOrderReservation({
           orderId,
+          userOrderId: orderScope.userOrderId,
+          accountLabel: orderScope.accountLabel,
           userId: intent.userId,
           intentId: intent.intentId,
           releaseId: clientOrderId,
@@ -2363,8 +2428,11 @@ export class StrategyIntentExecutionService {
     orderId: string,
     clientOrderId: string,
   ): void {
+    const orderScope = this.resolveIntentOrderScope(intent);
+
     this.exchangeOrderTrackerService?.upsertOrder({
       orderId,
+      userOrderId: orderScope.userOrderId,
       strategyKey: intent.strategyKey,
       exchange: intent.exchange,
       accountLabel: intent.accountLabel,

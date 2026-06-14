@@ -11,7 +11,9 @@ describe('FillRoutingService', () => {
     await expect(
       service.resolveOrderFromClientOrderId('order-1:3'),
     ).resolves.toEqual({
-      orderId: 'order-1',
+      ledgerOrderId: 'order-1',
+      userOrderId: 'order-1',
+      accountLabel: 'default',
       seq: 3,
       source: 'clientOrderId',
     });
@@ -31,7 +33,9 @@ describe('FillRoutingService', () => {
     await expect(
       service.resolveOrderFromClientOrderId('legacy-client-oid'),
     ).resolves.toEqual({
-      orderId: 'legacy-order',
+      ledgerOrderId: 'legacy-order',
+      userOrderId: 'legacy-order',
+      accountLabel: 'default',
       source: 'mapping',
     });
     expect(
@@ -70,7 +74,9 @@ describe('FillRoutingService', () => {
         exchangeOrderId: 'ex-1',
       }),
     ).resolves.toEqual({
-      orderId: 'mapped-by-exchange-order',
+      ledgerOrderId: 'mapped-by-exchange-order',
+      userOrderId: 'mapped-by-exchange-order',
+      accountLabel: 'default',
       source: 'exchangeOrderMapping',
     });
     await expect(
@@ -78,7 +84,9 @@ describe('FillRoutingService', () => {
         exchangeOrderId: 'ex-1',
       }),
     ).resolves.toEqual({
-      orderId: 'mapped-by-exchange-order',
+      ledgerOrderId: 'mapped-by-exchange-order',
+      userOrderId: 'mapped-by-exchange-order',
+      accountLabel: 'default',
       source: 'exchangeOrderMapping',
     });
   });

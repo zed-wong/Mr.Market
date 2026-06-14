@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
+import { buildDualAccountLedgerOrderId } from 'src/common/helpers/ledger-order-scope';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
@@ -37,6 +38,8 @@ export type SettlementFill = {
 export type FillSettlementCommand = {
   strategyKey: string;
   orderId: string;
+  userOrderId?: string;
+  accountLabel?: string;
   userId: string;
   exchangeName?: string;
   pair: string;
@@ -323,7 +326,10 @@ export class FillSettlementService {
     const accountLabel = this.readString(fill.accountLabel);
     const baseOrderId = session.marketMakingOrderId || session.clientId;
     const orderId = accountLabel
-      ? `${baseOrderId}:${accountLabel}`
+      ? buildDualAccountLedgerOrderId({
+          userOrderId: baseOrderId,
+          accountLabel,
+        })
       : baseOrderId;
 
     this.balanceLedgerService.pauseReservations(orderId, assetId, {
@@ -352,12 +358,17 @@ export class FillSettlementService {
     const accountLabel = this.readString(fill.accountLabel);
     const baseOrderId = session.marketMakingOrderId || session.clientId;
     const orderId = accountLabel
-      ? `${baseOrderId}:${accountLabel}`
+      ? buildDualAccountLedgerOrderId({
+          userOrderId: baseOrderId,
+          accountLabel,
+        })
       : baseOrderId;
 
     return await this.settleFill({
       strategyKey: session.strategyKey,
       orderId,
+      userOrderId: baseOrderId,
+      accountLabel: accountLabel || 'default',
       userId: session.userId,
       exchangeName: this.readString(session.params?.exchangeName) || undefined,
       pair,
@@ -456,6 +467,8 @@ export class FillSettlementService {
     for (const movement of movements) {
       await this.balanceLedgerService.adjust({
         orderId: command.orderId,
+        userOrderId: command.userOrderId,
+        accountLabel: command.accountLabel,
         userId: command.userId,
         assetId: movement.assetId,
         amount: movement.amount,
@@ -527,6 +540,8 @@ export class FillSettlementService {
     try {
       await this.balanceLedgerService.debitFee({
         orderId: command.orderId,
+        userOrderId: command.userOrderId,
+        accountLabel: command.accountLabel,
         userId: command.userId,
         assetId: feeAsset,
         amount: feeAmount.toFixed(),
@@ -579,6 +594,8 @@ export class FillSettlementService {
     try {
       await this.balanceLedgerService.debitFee({
         orderId: command.orderId,
+        userOrderId: command.userOrderId,
+        accountLabel: command.accountLabel,
         userId: command.userId,
         assetId: assets.quote,
         amount: estimatedFeeAmount.toFixed(),

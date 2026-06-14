@@ -412,15 +412,23 @@ describe('StrategyIntentExecutionService', () => {
       baseIntent.intentId,
       'order-1',
     );
-    expect(exchangeOrderMappingService.reserveMapping).toHaveBeenCalledWith({
-      orderId: 'c1',
-      clientOrderId: buildSubmittedClientOrderId('c1', 0),
-    });
-    expect(exchangeOrderMappingService.createMapping).toHaveBeenCalledWith({
-      orderId: 'c1',
-      exchangeOrderId: 'order-1',
-      clientOrderId: buildSubmittedClientOrderId('c1', 0),
-    });
+    expect(exchangeOrderMappingService.reserveMapping).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'c1',
+        userOrderId: 'c1',
+        accountLabel: 'default',
+        clientOrderId: buildSubmittedClientOrderId('c1', 0),
+      }),
+    );
+    expect(exchangeOrderMappingService.createMapping).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'c1',
+        userOrderId: 'c1',
+        accountLabel: 'default',
+        exchangeOrderId: 'order-1',
+        clientOrderId: buildSubmittedClientOrderId('c1', 0),
+      }),
+    );
     expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
       expect.objectContaining({
         exchangeOrderId: 'order-1',
@@ -456,10 +464,14 @@ describe('StrategyIntentExecutionService', () => {
       { postOnly: false, timeInForce: undefined },
       undefined,
     );
-    expect(exchangeOrderMappingService.reserveMapping).toHaveBeenCalledWith({
-      orderId: 'c1',
-      clientOrderId: expectedClientOrderId,
-    });
+    expect(exchangeOrderMappingService.reserveMapping).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'c1',
+        userOrderId: 'c1',
+        accountLabel: 'default',
+        clientOrderId: expectedClientOrderId,
+      }),
+    );
   });
 
   it('reserves order funds before exchange create', async () => {
@@ -493,15 +505,19 @@ describe('StrategyIntentExecutionService', () => {
 
     await service.consumeIntents([baseIntent]);
 
-    expect(orderReservationService.reserveForLimitOrder).toHaveBeenCalledWith({
-      orderId: 'c1',
-      userId: 'u1',
-      intentId: 'intent-1',
-      pair: 'BTC/USDT',
-      side: 'buy',
-      price: '100',
-      qty: '1',
-    });
+    expect(orderReservationService.reserveForLimitOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'c1',
+        userOrderId: 'c1',
+        accountLabel: 'default',
+        userId: 'u1',
+        intentId: 'intent-1',
+        pair: 'BTC/USDT',
+        side: 'buy',
+        price: '100',
+        qty: '1',
+      }),
+    );
     expect(callOrder).toEqual(['reserve', 'place']);
   });
 
@@ -684,16 +700,20 @@ describe('StrategyIntentExecutionService', () => {
 
     expect(
       orderReservationService.releaseLimitOrderReservation,
-    ).toHaveBeenCalledWith({
-      orderId: 'c1',
-      userId: 'u1',
-      intentId: 'intent-1',
-      pair: 'BTC/USDT',
-      side: 'buy',
-      price: '100',
-      qty: '1',
-      reason: 'exchange_create_failed',
-    });
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'c1',
+        userOrderId: 'c1',
+        accountLabel: 'default',
+        userId: 'u1',
+        intentId: 'intent-1',
+        pair: 'BTC/USDT',
+        side: 'buy',
+        price: '100',
+        qty: '1',
+        reason: 'exchange_create_failed',
+      }),
+    );
     expect(runtimeObservationService.recordIntentFailure).toHaveBeenCalledWith(
       baseIntent,
       error,
@@ -733,11 +753,15 @@ describe('StrategyIntentExecutionService', () => {
       buildSubmittedClientOrderId('c1', 0),
       undefined,
     );
-    expect(exchangeOrderMappingService.createMapping).toHaveBeenCalledWith({
-      orderId: 'c1',
-      exchangeOrderId: 'exchange-live-1',
-      clientOrderId: buildSubmittedClientOrderId('c1', 0),
-    });
+    expect(exchangeOrderMappingService.createMapping).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'c1',
+        userOrderId: 'c1',
+        accountLabel: 'default',
+        exchangeOrderId: 'exchange-live-1',
+        clientOrderId: buildSubmittedClientOrderId('c1', 0),
+      }),
+    );
     expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
       expect.objectContaining({
         exchangeOrderId: 'exchange-live-1',
@@ -773,16 +797,20 @@ describe('StrategyIntentExecutionService', () => {
 
     expect(
       orderReservationService.releaseLimitOrderReservation,
-    ).toHaveBeenCalledWith({
-      orderId: 'c1',
-      userId: 'u1',
-      intentId: 'intent-1',
-      pair: 'BTC/USDT',
-      side: 'buy',
-      price: '100',
-      qty: '1',
-      reason: 'exchange_create_failed',
-    });
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'c1',
+        userOrderId: 'c1',
+        accountLabel: 'default',
+        userId: 'u1',
+        intentId: 'intent-1',
+        pair: 'BTC/USDT',
+        side: 'buy',
+        price: '100',
+        qty: '1',
+        reason: 'exchange_create_failed',
+      }),
+    );
   });
 
   it('persists pending_create without exchangeOrderId when ambiguous create reconciliation fails', async () => {
@@ -837,15 +865,17 @@ describe('StrategyIntentExecutionService', () => {
     expect(
       orderReservationService.pauseReservationForLimitOrder,
     ).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         orderId: 'c1',
+        userOrderId: 'c1',
+        accountLabel: 'default',
         userId: 'u1',
         intentId: 'intent-1',
         pair: 'BTC/USDT',
         side: 'buy',
         price: '100',
         qty: '1',
-      },
+      }),
       {
         source: 'exchange_create_failed',
         reason: 'exchange_balance_rejected',
@@ -877,15 +907,17 @@ describe('StrategyIntentExecutionService', () => {
     expect(
       orderReservationService.pauseReservationForLimitOrder,
     ).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         orderId: 'c1',
+        userOrderId: 'c1',
+        accountLabel: 'default',
         userId: 'u1',
         intentId: 'intent-1',
         pair: 'BTC/USDT',
         side: 'buy',
         price: '100',
         qty: '1',
-      },
+      }),
       {
         source: 'exchange_create_failed',
         reason: 'exchange_balance_rejected',
@@ -928,15 +960,19 @@ describe('StrategyIntentExecutionService', () => {
 
     expect(
       orderReservationService.isReservationPausedForLimitOrder,
-    ).toHaveBeenCalledWith({
-      orderId: 'o1:5',
-      userId: 'u1',
-      intentId: 'dual-maker-paused-taker:inline-taker',
-      pair: 'BTC/USDT',
-      side: 'sell',
-      price: '100',
-      qty: '1',
-    });
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'o1:5',
+        userOrderId: 'o1',
+        accountLabel: '5',
+        userId: 'u1',
+        intentId: 'dual-maker-paused-taker:inline-taker',
+        pair: 'BTC/USDT',
+        side: 'sell',
+        price: '100',
+        qty: '1',
+      }),
+    );
     expect(
       exchangeConnectorAdapterService.placeLimitOrder,
     ).not.toHaveBeenCalled();
@@ -961,17 +997,21 @@ describe('StrategyIntentExecutionService', () => {
 
     expect(
       orderReservationService.releaseLimitOrderReservation,
-    ).toHaveBeenCalledWith({
-      orderId: 'c1',
-      userId: 'u1',
-      intentId: 'intent-1',
-      releaseId: buildSubmittedClientOrderId('c1', 0),
-      pair: 'BTC/USDT',
-      side: 'buy',
-      price: '100',
-      qty: '1',
-      reason: 'exchange_create_rejected',
-    });
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'c1',
+        userOrderId: 'c1',
+        accountLabel: 'default',
+        userId: 'u1',
+        intentId: 'intent-1',
+        releaseId: buildSubmittedClientOrderId('c1', 0),
+        pair: 'BTC/USDT',
+        side: 'buy',
+        price: '100',
+        qty: '1',
+        reason: 'exchange_create_rejected',
+      }),
+    );
     expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
       expect.objectContaining({
         exchangeOrderId: 'order-1',
@@ -1076,7 +1116,7 @@ describe('StrategyIntentExecutionService', () => {
       'sell',
       '1',
       '100',
-      buildSubmittedClientOrderId('dual-cycle-1', 1),
+      buildSubmittedClientOrderId('dual-cycle-1:taker', 0),
       { postOnly: false, timeInForce: 'IOC' },
       'taker',
     );
@@ -1100,7 +1140,8 @@ describe('StrategyIntentExecutionService', () => {
     );
     expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
       expect.objectContaining({
-        orderId: 'dual-cycle-1',
+        orderId: 'dual-cycle-1:taker',
+        userOrderId: 'dual-cycle-1',
         accountLabel: 'taker',
         role: 'taker',
         exchangeOrderId: 'taker-order-1',
@@ -1236,7 +1277,8 @@ describe('StrategyIntentExecutionService', () => {
     );
     expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
       expect.objectContaining({
-        orderId: 'dual-cycle-3',
+        orderId: 'dual-cycle-3:maker',
+        userOrderId: 'dual-cycle-3',
         accountLabel: 'maker',
         role: 'taker',
       }),
@@ -1937,18 +1979,22 @@ describe('StrategyIntentExecutionService', () => {
 
     expect(
       orderReservationService.releaseRemainingLimitOrderReservation,
-    ).toHaveBeenCalledWith({
-      orderId: 'c1',
-      userId: 'u1',
-      intentId: 'intent-cancel',
-      releaseId: buildSubmittedClientOrderId('c1', 0),
-      pair: 'BTC/USDT',
-      side: 'buy',
-      price: '100',
-      qty: '1',
-      filledQty: '0.25',
-      reason: 'exchange_order_cancelled',
-    });
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'c1',
+        userOrderId: 'c1',
+        accountLabel: 'default',
+        userId: 'u1',
+        intentId: 'intent-cancel',
+        releaseId: buildSubmittedClientOrderId('c1', 0),
+        pair: 'BTC/USDT',
+        side: 'buy',
+        price: '100',
+        qty: '1',
+        filledQty: '0.25',
+        reason: 'exchange_order_cancelled',
+      }),
+    );
   });
 
   it('rejects CANCEL_ORDER intents without mixinOrderId', async () => {
@@ -2322,10 +2368,14 @@ describe('StrategyIntentExecutionService', () => {
       exchangeConnectorAdapterService.placeLimitOrder,
     ).toHaveBeenCalledTimes(3);
     expect(exchangeOrderMappingService.createMapping).not.toHaveBeenCalled();
-    expect(exchangeOrderMappingService.reserveMapping).toHaveBeenCalledWith({
-      orderId: 'mm-order-repeat',
-      clientOrderId: buildSubmittedClientOrderId('mm-order-repeat', 0),
-    });
+    expect(exchangeOrderMappingService.reserveMapping).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'mm-order-repeat',
+        userOrderId: 'mm-order-repeat',
+        accountLabel: 'default',
+        clientOrderId: buildSubmittedClientOrderId('mm-order-repeat', 0),
+      }),
+    );
 
     jest.clearAllMocks();
     trackedOrders.clear();

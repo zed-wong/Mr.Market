@@ -6,6 +6,19 @@ import { ExecutorRegistry } from '../strategy/execution/executor-registry';
 import { ExchangeOrderTrackerService } from './exchange-order-tracker.service';
 import { UserStreamTrackerService } from './user-stream-tracker.service';
 
+const fillRoute = (
+  ledgerOrderId = 'order-1',
+  source: 'clientOrderId' | 'mapping' | 'exchangeOrderMapping' =
+    'clientOrderId',
+  seq?: number,
+) => ({
+  ledgerOrderId,
+  userOrderId: ledgerOrderId,
+  accountLabel: 'default',
+  ...(seq === undefined ? {} : { seq }),
+  source,
+});
+
 describe('UserStreamTrackerService', () => {
   it('tracks open order events as latest non-fill account activity', async () => {
     const service = new UserStreamTrackerService();
@@ -103,9 +116,7 @@ describe('UserStreamTrackerService', () => {
       undefined,
       {
         resolveOrderForFill: jest.fn().mockResolvedValue({
-          orderId: 'order-1',
-          seq: 0,
-          source: 'clientOrderId',
+          ...fillRoute('order-1', 'clientOrderId', 0),
         }),
       } as unknown as FillRoutingService,
       {
@@ -157,7 +168,9 @@ describe('UserStreamTrackerService', () => {
       undefined,
       {
         resolveOrderForFill: jest.fn().mockResolvedValue({
-          orderId: 'order-1:maker',
+          ledgerOrderId: 'order-1:maker',
+          userOrderId: 'order-1',
+          accountLabel: 'maker',
           source: 'exchangeOrderMapping',
         }),
       } as unknown as FillRoutingService,
@@ -224,11 +237,9 @@ describe('UserStreamTrackerService', () => {
     const service = new UserStreamTrackerService(
       undefined,
       {
-        resolveOrderForFill: jest.fn().mockResolvedValue({
-          orderId: 'order-1',
-          seq: 0,
-          source: 'clientOrderId',
-        }),
+        resolveOrderForFill: jest.fn().mockResolvedValue(
+          fillRoute('order-1', 'clientOrderId', 0),
+        ),
       } as unknown as FillRoutingService,
       {
         getByExchangeOrderId: jest.fn().mockReturnValue(undefined),
@@ -289,11 +300,9 @@ describe('UserStreamTrackerService', () => {
     const service = new UserStreamTrackerService(
       undefined,
       {
-        resolveOrderForFill: jest.fn().mockResolvedValue({
-          orderId: 'order-1',
-          seq: 0,
-          source: 'clientOrderId',
-        }),
+        resolveOrderForFill: jest.fn().mockResolvedValue(
+          fillRoute('order-1', 'clientOrderId', 0),
+        ),
       } as unknown as FillRoutingService,
       {
         getByExchangeOrderId: jest.fn().mockReturnValue(undefined),
@@ -553,11 +562,9 @@ describe('UserStreamTrackerService', () => {
     const service = new UserStreamTrackerService(
       undefined,
       {
-        resolveOrderForFill: jest.fn().mockResolvedValue({
-          orderId: 'order-1',
-          seq: 0,
-          source: 'clientOrderId',
-        }),
+        resolveOrderForFill: jest.fn().mockResolvedValue(
+          fillRoute('order-1', 'clientOrderId', 0),
+        ),
       } as unknown as FillRoutingService,
       {
         getByExchangeOrderId: jest.fn().mockReturnValue(undefined),
@@ -639,11 +646,9 @@ describe('UserStreamTrackerService', () => {
     const service = new UserStreamTrackerService(
       undefined,
       {
-        resolveOrderForFill: jest.fn().mockResolvedValue({
-          orderId: 'order-1',
-          seq: 0,
-          source: 'clientOrderId',
-        }),
+        resolveOrderForFill: jest.fn().mockResolvedValue(
+          fillRoute('order-1', 'clientOrderId', 0),
+        ),
       } as unknown as FillRoutingService,
       {
         getByExchangeOrderId: jest.fn().mockReturnValue(undefined),
@@ -694,10 +699,9 @@ describe('UserStreamTrackerService', () => {
     const service = new UserStreamTrackerService(
       undefined,
       {
-        resolveOrderForFill: jest.fn().mockResolvedValue({
-          orderId: 'legacy-order',
-          source: 'exchangeOrderMapping',
-        }),
+        resolveOrderForFill: jest.fn().mockResolvedValue(
+          fillRoute('legacy-order', 'exchangeOrderMapping'),
+        ),
       } as unknown as FillRoutingService,
       {
         getByExchangeOrderId: jest.fn().mockReturnValue({
@@ -754,11 +758,13 @@ describe('UserStreamTrackerService', () => {
     const service = new UserStreamTrackerService(
       undefined,
       {
-        resolveOrderForFill: jest.fn().mockImplementation(async (input) => ({
-          orderId: String(input.clientOrderId).split(':')[0],
-          seq: 0,
-          source: 'clientOrderId',
-        })),
+        resolveOrderForFill: jest.fn().mockImplementation(async (input) =>
+          fillRoute(
+            String(input.clientOrderId).split(':')[0],
+            'clientOrderId',
+            0,
+          ),
+        ),
       } as unknown as FillRoutingService,
       {
         getByExchangeOrderId: jest.fn().mockReturnValue(undefined),
@@ -1088,11 +1094,9 @@ describe('UserStreamTrackerService', () => {
     const service = new UserStreamTrackerService(
       undefined,
       {
-        resolveOrderForFill: jest.fn().mockResolvedValue({
-          orderId: 'order-1',
-          seq: 0,
-          source: 'clientOrderId',
-        }),
+        resolveOrderForFill: jest.fn().mockResolvedValue(
+          fillRoute('order-1', 'clientOrderId', 0),
+        ),
       } as unknown as FillRoutingService,
       {
         getByExchangeOrderId: jest.fn().mockReturnValue(undefined),

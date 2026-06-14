@@ -1,20 +1,27 @@
 import { Injectable } from '@nestjs/common';
 
 import { parseClientOrderId } from '../../../common/helpers/client-order-id';
+import { resolveLedgerOrderScope } from '../../../common/helpers/ledger-order-scope';
 import { ExchangeOrderMappingService } from './exchange-order-mapping.service';
 
 export type FillRouteResolution =
   | {
-      orderId: string;
+      ledgerOrderId: string;
+      userOrderId: string;
+      accountLabel: string;
       seq: number;
       source: 'clientOrderId';
     }
   | {
-      orderId: string;
+      ledgerOrderId: string;
+      userOrderId: string;
+      accountLabel: string;
       source: 'mapping';
     }
   | {
-      orderId: string;
+      ledgerOrderId: string;
+      userOrderId: string;
+      accountLabel: string;
       source: 'exchangeOrderMapping';
     };
 
@@ -43,8 +50,12 @@ export class FillRoutingService {
     const parsed = parseClientOrderId(clientOrderId);
 
     if (parsed) {
+      const scope = resolveLedgerOrderScope({ ledgerOrderId: parsed.orderId });
+
       return {
-        orderId: parsed.orderId,
+        ledgerOrderId: scope.ledgerOrderId,
+        userOrderId: scope.userOrderId,
+        accountLabel: scope.accountLabel,
         seq: parsed.seq,
         source: 'clientOrderId',
       };
@@ -55,8 +66,16 @@ export class FillRoutingService {
     );
 
     if (mapping) {
+      const scope = resolveLedgerOrderScope({
+        ledgerOrderId: mapping.orderId,
+        userOrderId: mapping.userOrderId,
+        accountLabel: mapping.accountLabel,
+      });
+
       return {
-        orderId: mapping.orderId,
+        ledgerOrderId: scope.ledgerOrderId,
+        userOrderId: scope.userOrderId,
+        accountLabel: scope.accountLabel,
         source: 'mapping',
       };
     }
@@ -80,8 +99,16 @@ export class FillRoutingService {
       return null;
     }
 
+    const scope = resolveLedgerOrderScope({
+      ledgerOrderId: mapping.orderId,
+      userOrderId: mapping.userOrderId,
+      accountLabel: mapping.accountLabel,
+    });
+
     return {
-      orderId: mapping.orderId,
+      ledgerOrderId: scope.ledgerOrderId,
+      userOrderId: scope.userOrderId,
+      accountLabel: scope.accountLabel,
       source: 'exchangeOrderMapping',
     };
   }

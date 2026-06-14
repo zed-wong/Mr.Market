@@ -43,6 +43,9 @@ describe('ExchangeOrderMappingService', () => {
     );
     expect(repository.create).toHaveBeenCalledWith({
       orderId: 'order-1',
+      userOrderId: 'order-1',
+      accountLabel: 'default',
+      exchange: '',
       exchangeOrderId: null,
       clientOrderId: 'order-1:0',
     });
@@ -113,6 +116,9 @@ describe('ExchangeOrderMappingService', () => {
     );
     expect(repository.create).toHaveBeenCalledWith({
       orderId: 'order-1',
+      userOrderId: 'order-1',
+      accountLabel: 'default',
+      exchange: '',
       exchangeOrderId: 'ex-1',
       clientOrderId: 'order-1:0',
     });
