@@ -31,7 +31,7 @@ describe('Database migration and seed scripts', () => {
   const loadMigrationClasses = (): MigrationClass[] => {
     return fs
       .readdirSync(migrationsRoot)
-      .filter((file) => file.endsWith('.ts'))
+      .filter((file) => file.endsWith('.ts') && !file.endsWith('.spec.ts'))
       .sort()
       .flatMap((file) => {
         const moduleExports = requireFromTest(
