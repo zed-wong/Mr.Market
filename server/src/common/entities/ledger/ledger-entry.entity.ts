@@ -26,6 +26,14 @@ export class LedgerEntry {
 
   @Column()
   @Index()
+  userOrderId: string;
+
+  @Column({ default: 'default' })
+  @Index()
+  accountLabel: string;
+
+  @Column()
+  @Index()
   userId: string;
 
   @Column()

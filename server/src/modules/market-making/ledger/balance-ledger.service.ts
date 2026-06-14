@@ -7,6 +7,7 @@ import {
   LedgerEntryType,
 } from 'src/common/entities/ledger/ledger-entry.entity';
 import { MarketMakingOrderBalance } from 'src/common/entities/ledger/market-making-order-balance.entity';
+import { resolveLedgerOrderScope } from 'src/common/helpers/ledger-order-scope';
 import {
   getRFC3339Timestamp,
   isUniqueConstraintViolation,
@@ -18,6 +19,8 @@ import { DurabilityService } from '../durability/durability.service';
 
 type BalanceLedgerCommand = {
   orderId: string;
+  userOrderId?: string;
+  accountLabel?: string;
   userId: string;
   assetId: string;
   amount: string;
@@ -146,6 +149,22 @@ export class BalanceLedgerService {
     return await this.ledgerEntryRepository.find({
       where: { orderId },
       order: { createdAt: 'ASC', entryId: 'ASC' },
+    });
+  }
+
+  async findEntriesByUserOrderId(userOrderId: string): Promise<LedgerEntry[]> {
+    return await this.ledgerEntryRepository.find({
+      where: { userOrderId },
+      order: { createdAt: 'ASC', entryId: 'ASC' },
+    });
+  }
+
+  async findBalancesByUserOrderId(
+    userOrderId: string,
+  ): Promise<MarketMakingOrderBalance[]> {
+    return await this.orderBalanceRepository.find({
+      where: { userOrderId },
+      order: { orderId: 'ASC', assetId: 'ASC' },
     });
   }
 
@@ -362,6 +381,11 @@ export class BalanceLedgerService {
     const existingEntry = await ledgerEntryRepository.findOneBy({
       idempotencyKey: command.idempotencyKey,
     });
+    const scope = resolveLedgerOrderScope({
+      ledgerOrderId: command.orderId,
+      userOrderId: command.userOrderId,
+      accountLabel: command.accountLabel,
+    });
 
     if (existingEntry) {
       await this.assertIdempotencyPayloadMatches(existingEntry, type, command);
@@ -416,6 +440,8 @@ export class BalanceLedgerService {
     );
 
     balance.userId = command.userId;
+    balance.userOrderId = scope.userOrderId;
+    balance.accountLabel = scope.accountLabel;
     const availableBn = new BigNumber(balance.available);
     const lockedBn = new BigNumber(balance.locked);
 
@@ -488,7 +514,9 @@ export class BalanceLedgerService {
     const now = getRFC3339Timestamp();
     const entry = ledgerEntryRepository.create({
       entryId: randomUUID(),
-      orderId: command.orderId,
+      orderId: scope.ledgerOrderId,
+      userOrderId: scope.userOrderId,
+      accountLabel: scope.accountLabel,
       userId: command.userId,
       assetId: command.assetId,
       amount: signedEntryAmount.toFixed(),
@@ -620,9 +648,12 @@ export class BalanceLedgerService {
       return existing;
     }
 
+    const scope = resolveLedgerOrderScope({ ledgerOrderId: orderId });
     const newBalance = orderBalanceRepository.create({
       orderId,
       userId: '',
+      userOrderId: scope.userOrderId,
+      accountLabel: scope.accountLabel,
       assetId,
       available: '0',
       locked: '0',
@@ -649,8 +680,15 @@ export class BalanceLedgerService {
       a.createdAt.localeCompare(b.createdAt),
     );
     const firstUserId = sortedEntries[0]?.userId || '';
+    const firstScope = resolveLedgerOrderScope({
+      ledgerOrderId: orderId,
+      userOrderId: sortedEntries[0]?.userOrderId,
+      accountLabel: sortedEntries[0]?.accountLabel,
+    });
     const balance = this.orderBalanceRepository.create({
       orderId,
+      userOrderId: firstScope.userOrderId,
+      accountLabel: firstScope.accountLabel,
       userId: firstUserId,
       assetId,
       available: '0',

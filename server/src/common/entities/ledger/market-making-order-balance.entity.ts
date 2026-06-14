@@ -11,6 +11,14 @@ export class MarketMakingOrderBalance {
 
   @Column()
   @Index()
+  userOrderId: string;
+
+  @Column({ default: 'default' })
+  @Index()
+  accountLabel: string;
+
+  @Column()
+  @Index()
   userId: string;
 
   @PrimaryColumn()

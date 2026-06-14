@@ -12,6 +12,8 @@ import {
 
 type LimitOrderReservationCommand = {
   orderId: string;
+  userOrderId?: string;
+  accountLabel?: string;
   userId: string;
   intentId: string;
   pair: string;
@@ -50,6 +52,8 @@ export class OrderReservationService {
     const reservation = this.calculateReservation(command);
     const result = await this.balanceLedgerService.lockFunds({
       orderId: command.orderId,
+      userOrderId: command.userOrderId,
+      accountLabel: command.accountLabel,
       userId: command.userId,
       assetId: reservation.assetId,
       amount: reservation.amount,
@@ -111,6 +115,8 @@ export class OrderReservationService {
 
     const result = await this.balanceLedgerService.unlockFunds({
       orderId: command.orderId,
+      userOrderId: command.userOrderId,
+      accountLabel: command.accountLabel,
       userId: command.userId,
       assetId: reservation.assetId,
       amount: reservation.amount,
@@ -181,6 +187,8 @@ export class OrderReservationService {
 
     const result = await this.balanceLedgerService.unlockFunds({
       orderId: command.orderId,
+      userOrderId: command.userOrderId,
+      accountLabel: command.accountLabel,
       userId: command.userId,
       assetId: reservation.assetId,
       amount: releaseAmount.toFixed(),

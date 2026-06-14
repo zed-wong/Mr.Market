@@ -11,6 +11,10 @@ export class TrackedOrderEntity {
 
   @Column()
   @Index()
+  userOrderId: string;
+
+  @Column()
+  @Index()
   strategyKey: string;
 
   @Column()

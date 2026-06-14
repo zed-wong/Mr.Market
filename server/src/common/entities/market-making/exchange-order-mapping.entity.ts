@@ -15,6 +15,18 @@ export class ExchangeOrderMapping {
   @Index('IDX_exchange_order_mapping_order_id')
   orderId: string;
 
+  @Column()
+  @Index('IDX_exchange_order_mapping_user_order_id')
+  userOrderId: string;
+
+  @Column({ default: 'default' })
+  @Index('IDX_exchange_order_mapping_account_label')
+  accountLabel: string;
+
+  @Column({ default: '' })
+  @Index('IDX_exchange_order_mapping_exchange')
+  exchange: string;
+
   @Column({ nullable: true })
   @Index('IDX_exchange_order_mapping_exchange_order_id')
   exchangeOrderId?: string | null;
