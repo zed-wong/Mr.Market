@@ -108,10 +108,10 @@ export class ReconciliationService {
     }
 
     if (this.marketMakingOrderRepository) {
-      const lockedOrderIds = rows
+      const lockedUserOrderIds = rows
         .filter((row) => new BigNumber(row.locked).isGreaterThan(0))
-        .map((row) => row.orderId);
-      const uniqueLockedOrderIds = [...new Set(lockedOrderIds)];
+        .map((row) => row.userOrderId || row.orderId);
+      const uniqueLockedOrderIds = [...new Set(lockedUserOrderIds)];
 
       if (uniqueLockedOrderIds.length > 0) {
         const orders = await this.marketMakingOrderRepository.find({
@@ -127,7 +127,7 @@ export class ReconciliationService {
             continue;
           }
 
-          const state = stateByOrderId.get(row.orderId);
+          const state = stateByOrderId.get(row.userOrderId || row.orderId);
 
           if (state && state !== 'running') {
             violations += 1;
@@ -420,6 +420,8 @@ export class ReconciliationService {
 
       await this.balanceLedgerService.reverse({
         orderId: entry.orderId,
+        ...(entry.userOrderId ? { userOrderId: entry.userOrderId } : {}),
+        ...(entry.accountLabel ? { accountLabel: entry.accountLabel } : {}),
         userId: entry.userId,
         assetId: entry.assetId,
         amount: reversalAmount.toFixed(),
@@ -431,6 +433,8 @@ export class ReconciliationService {
       this.marketMakingEventBus?.emitReconciliationAudit({
         correctionType: 'estimated_fee_reversal',
         orderId: entry.orderId,
+        ...(entry.userOrderId ? { userOrderId: entry.userOrderId } : {}),
+        ...(entry.accountLabel ? { accountLabel: entry.accountLabel } : {}),
         userId: entry.userId,
         assetId: entry.assetId,
         amount: reversalAmount.toFixed(),
@@ -720,6 +724,8 @@ export class ReconciliationService {
     this.marketMakingEventBus?.emitReconciliationAudit({
       correctionType: 'manual_review',
       orderId: entry.orderId,
+      ...(entry.userOrderId ? { userOrderId: entry.userOrderId } : {}),
+      ...(entry.accountLabel ? { accountLabel: entry.accountLabel } : {}),
       userId: entry.userId,
       assetId: entry.assetId,
       amount: entry.amount,

@@ -77,7 +77,8 @@ export class PerformanceService {
     }
 
     const pairAssets = this.parsePair(order.pair);
-    const entries = await this.balanceLedgerService.findByOrderId(orderId);
+    const entries =
+      await this.balanceLedgerService.findEntriesByUserOrderId(orderId);
     const reversedEntryIds = new Set(
       entries
         .filter((entry) => entry.type === 'reversal' && entry.reversalOf)

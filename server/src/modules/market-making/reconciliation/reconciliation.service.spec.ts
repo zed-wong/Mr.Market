@@ -97,6 +97,48 @@ describe('ReconciliationService', () => {
     expect(report.violations).toBe(1);
   });
 
+  it('checks scoped locked balances against the user order state', async () => {
+    const balanceRepo = {
+      find: jest.fn().mockResolvedValue([
+        {
+          orderId: 'order-stopped:maker',
+          userOrderId: 'order-stopped',
+          accountLabel: 'maker',
+          userId: 'u1',
+          assetId: 'usdt',
+          available: '70',
+          locked: '30',
+          total: '100',
+        },
+      ]),
+    };
+    const orderRepo = {
+      find: jest
+        .fn()
+        .mockResolvedValue([{ orderId: 'order-stopped', state: 'stopped' }]),
+    };
+    const service = new ReconciliationService(
+      balanceRepo as any,
+      { getOpenOrders: jest.fn().mockReturnValue([]) } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      orderRepo as any,
+    );
+
+    const report = await service.reconcileLedgerInvariants();
+
+    expect(orderRepo.find).toHaveBeenCalledWith({
+      where: { orderId: expect.any(Object) },
+      select: ['orderId', 'state'],
+    });
+    expect(report.violations).toBe(1);
+  });
+
   it('allows locked balances on running market-making orders', async () => {
     const balanceRepo = {
       find: jest.fn().mockResolvedValue([
@@ -701,6 +743,8 @@ describe('ReconciliationService', () => {
         {
           entryId: 'quote-fill-mismatch',
           orderId: 'order-1:maker',
+          userOrderId: 'order-1',
+          accountLabel: 'maker',
           userId: 'user-1',
           assetId: 'USDT',
           amount: '-5.386',
@@ -723,6 +767,9 @@ describe('ReconciliationService', () => {
     const balanceLedgerService = {
       pauseReservations: jest.fn(),
     };
+    const marketMakingEventBus = {
+      emitReconciliationAudit: jest.fn(),
+    };
     const service = new ReconciliationService(
       { find: jest.fn().mockResolvedValue([]) } as any,
       {
@@ -742,7 +789,7 @@ describe('ReconciliationService', () => {
       { find: jest.fn().mockResolvedValue([]) } as any,
       ledgerEntryRepository as any,
       balanceLedgerService as any,
-      { emitReconciliationAudit: jest.fn() } as any,
+      marketMakingEventBus as any,
       exchangeConnectorAdapterService as any,
     );
 
@@ -756,6 +803,14 @@ describe('ReconciliationService', () => {
         source: 'reconciliation',
         reason: 'fill_amount_mismatch',
         refId: 'exchange-order-1',
+      }),
+    );
+    expect(marketMakingEventBus.emitReconciliationAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'order-1:maker',
+        userOrderId: 'order-1',
+        accountLabel: 'maker',
+        reason: 'fill_amount_mismatch',
       }),
     );
   });

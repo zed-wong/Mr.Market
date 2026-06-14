@@ -2,6 +2,7 @@
 
 ## 2026-06-14
 
+- Complete the market-making order identity cleanup: ledger balances now keep explicit `ledgerOrderId` storage with `userOrderId` and `accountLabel` attribution, dual-account fills/reservations/tracked orders carry that identity end-to-end, order performance aggregates by `userOrderId`, and reconciliation reports scoped mismatches with account attribution.
 - Change admin direct resume to reallocate orders against current available exchange balance before runtime start, preserving the original order id while recording allocation shrinkage through typed order-scoped ledger entries.
 
 ## 2026-06-13

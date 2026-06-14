@@ -107,30 +107,31 @@ const buildService = (
   entries: LedgerEntry[],
   order: MarketMakingOrder | null = createOrder(),
 ) => {
+  const sortedEntries = [...entries].sort((a, b) => {
+    const createdAt = a.createdAt.localeCompare(b.createdAt);
+
+    if (createdAt !== 0) {
+      return createdAt;
+    }
+
+    return a.entryId.localeCompare(b.entryId);
+  });
+  const balanceLedgerService = {
+    findByOrderId: jest.fn(async () => sortedEntries),
+    findEntriesByUserOrderId: jest.fn(async () => sortedEntries),
+  };
   const service = new PerformanceService(
     createRepository([]) as never,
     createRepository(order ? [order] : []) as never,
-    {
-      findByOrderId: jest.fn(async () =>
-        [...entries].sort((a, b) => {
-          const createdAt = a.createdAt.localeCompare(b.createdAt);
-
-          if (createdAt !== 0) {
-            return createdAt;
-          }
-
-          return a.entryId.localeCompare(b.entryId);
-        }),
-      ),
-    } as never,
+    balanceLedgerService as never,
   );
 
-  return service;
+  return { service, balanceLedgerService };
 };
 
 describe('PerformanceService order performance', () => {
   it('replays average-cost realized PnL and quote fees', async () => {
-    const service = buildService([
+    const { service } = buildService([
       ...fill('1', 'buy', '1', '100', '2026-05-31T00:00:00.000Z'),
       ...fill('2', 'sell', '1', '110', '2026-05-31T00:01:00.000Z', {
         assetId: 'USDT',
@@ -152,7 +153,7 @@ describe('PerformanceService order performance', () => {
   });
 
   it('handles partial closes using existing session PnL semantics', async () => {
-    const service = buildService([
+    const { service } = buildService([
       ...fill('1', 'buy', '2', '100', '2026-05-31T00:00:00.000Z'),
       ...fill('2', 'sell', '1', '110', '2026-05-31T00:01:00.000Z'),
     ]);
@@ -167,7 +168,7 @@ describe('PerformanceService order performance', () => {
   });
 
   it('converts base fees at the fill price', async () => {
-    const service = buildService([
+    const { service } = buildService([
       ...fill('1', 'buy', '1', '100', '2026-05-31T00:00:00.000Z', {
         assetId: 'BTC',
         amount: '0.01',
@@ -181,7 +182,7 @@ describe('PerformanceService order performance', () => {
   });
 
   it('returns third-asset fees separately and excludes them from quote net', async () => {
-    const service = buildService([
+    const { service } = buildService([
       ...fill('1', 'buy', '1', '100', '2026-05-31T00:00:00.000Z', {
         assetId: 'BNB',
         amount: '0.2',
@@ -198,7 +199,7 @@ describe('PerformanceService order performance', () => {
   });
 
   it('uses entryId as a deterministic tie-breaker for same timestamp fills', async () => {
-    const service = buildService([
+    const { service } = buildService([
       ...fill('2', 'sell', '1', '110', '2026-05-31T00:00:00.000Z'),
       ...fill('1', 'buy', '1', '100', '2026-05-31T00:00:00.000Z'),
     ]);
@@ -208,8 +209,40 @@ describe('PerformanceService order performance', () => {
     expect(result.summary.realizedPnlQuote).toBe('10');
   });
 
+  it('aggregates ledger entries by user order id across dual-account scopes', async () => {
+    const { service, balanceLedgerService } = buildService([
+      ...fill('1', 'buy', '1', '100', '2026-05-31T00:00:00.000Z').map(
+        (ledgerEntry) =>
+          entry({
+            ...ledgerEntry,
+            orderId: 'order-1:maker',
+            userOrderId: 'order-1',
+            accountLabel: 'maker',
+          }),
+      ),
+      ...fill('2', 'sell', '1', '110', '2026-05-31T00:01:00.000Z').map(
+        (ledgerEntry) =>
+          entry({
+            ...ledgerEntry,
+            orderId: 'order-1:taker',
+            userOrderId: 'order-1',
+            accountLabel: 'taker',
+          }),
+      ),
+    ]);
+
+    const result = await service.getOrderPerformance('order-1');
+
+    expect(balanceLedgerService.findEntriesByUserOrderId).toHaveBeenCalledWith(
+      'order-1',
+    );
+    expect(balanceLedgerService.findByOrderId).not.toHaveBeenCalled();
+    expect(result.summary.realizedPnlQuote).toBe('10');
+    expect(result.summary.fillCount).toBe(2);
+  });
+
   it('returns zero performance for orders without fill ledger entries', async () => {
-    const service = buildService([]);
+    const { service } = buildService([]);
 
     const result = await service.getOrderPerformance('order-1');
 
@@ -226,7 +259,7 @@ describe('PerformanceService order performance', () => {
   });
 
   it('reports stored realized PnL reconciliation', async () => {
-    const service = buildService(
+    const { service } = buildService(
       [
         ...fill('1', 'buy', '1', '100', '2026-05-31T00:00:00.000Z'),
         ...fill('2', 'sell', '1', '110', '2026-05-31T00:01:00.000Z'),
@@ -252,7 +285,7 @@ describe('PerformanceService order performance', () => {
   });
 
   it('throws when the order does not exist', async () => {
-    const service = buildService([], null);
+    const { service } = buildService([], null);
 
     await expect(service.getOrderPerformance('missing')).rejects.toThrow(
       NotFoundException,

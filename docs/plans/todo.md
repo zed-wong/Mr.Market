@@ -3,7 +3,7 @@
 2026-06-12
 ---
 1. Admin Volume should support max volume auto stop, should clean up status display, should clean up account routing page for dual account orders(use trading/exchange-orders data for this page)
-3. Fix order id inconsistency
+3. Fix order id inconsistency - done 2026-06-14
 4. Design DEX support to support hyperliquid and PancakeSwap/Uniswap etc.. 
 5. Design a great bussiness model
 6. Add Exin-like spot support

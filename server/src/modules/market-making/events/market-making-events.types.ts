@@ -44,6 +44,8 @@ export type MarketMakingFillManualReviewEvent = {
 export type MarketMakingReconciliationAuditEvent = {
   correctionType: 'estimated_fee_reversal' | 'manual_review';
   orderId?: string;
+  userOrderId?: string;
+  accountLabel?: string;
   userId?: string;
   assetId?: string;
   amount?: string;
