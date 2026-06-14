@@ -179,6 +179,46 @@ describe('BalanceLedgerService', () => {
     expect(balance.total).toBe('100');
   });
 
+  it('releases admin-direct allocation without rewriting initial deposit', async () => {
+    const repos = createInMemoryRepos();
+    const service = new BalanceLedgerService(
+      repos.ledgerEntryRepository as any,
+      repos.balanceReadModelRepository as any,
+    );
+
+    await service.creditDeposit({
+      orderId: 'order-1',
+      userId: 'u1',
+      assetId: 'USDT',
+      amount: '18.73590207',
+      idempotencyKey: 'dep-1',
+      refType: 'admin_direct_seed',
+      refId: 'order-1',
+    });
+    await service.releaseAllocation({
+      orderId: 'order-1',
+      userId: 'u1',
+      assetId: 'USDT',
+      amount: '18.38300405',
+      idempotencyKey: 'allocation-release-1',
+      refType: 'admin_direct_reallocation',
+      refId: 'order-1',
+    });
+
+    const balance = await service.getBalance('order-1', 'USDT');
+    const entries = await service.findByOrderId('order-1');
+
+    expect(balance.available).toBe('0.35289802');
+    expect(balance.locked).toBe('0');
+    expect(balance.total).toBe('0.35289802');
+    expect(balance.initialDeposit).toBe('18.73590207');
+    expect(entries.at(-1)).toMatchObject({
+      type: 'allocation_release',
+      amount: '-18.38300405',
+      refType: 'admin_direct_reallocation',
+    });
+  });
+
   it('sums locked balance for a user asset across order scopes', async () => {
     const repos = createInMemoryRepos();
     const service = new BalanceLedgerService(
@@ -591,6 +631,8 @@ describe('BalanceLedgerService', () => {
 
     balances.set(key, {
       orderId: 'order-1',
+      userOrderId: 'order-1',
+      accountLabel: 'default',
       userId: 'u1',
       assetId: 'asset-usdt',
       available: '100',

@@ -513,6 +513,11 @@ export class AdminDirectMarketMakingService {
       this.readPositiveAmount(order.balanceB) ||
       this.readPositiveAmount(resolvedConfig.balanceB) ||
       order.balanceB;
+    await this.reallocateAdminDirectOrderToAvailableBalance(
+      order,
+      resolvedConfig,
+      primaryMarketSnapshot,
+    );
     const warnings = this.isDualAccountMode(order)
       ? await this.runDualAccountBalancePreCheck(
           order.exchangeName,
@@ -3069,6 +3074,148 @@ export class AdminDirectMarketMakingService {
     if (quoteAllocation.isFinite() && quoteAllocation.isGreaterThan(0)) {
       resolvedConfig.balanceB = quoteAllocation.toFixed();
     }
+  }
+
+  private async reallocateAdminDirectOrderToAvailableBalance(
+    order: MarketMakingOrder,
+    resolvedConfig: Record<string, unknown>,
+    snapshot: DirectMarketSnapshot,
+  ): Promise<void> {
+    const [baseAsset, quoteAsset] = this.parsePair(order.pair);
+    const siblingAllocations = await this.loadAdminDirectSiblingAllocations(
+      order.exchangeName,
+      order.apiKeyId,
+      order.orderId,
+    );
+    const allocations = [
+      {
+        assetId: baseAsset,
+        key: 'balanceA',
+        current: new BigNumber(
+          this.readPositiveAmount(order.balanceA || resolvedConfig.balanceA) ||
+            0,
+        ),
+      },
+      {
+        assetId: quoteAsset,
+        key: 'balanceB',
+        current: new BigNumber(
+          this.readPositiveAmount(order.balanceB || resolvedConfig.balanceB) ||
+            0,
+        ),
+      },
+    ].filter((allocation) => allocation.assetId);
+    let hasAvailableAllocation = false;
+
+    for (const allocation of allocations) {
+      const exchangeFree = new BigNumber(
+        snapshot.balance?.free?.[allocation.assetId] ?? 0,
+      );
+      const siblingAllocated =
+        siblingAllocations.get(allocation.assetId) || new BigNumber(0);
+      const accountAvailable = BigNumber.maximum(
+        exchangeFree.minus(siblingAllocated),
+        0,
+      );
+      const nextAllocation = BigNumber.minimum(
+        allocation.current,
+        accountAvailable,
+      );
+
+      if (nextAllocation.isGreaterThan(0)) {
+        hasAvailableAllocation = true;
+      }
+
+      if (allocation.current.isGreaterThan(nextAllocation)) {
+        await this.balanceLedgerService.releaseAllocation({
+          orderId: order.orderId,
+          userId: order.userId || 'admin-direct',
+          assetId: allocation.assetId,
+          amount: allocation.current.minus(nextAllocation).toFixed(),
+          idempotencyKey: `admin-direct-reallocate:${order.orderId}:${
+            allocation.assetId
+          }:${allocation.current.toFixed()}->${nextAllocation.toFixed()}`,
+          refType: 'admin_direct_reallocation',
+          refId: order.orderId,
+        });
+      }
+
+      const nextValue = nextAllocation.toFixed();
+
+      resolvedConfig[allocation.key] = nextValue;
+      if (allocation.key === 'balanceA') {
+        order.balanceA = nextValue;
+      } else {
+        order.balanceB = nextValue;
+      }
+    }
+
+    if (!hasAvailableAllocation) {
+      throw new BadRequestException(
+        'No available exchange balance remains to resume this direct order',
+      );
+    }
+
+    if (order.strategySnapshot?.resolvedConfig) {
+      order.strategySnapshot.resolvedConfig = resolvedConfig;
+    }
+
+    await this.marketMakingRepository.update(
+      { orderId: order.orderId, source: 'admin_direct' },
+      {
+        balanceA: order.balanceA,
+        balanceB: order.balanceB,
+        strategySnapshot: order.strategySnapshot,
+      },
+    );
+  }
+
+  private async loadAdminDirectSiblingAllocations(
+    exchangeName: string,
+    apiKeyId: string | null,
+    excludeOrderId: string,
+  ): Promise<Map<string, BigNumber>> {
+    const allocations = new Map<string, BigNumber>();
+
+    if (!apiKeyId) {
+      return allocations;
+    }
+
+    const overlappingOrders = await this.marketMakingRepository.find({
+      where: {
+        exchangeName,
+        apiKeyId,
+        source: 'admin_direct',
+        state: In(['running', 'paused']),
+      },
+      select: ['orderId'],
+    });
+    const overlappingOrderIds = overlappingOrders
+      .map((o) => o.orderId)
+      .filter((id) => id !== excludeOrderId);
+
+    if (!overlappingOrderIds.length) {
+      return allocations;
+    }
+
+    const overlappingBalances = await this.orderBalanceRepository.find({
+      where: overlappingOrderIds.map((orderId) => ({ orderId })),
+    });
+
+    for (const balance of overlappingBalances) {
+      if (!balance.assetId) {
+        continue;
+      }
+
+      const current = allocations.get(balance.assetId) || new BigNumber(0);
+
+      allocations.set(
+        balance.assetId,
+        current.plus(new BigNumber(balance.total || 0)),
+      );
+    }
+
+    return allocations;
   }
 
   private assertAdminDirectSeedAllocationsAvailable(

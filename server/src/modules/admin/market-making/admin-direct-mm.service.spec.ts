@@ -225,6 +225,7 @@ describe('AdminDirectMarketMakingService', () => {
       hasDepositCredit: jest.fn().mockResolvedValue(false),
       findByOrderId: jest.fn().mockResolvedValue([]),
       creditDeposit: jest.fn().mockResolvedValue({ applied: true }),
+      releaseAllocation: jest.fn().mockResolvedValue({ applied: true }),
       getExistingBalance: jest.fn().mockResolvedValue(null),
       unlockFunds: jest.fn().mockResolvedValue({ applied: true }),
     };
@@ -1206,13 +1207,14 @@ describe('AdminDirectMarketMakingService', () => {
     expect(marketMakingRuntimeService.startOrder).toHaveBeenCalled();
   });
 
-  it('rejects direct resume when running sibling allocations exceed exchange free balance', async () => {
+  it('shrinks direct resume allocation by running sibling balances before start', async () => {
     const {
       service,
       marketMakingRepository,
       marketMakingRuntimeService,
       orderBalanceRepository,
       exchange,
+      balanceLedgerService,
     } = buildService();
 
     marketMakingRepository.findOne.mockResolvedValue({
@@ -1264,18 +1266,36 @@ describe('AdminDirectMarketMakingService', () => {
       total: {},
     });
 
-    await expect(service.directResume('resume-order')).rejects.toThrow(
-      'Account overlap',
+    await expect(service.directResume('resume-order')).resolves.toEqual({
+      orderId: 'resume-order',
+      state: 'running',
+      warnings: expect.any(Array),
+    });
+    expect(balanceLedgerService.releaseAllocation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'resume-order',
+        assetId: 'USDT',
+        amount: '5',
+        refType: 'admin_direct_reallocation',
+      }),
     );
-    expect(marketMakingRuntimeService.startOrder).not.toHaveBeenCalled();
+    expect(marketMakingRuntimeService.startOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        balanceB: '5',
+        strategySnapshot: expect.objectContaining({
+          resolvedConfig: expect.objectContaining({ balanceB: '5' }),
+        }),
+      }),
+    );
   });
 
-  it('rejects direct resume with clear copy when only the current order exceeds exchange free balance', async () => {
+  it('shrinks direct resume allocation to current exchange free balance', async () => {
     const {
       service,
       marketMakingRepository,
       marketMakingRuntimeService,
       exchange,
+      balanceLedgerService,
     } = buildService();
 
     marketMakingRepository.findOne.mockResolvedValue({
@@ -1318,10 +1338,29 @@ describe('AdminDirectMarketMakingService', () => {
       total: {},
     });
 
-    await expect(service.directResume('resume-order')).rejects.toThrow(
-      /current order allocates 10\.9 USDT.*exchange free balance is only 7\.3674727385 USDT/,
+    await expect(service.directResume('resume-order')).resolves.toEqual({
+      orderId: 'resume-order',
+      state: 'running',
+      warnings: expect.any(Array),
+    });
+    expect(balanceLedgerService.releaseAllocation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'resume-order',
+        assetId: 'USDT',
+        amount: '3.5325272615',
+        refType: 'admin_direct_reallocation',
+      }),
     );
-    expect(marketMakingRuntimeService.startOrder).not.toHaveBeenCalled();
+    expect(marketMakingRuntimeService.startOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        balanceB: '7.3674727385',
+        strategySnapshot: expect.objectContaining({
+          resolvedConfig: expect.objectContaining({
+            balanceB: '7.3674727385',
+          }),
+        }),
+      }),
+    );
   });
 
   it('removes a stopped direct order', async () => {

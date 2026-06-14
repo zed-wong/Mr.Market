@@ -98,6 +98,12 @@ export class BalanceLedgerService {
     return await this.applyMutation('withdraw_debit', command);
   }
 
+  async releaseAllocation(
+    command: BalanceLedgerCommand,
+  ): Promise<BalanceLedgerResult> {
+    return await this.applyMutation('allocation_release', command);
+  }
+
   async debitFee(command: BalanceLedgerCommand): Promise<BalanceLedgerResult> {
     return await this.applyMutation('fee_debit', command);
   }
@@ -422,7 +428,11 @@ export class BalanceLedgerService {
       signedEntryAmount = amountBn;
     }
 
-    if (type === 'withdraw_debit' || type === 'fee_debit') {
+    if (
+      type === 'withdraw_debit' ||
+      type === 'fee_debit' ||
+      type === 'allocation_release'
+    ) {
       if (availableBn.isLessThan(amountBn)) {
         throw new BadRequestException('insufficient available balance');
       }
@@ -672,7 +682,11 @@ export class BalanceLedgerService {
         available = available.plus(amount);
       }
 
-      if (entry.type === 'withdraw_debit' || entry.type === 'fee_debit') {
+      if (
+        entry.type === 'withdraw_debit' ||
+        entry.type === 'fee_debit' ||
+        entry.type === 'allocation_release'
+      ) {
         available = available.plus(amount);
       }
 
@@ -787,7 +801,11 @@ export class BalanceLedgerService {
   ): string {
     const amountBn = new BigNumber(amount);
 
-    if (type === 'withdraw_debit' || type === 'fee_debit') {
+    if (
+      type === 'withdraw_debit' ||
+      type === 'fee_debit' ||
+      type === 'allocation_release'
+    ) {
       return amountBn.negated().toFixed();
     }
 

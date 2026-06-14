@@ -11,6 +11,7 @@ export type LedgerEntryType =
   | 'fill_settle'
   | 'fee_debit'
   | 'withdraw_debit'
+  | 'allocation_release'
   | 'reward_credit'
   | 'reversal';
 

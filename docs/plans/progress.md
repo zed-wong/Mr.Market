@@ -1,5 +1,9 @@
 # Execution Flow Changelog
 
+## 2026-06-14
+
+- Change admin direct resume to reallocate orders against current available exchange balance before runtime start, preserving the original order id while recording allocation shrinkage through typed order-scoped ledger entries.
+
 ## 2026-06-13
 
 - Remove the efficient dual-account runtime cycle panel from the admin direct order details account-routing dialog so that routing focuses only on maker/taker account labels.
