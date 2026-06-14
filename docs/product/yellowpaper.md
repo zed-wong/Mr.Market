@@ -93,11 +93,25 @@ Near term: Mixin deposits and refunds. Later: EVM, Solana, and other on-chain en
 
 ### 2.3 Order Balance Model
 
-Order Balance is the read model for runtime quota checks and reservation. Balances are bound to a ledger order scope, not merely to users or exchange accounts. `userOrderId` is the user-facing order identity used for order detail, PnL, and reporting aggregation. `ledgerOrderId` is the balance bucket identity used by Ledger Entry and OrderBalance. Single-account orders usually have the same `userOrderId` and `ledgerOrderId`; dual-account orders may share one `userOrderId` while using separate ledger scopes such as maker and taker. Orders, fills, cancellations, fees, and PnL must all be expressed through Ledger Entry and update the order-level balance view.
+Order Balance is the read model for runtime quota checks and reservation. Balances are bound to a ledger order scope, not merely to users or exchange accounts. Orders, fills, cancellations, fees, and PnL must all be expressed through Ledger Entry and update the order-level balance view.
+
+Order identity vocabulary:
+
+| Name | Meaning | Primary use |
+|------|---------|-------------|
+| `userOrderId` | Product and user-facing order identity. | Order detail, UI/API reads, PnL, rewards, withdrawals, and reporting aggregate by this id. |
+| `ledgerOrderId` | Balance bucket identity. | Ledger Entry, OrderBalance, reservation, fill settlement, fee settlement, withdrawals, and reconciliation balance checks are keyed by `ledgerOrderId + asset`. |
+| `accountLabel` | Execution account or strategy leg under a `userOrderId`, for example `default`, `maker`, or `taker`. It is not an order id by itself. | Exchange routing, dual-account scope resolution, tracked orders, and reconciliation reports. |
+| `clientOrderId` | Client-supplied venue order id generated before order placement. | Placement idempotency and fill routing; submitted exchange-safe forms are mapped back through `ExchangeOrderMapping`. |
+| `exchangeOrderId` | Venue-side order id returned by the exchange or on-chain execution venue. | Fetch, cancel, open-order reconciliation, and fill matching. It must never be used as a balance scope. |
+
+Single-account orders normally use `userOrderId === ledgerOrderId` with `accountLabel = 'default'`. Dual-account orders share one `userOrderId` and use separate ledger scopes, such as `ledgerOrderId = <userOrderId>:maker` and `ledgerOrderId = <userOrderId>:taker`, resolved only through the centralized ledger-order-scope helper.
+
+Existing database columns named `orderId` in ledger, balance, tracked-order, and exchange-order-mapping storage semantically store `ledgerOrderId`. New service contracts must not pass a naked `orderId` when both `userOrderId` and `ledgerOrderId` are possible.
 
 ### 2.4 Balance Fields
 
-Each order maintains the following fields per asset:
+Each ledger order scope maintains the following fields per asset:
 
 | Field | Meaning |
 |------|------|
@@ -209,10 +223,10 @@ Mr.Market uses a ledger-first balance system. Order balances are derived from im
 | Object | Owning module | Responsibility |
 |------|----------|------|
 | `LedgerEntry` | Funding layer / Ledger module | Record one immutable balance change |
-| `OrderBalance` | Funding layer / Balance module | Current balance view for one order and one asset |
+| `OrderBalance` | Funding layer / Balance module | Current balance view for one ledger order scope and one asset |
 | `Reservation` | Funding layer rule, optional independent module | Temporary order-balance lock before strategy order placement; the MVP can express it with ledger entries plus intent / tracked order references, as described in 2.6 |
 
-Each `LedgerEntry` must include: `orderId`, `asset`, `amount`, `type`, `idempotencyKey`, `refType`, `refId`, and `createdAt`. After a Ledger Entry is created, it is immutable; any correction must be expressed through a new reversal entry.
+Each `LedgerEntry` must include: `ledgerOrderId`, `userOrderId`, `accountLabel`, `asset`, `amount`, `type`, `idempotencyKey`, `refType`, `refId`, and `createdAt`. Current storage may name the `ledgerOrderId` column `orderId`; the semantic field is still `ledgerOrderId`. After a Ledger Entry is created, it is immutable; any correction must be expressed through a new reversal entry.
 
 Balance fields are obtained by ledger aggregation:
 
@@ -291,8 +305,8 @@ The reversed entry remains in the ledger. During balance reconstruction, both th
 The system must be able to reconstruct any `OrderBalance` from Ledger Entries:
 
 ```text
-OrderBalance(orderId, asset)
-  = Σ(LedgerEntry where orderId and asset)
+OrderBalance(ledgerOrderId, asset)
+  = Σ(LedgerEntry where ledgerOrderId and asset)
 ```
 
 Reconstruction is used for:
@@ -392,11 +406,11 @@ Definitions:
 | Execution account | One exchange API key |
 | Commingled funds | Funds at the exchange API-key level |
 | Internal isolation | Enforced by Mr.Market's internal ledger and Order Balance |
-| Strategy instance binding | Each strategy instance binds one order and one execution account |
+| Strategy instance binding | Each strategy instance binds one `userOrderId` and one execution account label; balance effects still settle through the resolved `ledgerOrderId` |
 
 Constraints:
 
-1. Every exchange order and fill must be attributable back to the Mr.Market order that initiated it;
+1. Every exchange order and fill must carry `userOrderId`, `ledgerOrderId`, and `accountLabel` attribution for the Mr.Market order that initiated it;
 2. Rate limits, open-order limits, trading-pair conflicts, and API-key health together limit how many orders an execution account can support;
 3. The trading layer cannot bypass the ledger and directly modify user balances.
 
