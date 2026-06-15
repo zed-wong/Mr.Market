@@ -18,7 +18,7 @@
     disabled={$mixinConnectLoading}
 >
     {#if $mixinConnectLoading}
-        <span class="loading loading-xs mx-3 text-base-100" />
+        <span class="loading loading-xs mx-3 text-base-100"></span>
     {:else}
         <span class={clsx("font-semibold")}>
             {$_("connect_wallet")}

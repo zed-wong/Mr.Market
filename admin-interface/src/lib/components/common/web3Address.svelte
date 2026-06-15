@@ -32,6 +32,7 @@
         </span>
         <button
             data-tip={$_("reward_address_intro")}
+            aria-label={$_("reward_address_intro")}
             on:click={() => {
                 addressTooltip = !addressTooltip;
                 if (closeTooltip) {

@@ -64,6 +64,7 @@
           </div>
           <button
             class="btn btn-sm btn-circle btn-ghost text-base-content/50 hover:bg-base-200"
+            aria-label={$_("close")}
             on:click={onClose}
           >
             <svg

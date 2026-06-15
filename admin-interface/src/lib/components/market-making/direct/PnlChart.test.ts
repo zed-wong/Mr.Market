@@ -13,7 +13,7 @@ describe('PnlChart', () => {
     });
 
     expect(body).toContain('0');
-    expect(body).toContain('points');
+    expect(body).toContain('records');
     expect(body).toContain('No fills have settled');
   });
 
@@ -32,7 +32,7 @@ describe('PnlChart', () => {
     });
 
     expect(body).toContain('1');
-    expect(body).toContain('points');
+    expect(body).toContain('records');
     expect(body).toContain('No fills have settled');
   });
 });

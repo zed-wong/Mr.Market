@@ -624,7 +624,10 @@
                                         loadingMarket.exchange_id}
                                 </span>
                             </div>
-                            <button class="btn btn-sm btn-primary btn-disabled">
+                            <button
+                                class="btn btn-sm btn-primary btn-disabled"
+                                aria-label={$_("loading_markets")}
+                            >
                                 <span
                                     class="loading loading-spinner loading-xs"
                                 ></span>
@@ -730,6 +733,7 @@
                 <span class="text-lg font-semibold">{$_("quick_add_pair")}</span>
                 <button
                     class="btn btn-sm btn-circle btn-ghost"
+                    aria-label={$_("close")}
                     on:click={() => (addDialog = false)}
                 >
                     <svg
@@ -982,6 +986,7 @@
                                 </div>
                                 <button
                                     class="btn btn-sm btn-primary btn-disabled"
+                                    aria-label={$_("loading_markets")}
                                 >
                                     <span
                                         class="loading loading-spinner loading-xs"
