@@ -8,7 +8,6 @@ import type {
 } from "$lib/types/hufi/admin-direct-market-making";
 import type { OrderPerformance } from "$lib/types/hufi/order-performance";
 import OrderPerformanceDialog from "./OrderPerformanceDialog.svelte";
-import OrderInventoryDialog from "./OrderInventoryDialog.svelte";
 import OrderConfigDialog from "./OrderConfigDialog.svelte";
 import OrderRoutingDialog from "./OrderRoutingDialog.svelte";
 import OrderErrorsDialog from "./OrderErrorsDialog.svelte";
@@ -124,28 +123,18 @@ const stoppedEfficientStatus: DirectOrderStatus = {
 describe("Order detail sub-dialogs", () => {
   it("renders performance metrics with a back affordance", () => {
     const { body } = render(OrderPerformanceDialog, {
-      props: { performance: basePerformance, onBack: noop, onClose: noop },
-    });
-
-    expect(body).toContain("Performance");
-    expect(body).toContain("Back to overview");
-    expect(body).toContain("11.25");
-  });
-
-  it("renders single-account inventory balances", () => {
-    const { body } = render(OrderInventoryDialog, {
       props: {
         order: baseOrder,
-        data: baseStatus,
-        isDualAccountStrategy: false,
+        performance: basePerformance,
         onBack: noop,
         onClose: noop,
       },
     });
 
-    expect(body).toContain("Inventory balances");
-    expect(body).toContain("BTC");
-    expect(body).toContain("USDT");
+    expect(body).toContain("Performance");
+    expect(body).toContain("Back to overview");
+    expect(body).toContain("11.25 USDT");
+    expect(body).toContain("5,000 USDT");
   });
 
   it("renders known-strategy order config", () => {
@@ -167,6 +156,7 @@ describe("Order detail sub-dialogs", () => {
   it("renders single-account routing", () => {
     const { body } = render(OrderRoutingDialog, {
       props: {
+        order: baseOrder,
         data: baseStatus,
         isDualAccountStrategy: false,
         onBack: noop,
@@ -174,17 +164,38 @@ describe("Order detail sub-dialogs", () => {
       },
     });
 
-    expect(body).toContain("Account Routing");
+    expect(body).toContain("Account &amp; Balance");
     expect(body).toContain("main");
+    expect(body).toContain("BTC");
+    expect(body).toContain("USDT");
   });
 
-  it("keeps dual-account routing focused on account labels", () => {
+  it("renders dual-account routing with balances", () => {
     const { body } = render(OrderRoutingDialog, {
       props: {
+        order: baseOrder,
         data: {
           ...stoppedEfficientStatus,
+          makerAccountLabel: "4",
+          takerAccountLabel: "8",
           makerAccountName: "maker-main",
           takerAccountName: "taker-alt",
+          inventoryBalances: [
+            {
+              accountLabel: "maker",
+              asset: "BTC",
+              free: "0.5",
+              used: "0",
+              total: "0.5",
+            },
+            {
+              accountLabel: "taker",
+              asset: "USDT",
+              free: "500",
+              used: "0",
+              total: "500",
+            },
+          ],
           cycles: [
             {
               cycleId: "efficient-dual-account-volume:cycle:1:2026-06-08T00:00:00.000Z",
@@ -200,9 +211,11 @@ describe("Order detail sub-dialogs", () => {
       },
     });
 
-    expect(body).toContain("Account Routing");
+    expect(body).toContain("Account &amp; Balance");
     expect(body).toContain("maker-main");
     expect(body).toContain("taker-alt");
+    expect(body).toContain("Maker Balances");
+    expect(body).toContain("Taker Balances");
     expect(body).not.toContain("Efficient Volume runtime cycles");
   });
 

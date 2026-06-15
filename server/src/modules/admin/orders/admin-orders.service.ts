@@ -33,6 +33,7 @@ export interface AdminOrdersQuery {
   status?: string;
   side?: string;
   query?: string;
+  userOrderId?: string;
   limit?: string;
   page?: string;
 }
@@ -57,6 +58,12 @@ export class AdminOrdersService {
 
     if (filters.side) {
       query.andWhere('order.side = :side', { side: filters.side });
+    }
+
+    if (filters.userOrderId) {
+      query.andWhere('order.userOrderId = :userOrderId', {
+        userOrderId: filters.userOrderId,
+      });
     }
 
     if (filters.query) {
@@ -101,6 +108,7 @@ export class AdminOrdersService {
         status: filters.status || null,
         side: filters.side || null,
         query: filters.query || null,
+        userOrderId: filters.userOrderId || null,
       },
       limits: {
         defaultLimit: DEFAULT_LIMIT,
@@ -116,10 +124,13 @@ export class AdminOrdersService {
     status?: OrderStatus;
     side?: OrderSide;
     query?: string;
+    userOrderId?: string;
   } {
     const status = this.normalizeOptionalToken(input.status);
     const side = this.normalizeOptionalToken(input.side);
     const query = typeof input.query === 'string' ? input.query.trim() : '';
+    const userOrderId =
+      typeof input.userOrderId === 'string' ? input.userOrderId.trim() : '';
 
     if (status && !ORDER_STATUSES.includes(status as OrderStatus)) {
       throw new BadRequestException(
@@ -141,10 +152,17 @@ export class AdminOrdersService {
       );
     }
 
+    if (userOrderId.length > MAX_QUERY_LENGTH) {
+      throw new BadRequestException(
+        `userOrderId is too long. Maximum length is ${MAX_QUERY_LENGTH} characters.`,
+      );
+    }
+
     return {
       status: status as OrderStatus | undefined,
       side: side as OrderSide | undefined,
       query: query || undefined,
+      userOrderId: userOrderId || undefined,
     };
   }
 

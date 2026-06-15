@@ -195,6 +195,31 @@ describe('AdminOrdersService', () => {
     );
   });
 
+  it('scopes results to a single user order with an exact userOrderId filter', async () => {
+    const { service, queryBuilder } = buildService();
+
+    const result = await service.listOrders({ userOrderId: 'user-order-7' });
+
+    expect(queryBuilder.clauses).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sql: 'order.userOrderId = :userOrderId',
+          params: { userOrderId: 'user-order-7' },
+        }),
+      ]),
+    );
+    expect(result.filters.userOrderId).toBe('user-order-7');
+  });
+
+  it('rejects an excessively long userOrderId without querying orders', async () => {
+    const { service, queryBuilder } = buildService();
+
+    await expect(
+      service.listOrders({ userOrderId: 'x'.repeat(101) }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(queryBuilder.getManyAndCount).not.toHaveBeenCalled();
+  });
+
   it('clamps excessive limits to the maximum bound', async () => {
     const { service, queryBuilder } = buildService();
 

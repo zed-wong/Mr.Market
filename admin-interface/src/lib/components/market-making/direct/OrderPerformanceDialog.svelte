@@ -3,11 +3,30 @@
     import OrderDetailSubShell from "$lib/components/market-making/direct/OrderDetailSubShell.svelte";
     import PnlChart from "$lib/components/market-making/direct/PnlChart.svelte";
     import { formatDirectDecimal, formatDirectBps } from "$lib/helpers/market-making/direct/helpers";
+    import type { DirectOrderSummary } from "$lib/types/hufi/admin-direct-market-making";
     import type { OrderPerformance } from "$lib/types/hufi/order-performance";
 
+    export let order: DirectOrderSummary | null = null;
     export let performance: OrderPerformance | null = null;
     export let onBack: () => void;
     export let onClose: () => void;
+
+    $: quoteAsset =
+        order?.pair
+            ?.split("/")
+            .map((part) => part.trim())
+            .filter(Boolean)[1] || "";
+
+    function formatQuoteMetric(
+        value: string | null | undefined,
+        decimals = 4,
+    ): string {
+        const formatted = formatDirectDecimal(value, decimals);
+
+        return value !== null && value !== undefined && value !== "" && quoteAsset
+            ? `${formatted} ${quoteAsset}`
+            : formatted;
+    }
 </script>
 
 <OrderDetailSubShell
@@ -29,7 +48,7 @@
                 {$_("admin_direct_mm_realized")}
             </span>
             <span class="text-sm font-bold text-base-content block">
-                {formatDirectDecimal(performance?.summary.realizedPnlQuote)}
+                {formatQuoteMetric(performance?.summary.realizedPnlQuote)}
             </span>
         </div>
         <div class="border border-base-300 rounded-xl p-3">
@@ -37,7 +56,7 @@
                 {$_("admin_direct_mm_fees")}
             </span>
             <span class="text-sm font-bold text-base-content block">
-                {formatDirectDecimal(performance?.summary.feesQuote)}
+                {formatQuoteMetric(performance?.summary.feesQuote)}
             </span>
         </div>
         <div class="border border-base-300 rounded-xl p-3">
@@ -45,7 +64,7 @@
                 {$_("admin_direct_mm_net")}
             </span>
             <span class="text-sm font-bold text-base-content block">
-                {formatDirectDecimal(performance?.summary.netPnlQuote)}
+                {formatQuoteMetric(performance?.summary.netPnlQuote)}
             </span>
         </div>
         <div class="border border-base-300 rounded-xl p-3">
@@ -53,7 +72,7 @@
                 {$_("admin_direct_mm_volume")}
             </span>
             <span class="text-sm font-bold text-base-content block">
-                {formatDirectDecimal(performance?.summary.tradedQuoteVolume, 2)}
+                {formatQuoteMetric(performance?.summary.tradedQuoteVolume, 2)}
             </span>
         </div>
         <div class="border border-base-300 rounded-xl p-3">

@@ -38,6 +38,12 @@ export class AdminOrdersController {
       'Case-insensitive bounded search over order, pair, exchange, and strategy fields.',
   })
   @ApiQuery({
+    name: 'userOrderId',
+    required: false,
+    description:
+      'Exact user (market-making) order id to scope exchange orders to a single user order.',
+  })
+  @ApiQuery({
     name: 'limit',
     required: false,
     description: 'Page size. Defaults to 25 and is capped at 100.',
@@ -51,6 +57,7 @@ export class AdminOrdersController {
     @Query('status') status?: string,
     @Query('side') side?: string,
     @Query('query') query?: string,
+    @Query('userOrderId') userOrderId?: string,
     @Query('limit') limit?: string,
     @Query('page') page?: string,
   ) {
@@ -58,6 +65,7 @@ export class AdminOrdersController {
       status,
       side,
       query,
+      userOrderId,
       limit,
       page,
     });

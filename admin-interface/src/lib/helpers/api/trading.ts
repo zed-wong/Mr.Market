@@ -30,6 +30,7 @@ export interface AdminOrdersQuery {
   status?: AdminOrderStatus | 'all';
   side?: AdminOrderSide | 'all';
   query?: string;
+  userOrderId?: string;
   limit?: number;
   page?: number;
 }
@@ -81,6 +82,7 @@ export interface AdminOrdersResponse {
     status: string | null;
     side: string | null;
     query: string | null;
+    userOrderId: string | null;
   };
   limits: {
     defaultLimit: number;
@@ -218,6 +220,7 @@ export const fetchAdminOrders = (query: AdminOrdersQuery = {}) =>
       status: query.status && query.status !== 'all' ? query.status : undefined,
       side: query.side && query.side !== 'all' ? query.side : undefined,
       query: query.query?.trim(),
+      userOrderId: query.userOrderId?.trim(),
       limit: query.limit,
       page: query.page,
     }),

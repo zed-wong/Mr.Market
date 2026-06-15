@@ -3,9 +3,9 @@
     import { toast } from "svelte-sonner";
     import AdminStatePanel from "$lib/components/admin/shared/AdminStatePanel.svelte";
     import OrderPerformanceDialog from "$lib/components/market-making/direct/OrderPerformanceDialog.svelte";
-    import OrderInventoryDialog from "$lib/components/market-making/direct/OrderInventoryDialog.svelte";
     import OrderConfigDialog from "$lib/components/market-making/direct/OrderConfigDialog.svelte";
     import OrderRoutingDialog from "$lib/components/market-making/direct/OrderRoutingDialog.svelte";
+    import OrderExchangeOrdersDialog from "$lib/components/market-making/direct/OrderExchangeOrdersDialog.svelte";
     import OrderErrorsDialog from "$lib/components/market-making/direct/OrderErrorsDialog.svelte";
     import type { AdminErrorState } from "$lib/helpers/admin/common-states";
     import type {
@@ -42,9 +42,9 @@
     type DetailView =
         | "overview"
         | "performance"
-        | "inventory"
         | "config"
         | "routing"
+        | "exchangeOrders"
         | "errors";
 
     let activeView: DetailView = "overview";
@@ -130,6 +130,11 @@
         isKnownDirectStrategyControllerType(resolvedControllerType);
     $: fills = performance?.summary.fillCount ?? 0;
     $: recentErrors = data?.recentErrors ?? [];
+    $: quoteAsset =
+        order?.pair
+            ?.split("/")
+            .map((part) => part.trim())
+            .filter(Boolean)[1] || "";
 
     $: detailEntries = (
         [
@@ -145,13 +150,13 @@
             },
             {
                 key: "routing",
-                label: $_("admin_direct_mm_account_routing"),
+                label: $_("admin_direct_mm_account_balance"),
                 show: Boolean(data),
             },
             {
-                key: "inventory",
-                label: $_("admin_direct_mm_inventory_balances"),
-                show: Boolean(data),
+                key: "exchangeOrders",
+                label: $_("admin_direct_mm_exchange_orders"),
+                show: true,
             },
             {
                 key: "errors",
@@ -168,6 +173,17 @@
     function backToOverview() {
         activeView = "overview";
     }
+
+    function formatQuoteMetric(
+        value: string | null | undefined,
+        decimals = 4,
+    ): string {
+        const formatted = formatDirectDecimal(value, decimals);
+
+        return value !== null && value !== undefined && value !== "" && quoteAsset
+            ? `${formatted} ${quoteAsset}`
+            : formatted;
+    }
 </script>
 
 <svelte:window on:keydown={(e) => show && e.key === "Escape" && handleEscape()} />
@@ -176,15 +192,8 @@
     <div class="modal modal-open bg-black/20 backdrop-blur-[2px]">
         {#if activeView === "performance"}
             <OrderPerformanceDialog
-                {performance}
-                onBack={backToOverview}
-                {onClose}
-            />
-        {:else if activeView === "inventory" && data}
-            <OrderInventoryDialog
                 {order}
-                {data}
-                {isDualAccountStrategy}
+                {performance}
                 onBack={backToOverview}
                 {onClose}
             />
@@ -199,7 +208,16 @@
             />
         {:else if activeView === "routing" && data}
             <OrderRoutingDialog
+                {order}
                 {data}
+                {isDualAccountStrategy}
+                onBack={backToOverview}
+                {onClose}
+            />
+        {:else if activeView === "exchangeOrders"}
+            <OrderExchangeOrdersDialog
+                orderId={order.orderId}
+                pair={order.pair}
                 {isDualAccountStrategy}
                 onBack={backToOverview}
                 {onClose}
@@ -534,7 +552,7 @@
                                     >
                                     <span
                                         class="text-sm font-bold text-base-content block"
-                                        >{formatDirectDecimal(
+                                        >{formatQuoteMetric(
                                             performance?.summary.netPnlQuote,
                                         )}</span
                                     >
@@ -549,7 +567,7 @@
                                     >
                                     <span
                                         class="text-sm font-bold text-base-content block"
-                                        >{formatDirectDecimal(
+                                        >{formatQuoteMetric(
                                             performance?.summary.tradedQuoteVolume,
                                             2,
                                         )}</span
