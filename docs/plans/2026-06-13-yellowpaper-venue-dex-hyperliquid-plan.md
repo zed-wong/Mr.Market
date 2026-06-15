@@ -6,7 +6,7 @@ Source of truth:
 
 - `docs/product/yellowpaper.md`
 - `docs/architecture/market-making-flow.md`
-- `docs/plans/2026-06-11-ledger-order-id-user-order-id-plan.md`
+- `docs/archive/plans/2026-06-11-ledger-order-id-user-order-id-plan.md`
 - `docs/archive/plans/2026-04-19-dex-strategy-architecture-plan.md` as historical input only
 
 ## Goal

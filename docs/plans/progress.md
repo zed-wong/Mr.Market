@@ -1,5 +1,9 @@
 # Execution Flow Changelog
 
+## 2026-06-15
+
+- Archive the completed ledger order/user order identity plan from `docs/plans/` to `docs/archive/plans/`, keeping only the active venue design and admin direct editable volume config plans in current planning.
+
 ## 2026-06-14
 
 - Sync the active venue plan terminology to the latest yellowpaper order identity vocabulary: `userOrderId`, `ledgerOrderId`, `accountLabel`, `clientOrderId`, and `exchangeOrderId`, with venue mutation and evidence terms replacing loose exchange/external-order wording.
