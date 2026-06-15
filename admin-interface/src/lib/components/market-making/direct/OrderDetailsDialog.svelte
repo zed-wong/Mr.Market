@@ -16,7 +16,6 @@
     import {
         formatTimestamp,
         formatDirectDecimal,
-        formatDirectTimeAgo,
         isBestCapacityDirectOrderControllerType,
         isDualAccountOrder,
         isKnownDirectStrategyControllerType,
@@ -503,77 +502,36 @@
 
                         <!-- Key Metrics Row -->
                         <div class="grid grid-cols-3 gap-3">
-                            {#if isOrderRunning}
-                                <div
-                                    class="border border-base-300 rounded-xl p-3 text-center"
+                            <div
+                                class="border border-base-300 rounded-xl p-3 text-center"
+                            >
+                                <span
+                                    class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                                    >{$_("admin_direct_mm_final_net_pnl")}</span
                                 >
-                                    <span
-                                        class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                                        >{$_("admin_direct_mm_spread_label")}</span
-                                    >
-                                    {#if data?.spread}
-                                        <span
-                                            class="text-sm font-bold text-base-content block"
-                                            >{data.spread.absolute}</span
-                                        >
-                                        <span
-                                            class="text-[10px] text-base-content/40"
-                                            >{data.spread.bid} / {data.spread
-                                                .ask}</span
-                                        >
-                                    {:else}
-                                        <span class="text-sm text-base-content/30"
-                                            >{$_("admin_direct_mm_no_spread")}</span
-                                        >
-                                    {/if}
-                                </div>
+                                <span
+                                    class="text-sm font-bold text-base-content block"
+                                    >{formatQuoteMetric(
+                                        performance?.summary.netPnlQuote,
+                                    )}</span
+                                >
+                            </div>
 
-                                <div
-                                    class="border border-base-300 rounded-xl p-3 text-center"
+                            <div
+                                class="border border-base-300 rounded-xl p-3 text-center"
+                            >
+                                <span
+                                    class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                                    >{$_("admin_direct_mm_volume")}</span
                                 >
-                                    <span
-                                        class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                                        >{$_("admin_direct_mm_last_tick_ago")}</span
-                                    >
-                                    <span
-                                        class="text-sm font-bold text-base-content block"
-                                        >{formatDirectTimeAgo(
-                                            data?.lastTickAt ?? order.lastTickAt,
-                                        )}</span
-                                    >
-                                </div>
-                            {:else}
-                                <div
-                                    class="border border-base-300 rounded-xl p-3 text-center"
+                                <span
+                                    class="text-sm font-bold text-base-content block"
+                                    >{formatQuoteMetric(
+                                        performance?.summary.tradedQuoteVolume,
+                                        2,
+                                    )}</span
                                 >
-                                    <span
-                                        class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                                        >{$_("admin_direct_mm_final_net_pnl")}</span
-                                    >
-                                    <span
-                                        class="text-sm font-bold text-base-content block"
-                                        >{formatQuoteMetric(
-                                            performance?.summary.netPnlQuote,
-                                        )}</span
-                                    >
-                                </div>
-
-                                <div
-                                    class="border border-base-300 rounded-xl p-3 text-center"
-                                >
-                                    <span
-                                        class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                                        >{$_("admin_direct_mm_volume")}</span
-                                    >
-                                    <span
-                                        class="text-sm font-bold text-base-content block"
-                                        >{formatQuoteMetric(
-                                            performance?.summary.tradedQuoteVolume,
-                                            2,
-                                        )}</span
-                                    >
-                                </div>
-                            {/if}
+                            </div>
 
                             <div
                                 class="border border-base-300 rounded-xl p-3 text-center"
