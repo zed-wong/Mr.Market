@@ -3,10 +3,9 @@
 2026-06-12
 ---
 1. Admin Volume should support max volume auto stop, should clean up status display, should clean up account routing page for dual account orders(use trading/exchange-orders data for this page)
-3. Fix order id inconsistency - done 2026-06-14
-4. Design DEX support to support hyperliquid and PancakeSwap/Uniswap etc.. 
-5. Design a great bussiness model
-6. Add Exin-like spot support
+2. Design venue support for Hyperliquid and PancakeSwap/Uniswap etc. Active plan: `docs/plans/2026-06-13-yellowpaper-venue-dex-hyperliquid-plan.md`.
+3. Design a great bussiness model
+4. Add Exin-like spot support
 ---
 
 ## 3. Volume Strategy
@@ -40,6 +39,7 @@
 
 ## 6. Hyperliquid Support
 
+- Active design: `docs/plans/2026-06-13-yellowpaper-venue-dex-hyperliquid-plan.md`.
 - Scope is trading-only: exchange API key adapter layer + trading/market-making execution. No funding, custody, or product-loop work in this phase.
 - Add a Hyperliquid adapter under the existing exchange API key management so credentials, signing, and venue routing match the current CEX pattern.
 - Plug it into the trading/market-making path (order placement, fills, fees, reconciliation) under the same intent-worker model.
@@ -48,6 +48,7 @@
 
 ## 7. DeFi Support (Uniswap / PancakeSwap)
 
+- Active design: `docs/plans/2026-06-13-yellowpaper-venue-dex-hyperliquid-plan.md`.
 - Extend the trading layer to support on-chain execution via Uniswap and PancakeSwap.
 - Reuse the order-attributed reservation, ledger, and reconciliation invariants for DEX fills, gas, and slippage.
 - Coordinate with the EVM key split work in "To be determined" so DEX execution uses a dedicated key boundary.
