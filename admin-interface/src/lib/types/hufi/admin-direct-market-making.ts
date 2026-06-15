@@ -72,6 +72,7 @@ export interface DirectOrderSummary {
 
 export interface DirectOrderStatus {
   orderId: string;
+  strategyKey?: string;
   state: DirectOrderLifecycleState | string;
   runtimeState: DirectOrderRuntimeSignal | string;
   controllerType: DirectOrderControllerType;

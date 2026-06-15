@@ -156,7 +156,7 @@
             {
                 key: "exchangeOrders",
                 label: $_("admin_direct_mm_exchange_orders"),
-                show: true,
+                show: Boolean(data),
             },
             {
                 key: "errors",
@@ -216,7 +216,7 @@
             />
         {:else if activeView === "exchangeOrders"}
             <OrderExchangeOrdersDialog
-                orderId={order.orderId}
+                strategyKey={data?.strategyKey}
                 pair={order.pair}
                 {isDualAccountStrategy}
                 onBack={backToOverview}

@@ -1066,6 +1066,7 @@ export class AdminDirectMarketMakingService {
 
     return {
       orderId,
+      strategyKey,
       state: order.state,
       runtimeState,
       controllerType,

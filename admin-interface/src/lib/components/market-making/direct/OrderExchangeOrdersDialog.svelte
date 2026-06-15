@@ -7,7 +7,7 @@
         type AdminOrder,
     } from "$lib/helpers/api/trading";
 
-    export let orderId: string;
+    export let strategyKey: string | undefined;
     export let pair: string;
     export let isDualAccountStrategy = false;
     export let onBack: () => void;
@@ -75,13 +75,19 @@
         if (inFlight) {
             return;
         }
+        const scopedStrategyKey = strategyKey?.trim();
+        if (!scopedStrategyKey) {
+            rows = [];
+            loading = false;
+            return;
+        }
         inFlight = true;
         if (!options.silent) {
             loading = true;
         }
         try {
             const response = await fetchAdminOrders({
-                userOrderId: orderId,
+                strategyKey: scopedStrategyKey,
                 limit: 100,
             });
             rows = response.items;
