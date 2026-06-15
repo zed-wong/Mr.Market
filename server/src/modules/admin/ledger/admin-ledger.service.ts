@@ -2,6 +2,10 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
 import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.entity';
+import {
+  LedgerEntry,
+  LedgerEntryType,
+} from 'src/common/entities/ledger/ledger-entry.entity';
 import { MarketMakingOrderBalance } from 'src/common/entities/ledger/market-making-order-balance.entity';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { TrackedOrderEntity } from 'src/common/entities/market-making/tracked-order.entity';
@@ -23,10 +27,22 @@ const RISK_RELEVANT_TRACKED_ORDER_STATUSES = new Set([
   'pending_cancel',
 ]);
 
+const LEDGER_ENTRY_TYPES: LedgerEntryType[] = [
+  'deposit_credit',
+  'reserve_lock',
+  'reserve_release',
+  'fill_settle',
+  'fee_debit',
+  'withdraw_debit',
+  'allocation_release',
+  'reward_credit',
+  'reversal',
+];
+
 const UNAVAILABLE_PNL_REASON =
   'PnL metrics are unavailable because order-scoped balances do not include supported cost basis or mark-price valuation data.';
 
-export interface AdminPositionsQuery {
+export interface AdminLedgerBalancesQuery {
   exchange?: string;
   asset?: string;
   query?: string;
@@ -34,15 +50,31 @@ export interface AdminPositionsQuery {
   page?: string;
 }
 
-type PositionFilters = {
+export interface AdminLedgerEntriesQuery {
+  type?: string;
+  asset?: string;
+  query?: string;
+  limit?: string;
+  page?: string;
+}
+
+type BalanceFilters = {
   exchange?: string;
   asset?: string;
   query?: string;
 };
 
+type EntryFilters = {
+  type?: LedgerEntryType;
+  asset?: string;
+  query?: string;
+};
+
 @Injectable()
-export class AdminPositionsService {
+export class AdminLedgerService {
   constructor(
+    @InjectRepository(LedgerEntry)
+    private readonly ledgerEntryRepository: Repository<LedgerEntry>,
     @InjectRepository(MarketMakingOrderBalance)
     private readonly orderBalanceRepository: Repository<MarketMakingOrderBalance>,
     @InjectRepository(GrowdataMarketMakingPair)
@@ -55,15 +87,114 @@ export class AdminPositionsService {
     private readonly marketMakingOrderRepository: Repository<MarketMakingOrder>,
   ) {}
 
-  async listPositions(input: AdminPositionsQuery) {
-    const filters = this.resolveFilters(input);
+  async getSummary() {
+    const assetSymbols = await this.buildAssetSymbolMap();
+    const [totalEntries, byTypeRaw, lastEntry, totalBalances, balanceRows] =
+      await Promise.all([
+        this.ledgerEntryRepository.count(),
+        this.ledgerEntryRepository
+          .createQueryBuilder('entry')
+          .select('entry.type', 'type')
+          .addSelect('COUNT(*)', 'count')
+          .groupBy('entry.type')
+          .getRawMany<{ type: string; count: string | number }>(),
+        this.ledgerEntryRepository.findOne({
+          where: {},
+          order: { createdAt: 'DESC', entryId: 'DESC' },
+        }),
+        this.orderBalanceRepository.count(),
+        this.orderBalanceRepository.find({
+          order: { updatedAt: 'DESC', orderId: 'ASC', assetId: 'ASC' },
+          take: METADATA_SCAN_LIMIT,
+        }),
+      ]);
+
+    const byTypeCounts = new Map<string, number>();
+
+    for (const row of byTypeRaw) {
+      byTypeCounts.set(String(row.type), Number(row.count) || 0);
+    }
+
+    const health = this.evaluateBalanceHealth(balanceRows);
+
+    return {
+      generatedAt: getRFC3339Timestamp(),
+      entries: {
+        total: totalEntries,
+        lastEntryAt: this.normalizeTimestamp(lastEntry?.createdAt),
+        byType: LEDGER_ENTRY_TYPES.map((type) => ({
+          type,
+          count: byTypeCounts.get(type) || 0,
+        })),
+      },
+      balances: {
+        total: totalBalances,
+        scannedRows: balanceRows.length,
+        truncated: totalBalances > balanceRows.length,
+        invariantViolations: health.invariantViolations,
+        negativeBalances: health.negativeBalances,
+        healthy:
+          health.invariantViolations === 0 && health.negativeBalances === 0,
+        byAsset: this.aggregateByAsset(balanceRows, assetSymbols),
+      },
+      limits: {
+        metadataScanLimit: METADATA_SCAN_LIMIT,
+      },
+    };
+  }
+
+  async listEntries(input: AdminLedgerEntriesQuery) {
+    const filters = this.resolveEntryFilters(input);
+    const pagination = this.resolvePagination(input);
+    const assetSymbols = await this.buildAssetSymbolMap();
+
+    const query = this.createFilteredEntryQuery(filters);
+    const [entries, total] = await query
+      .orderBy('entry.createdAt', 'DESC')
+      .addOrderBy('entry.entryId', 'DESC')
+      .take(pagination.limit)
+      .skip((pagination.page - 1) * pagination.limit)
+      .getManyAndCount();
+
+    const totalPages = Math.max(1, Math.ceil(total / pagination.limit));
+
+    return {
+      generatedAt: getRFC3339Timestamp(),
+      items: entries.map((entry) =>
+        this.serializeEntry(entry, assetSymbols),
+      ),
+      pagination: {
+        page: pagination.page,
+        limit: pagination.limit,
+        total,
+        totalPages,
+        hasNext: pagination.page < totalPages,
+        hasPrevious: pagination.page > 1,
+      },
+      filters: {
+        type: filters.type || null,
+        asset: filters.asset || null,
+        query: filters.query || null,
+      },
+      types: LEDGER_ENTRY_TYPES,
+      limits: {
+        defaultLimit: DEFAULT_LIMIT,
+        maxLimit: MAX_LIMIT,
+        maxPage: MAX_PAGE,
+        maxQueryLength: MAX_QUERY_LENGTH,
+      },
+    };
+  }
+
+  async listBalances(input: AdminLedgerBalancesQuery) {
+    const filters = this.resolveBalanceFilters(input);
     const pagination = this.resolvePagination(input);
     const exchangeOrderIds = await this.resolveExchangeOrderIds(
       filters.exchange,
     );
 
     if (filters.exchange && exchangeOrderIds.length === 0) {
-      return this.emptyResponse(filters, pagination);
+      return this.emptyBalancesResponse(filters, pagination);
     }
 
     const query = this.createFilteredBalanceQuery(filters, exchangeOrderIds);
@@ -97,7 +228,7 @@ export class AdminPositionsService {
       this.buildAssetSymbolMap(),
     ]);
     const items = balances.map((balance) =>
-      this.serializePosition(
+      this.serializeBalance(
         balance,
         assetSymbols,
         orderMetadata.get(balance.orderId),
@@ -138,25 +269,64 @@ export class AdminPositionsService {
     };
   }
 
-  private resolveFilters(input: AdminPositionsQuery): PositionFilters {
+  private resolveBalanceFilters(
+    input: AdminLedgerBalancesQuery,
+  ): BalanceFilters {
     const exchange = this.normalizeOptionalToken(input.exchange, 'exchange');
     const asset = this.normalizeOptionalToken(input.asset, 'asset');
-    const query = typeof input.query === 'string' ? input.query.trim() : '';
-
-    if (query.length > MAX_QUERY_LENGTH) {
-      throw new BadRequestException(
-        `Position query is too long. Maximum length is ${MAX_QUERY_LENGTH} characters.`,
-      );
-    }
+    const query = this.resolveQueryToken(input.query);
 
     return {
       exchange,
       asset,
-      query: query || undefined,
+      query,
     };
   }
 
-  private resolvePagination(input: AdminPositionsQuery): {
+  private resolveEntryFilters(input: AdminLedgerEntriesQuery): EntryFilters {
+    const asset = this.normalizeOptionalToken(input.asset, 'asset');
+    const query = this.resolveQueryToken(input.query);
+
+    return {
+      type: this.normalizeEntryType(input.type),
+      asset,
+      query,
+    };
+  }
+
+  private resolveQueryToken(value?: string): string | undefined {
+    const query = typeof value === 'string' ? value.trim() : '';
+
+    if (query.length > MAX_QUERY_LENGTH) {
+      throw new BadRequestException(
+        `Ledger query is too long. Maximum length is ${MAX_QUERY_LENGTH} characters.`,
+      );
+    }
+
+    return query || undefined;
+  }
+
+  private normalizeEntryType(
+    value?: string,
+  ): LedgerEntryType | undefined {
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+
+    const normalized = value.trim().toLowerCase();
+
+    if (!normalized || normalized === 'all') {
+      return undefined;
+    }
+
+    if (!LEDGER_ENTRY_TYPES.includes(normalized as LedgerEntryType)) {
+      throw new BadRequestException('type must be a known ledger entry type.');
+    }
+
+    return normalized as LedgerEntryType;
+  }
+
+  private resolvePagination(input: { limit?: string; page?: string }): {
     limit: number;
     page: number;
   } {
@@ -258,8 +428,36 @@ export class AdminPositionsService {
     return [...new Set(orders.map((order) => order.orderId).filter(Boolean))];
   }
 
+  private createFilteredEntryQuery(filters: EntryFilters) {
+    const query = this.ledgerEntryRepository.createQueryBuilder('entry');
+
+    if (filters.type) {
+      query.andWhere('entry.type = :type', { type: filters.type });
+    }
+
+    if (filters.asset) {
+      query.andWhere('LOWER(entry.assetId) = :asset', {
+        asset: filters.asset,
+      });
+    }
+
+    if (filters.query) {
+      query.andWhere(
+        `(${[
+          "LOWER(entry.orderId) LIKE :query ESCAPE '\\'",
+          "LOWER(entry.assetId) LIKE :query ESCAPE '\\'",
+          "LOWER(entry.refId) LIKE :query ESCAPE '\\'",
+          "LOWER(entry.entryId) LIKE :query ESCAPE '\\'",
+        ].join(' OR ')})`,
+        { query: `%${this.escapeLike(filters.query.toLowerCase())}%` },
+      );
+    }
+
+    return query;
+  }
+
   private createFilteredBalanceQuery(
-    filters: PositionFilters,
+    filters: BalanceFilters,
     exchangeOrderIds: string[],
   ) {
     const query = this.orderBalanceRepository.createQueryBuilder('balance');
@@ -431,7 +629,27 @@ export class AdminPositionsService {
     return metadata;
   }
 
-  private serializePosition(
+  private serializeEntry(
+    entry: LedgerEntry,
+    assetSymbols: Map<string, string>,
+  ) {
+    return {
+      entryId: entry.entryId,
+      type: entry.type,
+      orderId: entry.orderId,
+      userOrderId: entry.userOrderId,
+      accountLabel: entry.accountLabel || null,
+      asset: this.resolveAssetSymbol(entry.assetId, assetSymbols),
+      assetId: entry.assetId,
+      amount: this.formatDecimal(entry.amount),
+      refType: entry.refType || null,
+      refId: entry.refId || null,
+      reversalOf: entry.reversalOf || null,
+      createdAt: this.normalizeTimestamp(entry.createdAt),
+    };
+  }
+
+  private serializeBalance(
     balance: MarketMakingOrderBalance,
     assetSymbols: Map<string, string>,
     order?: {
@@ -451,6 +669,9 @@ export class AdminPositionsService {
     const locked = this.formatDecimal(balance.locked);
     const total = this.formatDecimal(balance.total);
     const asset = this.resolveAssetSymbol(balance.assetId, assetSymbols);
+    const balanced = new BigNumber(balance.available || 0)
+      .plus(balance.locked || 0)
+      .isEqualTo(balance.total || 0);
 
     return {
       id: `${balance.orderId}:${balance.assetId}`,
@@ -467,31 +688,10 @@ export class AdminPositionsService {
       available,
       locked,
       total,
-      quantity: total,
       initialDeposit: this.formatDecimal(balance.initialDeposit),
       realizedDelta: this.formatDecimal(balance.realizedDelta),
       feePaid: this.formatDecimal(balance.feePaid),
-      exposure: {
-        asset,
-        quantity: total,
-        notional: null,
-        currency: null,
-        unavailableReason:
-          'Exposure notional is unavailable without a supported mark price.',
-      },
-      avgCost: null,
-      realizedPnl: null,
-      unrealizedPnl: null,
-      markPrice: null,
-      portfolioPercent: null,
-      pnl: {
-        averageCost: null,
-        realized: null,
-        unrealized: null,
-        markPrice: null,
-        portfolioPercent: null,
-        unavailableReason: UNAVAILABLE_PNL_REASON,
-      },
+      balanced,
       dataSources: ['ledger_order_balance'],
       updatedAt: this.normalizeTimestamp(balance.updatedAt),
     };
@@ -509,6 +709,22 @@ export class AdminPositionsService {
       }
     >,
   ) {
+    const activeBalances = balances.filter((balance) =>
+      this.isActiveInventoryBalance(balance, exposureMetadata),
+    );
+
+    return {
+      scannedRows: activeBalances.length,
+      totalRows,
+      truncated: totalRows > balances.length,
+      byAsset: this.aggregateByAsset(activeBalances, assetSymbols),
+    };
+  }
+
+  private aggregateByAsset(
+    balances: MarketMakingOrderBalance[],
+    assetSymbols: Map<string, string>,
+  ) {
     const byAsset = new Map<
       string,
       {
@@ -519,11 +735,7 @@ export class AdminPositionsService {
       }
     >();
 
-    const activeBalances = balances.filter((balance) =>
-      this.isActiveInventoryBalance(balance, exposureMetadata),
-    );
-
-    for (const balance of activeBalances) {
+    for (const balance of balances) {
       const asset = this.resolveAssetSymbol(balance.assetId, assetSymbols);
       const current = byAsset.get(asset) || {
         asset,
@@ -538,23 +750,42 @@ export class AdminPositionsService {
       byAsset.set(asset, current);
     }
 
-    return {
-      scannedRows: activeBalances.length,
-      totalRows,
-      truncated: totalRows > balances.length,
-      byAsset: [...byAsset.values()]
-        .sort((left, right) =>
-          right.total.comparedTo(left.total) === 0
-            ? left.asset.localeCompare(right.asset)
-            : right.total.comparedTo(left.total),
-        )
-        .map((entry) => ({
-          asset: entry.asset,
-          available: entry.available.toFixed(),
-          locked: entry.locked.toFixed(),
-          total: entry.total.toFixed(),
-        })),
-    };
+    return [...byAsset.values()]
+      .sort((left, right) =>
+        right.total.comparedTo(left.total) === 0
+          ? left.asset.localeCompare(right.asset)
+          : right.total.comparedTo(left.total),
+      )
+      .map((entry) => ({
+        asset: entry.asset,
+        available: entry.available.toFixed(),
+        locked: entry.locked.toFixed(),
+        total: entry.total.toFixed(),
+      }));
+  }
+
+  private evaluateBalanceHealth(balances: MarketMakingOrderBalance[]): {
+    invariantViolations: number;
+    negativeBalances: number;
+  } {
+    let invariantViolations = 0;
+    let negativeBalances = 0;
+
+    for (const balance of balances) {
+      const available = new BigNumber(balance.available || 0);
+      const locked = new BigNumber(balance.locked || 0);
+      const total = new BigNumber(balance.total || 0);
+
+      if (!available.plus(locked).isEqualTo(total)) {
+        invariantViolations += 1;
+      }
+
+      if (available.isLessThan(0) || locked.isLessThan(0)) {
+        negativeBalances += 1;
+      }
+    }
+
+    return { invariantViolations, negativeBalances };
   }
 
   private isActiveInventoryBalance(
@@ -591,8 +822,8 @@ export class AdminPositionsService {
     );
   }
 
-  private emptyResponse(
-    filters: PositionFilters,
+  private emptyBalancesResponse(
+    filters: BalanceFilters,
     pagination: { limit: number; page: number },
   ) {
     return {

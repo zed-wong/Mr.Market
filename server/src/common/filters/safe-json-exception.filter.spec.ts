@@ -57,7 +57,7 @@ describe('SafeJsonExceptionFilter', () => {
   it.each([
     ['/admin/dashboard/missing'],
     ['/admin/orders/missing'],
-    ['/admin/positions/missing'],
+    ['/admin/ledger/missing'],
     ['/admin/system/health/missing'],
     ['/admin/system/audit/missing'],
     ['/admin/system/config/missing'],

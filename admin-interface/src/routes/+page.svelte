@@ -536,8 +536,8 @@
             <span class="text-lg font-semibold tracking-tight text-base-content capitalize">
               {$_('admin_dashboard_capital_by_asset')}
             </span>
-            <a href="/trading/positions" class="btn-pill-ghost text-xs capitalize">
-              {$_('admin_dashboard_view_positions')}
+            <a href="/trading/ledger" class="btn-pill-ghost text-xs capitalize">
+              {$_('admin_dashboard_view_ledger')}
             </a>
           </div>
 

@@ -53,8 +53,8 @@ import { AdminOrdersController } from './orders/admin-orders.controller';
 import { AdminOrdersService } from './orders/admin-orders.service';
 import { AdminUserOrdersController } from './orders/admin-user-orders.controller';
 import { AdminUserOrdersService } from './orders/admin-user-orders.service';
-import { AdminPositionsController } from './positions/admin-positions.controller';
-import { AdminPositionsService } from './positions/admin-positions.service';
+import { AdminLedgerController } from './ledger/admin-ledger.controller';
+import { AdminLedgerService } from './ledger/admin-ledger.service';
 import { AdminSpotService } from './spot/admin-spot.service';
 import { AdminStrategyService } from './strategy/adminStrategy.service';
 import { AdminAuditModule } from './system/admin-audit.module';
@@ -112,7 +112,7 @@ import { AdminSystemHealthService } from './system/admin-system-health.service';
     AdminDashboardController,
     AdminOrdersController,
     AdminUserOrdersController,
-    AdminPositionsController,
+    AdminLedgerController,
     AdminSystemHealthController,
     AdminSystemConfigController,
     AdminSystemAuditController,
@@ -125,7 +125,7 @@ import { AdminSystemHealthService } from './system/admin-system-health.service';
     AdminDashboardService,
     AdminOrdersService,
     AdminUserOrdersService,
-    AdminPositionsService,
+    AdminLedgerService,
     AdminSystemHealthService,
     AdminSystemConfigService,
     AdminDirectMarketMakingService,
@@ -139,7 +139,7 @@ import { AdminSystemHealthService } from './system/admin-system-health.service';
     AdminDashboardService,
     AdminOrdersService,
     AdminUserOrdersService,
-    AdminPositionsService,
+    AdminLedgerService,
     AdminSystemHealthService,
     AdminSystemConfigService,
     AdminDirectMarketMakingService,

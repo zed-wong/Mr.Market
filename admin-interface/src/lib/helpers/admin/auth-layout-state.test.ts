@@ -5,7 +5,7 @@ const protectedRoutes = [
   '/',
   '/trading/exchange-orders',
   '/trading/user-orders',
-  '/trading/positions',
+  '/trading/ledger',
   '/system/health',
   '/system/audit',
   '/system/config',

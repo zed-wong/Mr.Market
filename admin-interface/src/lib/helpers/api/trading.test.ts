@@ -166,7 +166,137 @@ describe('trading API helpers', () => {
     expect(headers.get('Authorization')).toBe('Bearer admin-token');
   });
 
-  it('requests authenticated admin positions with backend filters and pagination', async () => {
+  it('requests the authenticated internal ledger summary', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          generatedAt: '2026-05-23T00:00:00.000Z',
+          entries: { total: 0, lastEntryAt: null, byType: [] },
+          balances: {
+            total: 0,
+            scannedRows: 0,
+            truncated: false,
+            invariantViolations: 0,
+            negativeBalances: 0,
+            healthy: true,
+            byAsset: [],
+          },
+          limits: { metadataScanLimit: 500 },
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { setAccessToken } = await import('./client');
+    const { fetchLedgerSummary } = await import('./trading');
+
+    setAccessToken('admin-token');
+    const result = await fetchLedgerSummary();
+
+    expect(result.balances.healthy).toBe(true);
+    const url = new URL(fetchMock.mock.calls[0][0] as string);
+    expect(url.pathname).toBe('/admin/ledger/summary');
+    const headers = fetchMock.mock.calls[0][1].headers as Headers;
+    expect(headers.get('Authorization')).toBe('Bearer admin-token');
+  });
+
+  it('requests authenticated ledger entries with backend filters and pagination', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          generatedAt: '2026-05-23T00:00:00.000Z',
+          items: [],
+          pagination: {
+            page: 2,
+            limit: 50,
+            total: 0,
+            totalPages: 1,
+            hasNext: false,
+            hasPrevious: true,
+          },
+          filters: { type: 'fill_settle', asset: 'btc', query: 'order' },
+          types: [],
+          limits: {
+            defaultLimit: 25,
+            maxLimit: 100,
+            maxPage: 1000,
+            maxQueryLength: 100,
+          },
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { fetchLedgerEntries } = await import('./trading');
+
+    const result = await fetchLedgerEntries({
+      type: 'fill_settle',
+      asset: 'btc',
+      query: ' order ',
+      limit: 50,
+      page: 2,
+    });
+
+    expect(result.filters).toEqual({ type: 'fill_settle', asset: 'btc', query: 'order' });
+    const url = new URL(fetchMock.mock.calls[0][0] as string);
+    expect(url.pathname).toBe('/admin/ledger/entries');
+    expect(url.searchParams.get('type')).toBe('fill_settle');
+    expect(url.searchParams.get('asset')).toBe('btc');
+    expect(url.searchParams.get('query')).toBe('order');
+    expect(url.searchParams.get('limit')).toBe('50');
+    expect(url.searchParams.get('page')).toBe('2');
+  });
+
+  it('omits all-valued ledger entry filters so backend defaults are authoritative', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          generatedAt: '2026-05-23T00:00:00.000Z',
+          items: [],
+          pagination: {
+            page: 1,
+            limit: 25,
+            total: 0,
+            totalPages: 1,
+            hasNext: false,
+            hasPrevious: false,
+          },
+          filters: { type: null, asset: null, query: null },
+          types: [],
+          limits: {
+            defaultLimit: 25,
+            maxLimit: 100,
+            maxPage: 1000,
+            maxQueryLength: 100,
+          },
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { fetchLedgerEntries } = await import('./trading');
+
+    await fetchLedgerEntries({ type: 'all', asset: 'all', query: '   ' });
+
+    const url = new URL(fetchMock.mock.calls[0][0] as string);
+    expect(url.searchParams.has('type')).toBe(false);
+    expect(url.searchParams.has('asset')).toBe(false);
+    expect(url.searchParams.has('query')).toBe(false);
+  });
+
+  it('requests authenticated ledger balances with backend filters and pagination', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -199,10 +329,10 @@ describe('trading API helpers', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const { setAccessToken } = await import('./client');
-    const { fetchAdminPositions } = await import('./trading');
+    const { fetchLedgerBalances } = await import('./trading');
 
     setAccessToken('admin-token');
-    const result = await fetchAdminPositions({
+    const result = await fetchLedgerBalances({
       exchange: 'binance',
       asset: 'btc',
       query: ' order ',
@@ -212,7 +342,7 @@ describe('trading API helpers', () => {
 
     expect(result.filters).toEqual({ exchange: 'binance', asset: 'btc', query: 'order' });
     const url = new URL(fetchMock.mock.calls[0][0] as string);
-    expect(url.pathname).toBe('/admin/positions');
+    expect(url.pathname).toBe('/admin/ledger/balances');
     expect(url.searchParams.get('exchange')).toBe('binance');
     expect(url.searchParams.get('asset')).toBe('btc');
     expect(url.searchParams.get('query')).toBe('order');

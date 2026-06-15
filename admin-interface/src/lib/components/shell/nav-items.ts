@@ -33,7 +33,7 @@ export const NAV_ITEMS: NavGroup[] = [
       { key: 'trading.exchange_orders', label: 'admin.nav.exchange_orders', href: '/trading/exchange-orders' },
       { key: 'trading.market_making', label: 'admin.nav.market_making', href: '/trading/market-making' },
       { key: 'trading.strategies', label: 'admin.nav.strategies', href: '/trading/strategies' },
-      { key: 'trading.positions', label: 'admin.nav.positions', href: '/trading/positions' },
+      { key: 'trading.ledger', label: 'admin.nav.ledger', href: '/trading/ledger' },
       { key: 'trading.analytics', label: 'admin.nav.analytics', href: '/trading/analytics' },
     ],
   },

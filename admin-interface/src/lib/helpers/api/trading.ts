@@ -31,6 +31,7 @@ export interface AdminOrdersQuery {
   side?: AdminOrderSide | 'all';
   query?: string;
   userOrderId?: string;
+  strategyKey?: string;
   limit?: number;
   page?: number;
 }
@@ -83,6 +84,7 @@ export interface AdminOrdersResponse {
     side: string | null;
     query: string | null;
     userOrderId: string | null;
+    strategyKey: string | null;
   };
   limits: {
     defaultLimit: number;
@@ -129,7 +131,90 @@ export interface AdminUserOrdersResponse {
   };
 }
 
-export interface AdminPositionsQuery {
+export const LEDGER_ENTRY_TYPES = [
+  'deposit_credit',
+  'reserve_lock',
+  'reserve_release',
+  'fill_settle',
+  'fee_debit',
+  'withdraw_debit',
+  'allocation_release',
+  'reward_credit',
+  'reversal',
+] as const;
+
+export type LedgerEntryType = (typeof LEDGER_ENTRY_TYPES)[number];
+
+export interface LedgerAssetTotal {
+  asset: string;
+  available: string;
+  locked: string;
+  total: string;
+}
+
+export interface LedgerSummaryResponse {
+  generatedAt: string;
+  entries: {
+    total: number;
+    lastEntryAt: string | null;
+    byType: Array<{ type: LedgerEntryType; count: number }>;
+  };
+  balances: {
+    total: number;
+    scannedRows: number;
+    truncated: boolean;
+    invariantViolations: number;
+    negativeBalances: number;
+    healthy: boolean;
+    byAsset: LedgerAssetTotal[];
+  };
+  limits: {
+    metadataScanLimit: number;
+  };
+}
+
+export interface LedgerEntriesQuery {
+  type?: LedgerEntryType | 'all';
+  asset?: string;
+  query?: string;
+  limit?: number;
+  page?: number;
+}
+
+export interface LedgerEntry {
+  entryId: string;
+  type: LedgerEntryType;
+  orderId: string;
+  userOrderId: string;
+  accountLabel: string | null;
+  asset: string;
+  assetId: string;
+  amount: string;
+  refType: string | null;
+  refId: string | null;
+  reversalOf: string | null;
+  createdAt: string | null;
+}
+
+export interface LedgerEntriesResponse {
+  generatedAt: string;
+  items: LedgerEntry[];
+  pagination: AdminPagination;
+  filters: {
+    type: string | null;
+    asset: string | null;
+    query: string | null;
+  };
+  types: LedgerEntryType[];
+  limits: {
+    defaultLimit: number;
+    maxLimit: number;
+    maxPage: number;
+    maxQueryLength: number;
+  };
+}
+
+export interface LedgerBalancesQuery {
   exchange?: string;
   asset?: string;
   query?: string;
@@ -137,7 +222,7 @@ export interface AdminPositionsQuery {
   page?: number;
 }
 
-export interface AdminPosition {
+export interface LedgerBalance {
   id: string;
   orderId: string;
   asset: string;
@@ -152,47 +237,22 @@ export interface AdminPosition {
   available: string;
   locked: string;
   total: string;
-  quantity: string;
   initialDeposit: string;
   realizedDelta: string;
   feePaid: string;
-  exposure: {
-    asset: string;
-    quantity: string;
-    notional: string | null;
-    currency: string | null;
-    unavailableReason: string;
-  };
-  avgCost: string | null;
-  realizedPnl: string | null;
-  unrealizedPnl: string | null;
-  markPrice: string | null;
-  portfolioPercent: string | null;
-  pnl: {
-    averageCost: string | null;
-    realized: string | null;
-    unrealized: string | null;
-    markPrice: string | null;
-    portfolioPercent: string | null;
-    unavailableReason: string;
-  };
+  balanced: boolean;
   dataSources: string[];
   updatedAt: string | null;
 }
 
-export interface AdminPositionsResponse {
+export interface LedgerBalancesResponse {
   generatedAt: string;
-  items: AdminPosition[];
+  items: LedgerBalance[];
   summary: {
     scannedRows: number;
     totalRows: number;
     truncated: boolean;
-    byAsset: Array<{
-      asset: string;
-      available: string;
-      locked: string;
-      total: string;
-    }>;
+    byAsset: LedgerAssetTotal[];
   };
   pagination: AdminPagination;
   filters: {
@@ -221,6 +281,7 @@ export const fetchAdminOrders = (query: AdminOrdersQuery = {}) =>
       side: query.side && query.side !== 'all' ? query.side : undefined,
       query: query.query?.trim(),
       userOrderId: query.userOrderId?.trim(),
+      strategyKey: query.strategyKey?.trim(),
       limit: query.limit,
       page: query.page,
     }),
@@ -237,8 +298,22 @@ export const fetchAdminUserOrders = (query: AdminUserOrdersQuery = {}) =>
     }),
   });
 
-export const fetchAdminPositions = (query: AdminPositionsQuery = {}) =>
-  apiFetch<AdminPositionsResponse>('/admin/positions', {
+export const fetchLedgerSummary = () =>
+  apiFetch<LedgerSummaryResponse>('/admin/ledger/summary');
+
+export const fetchLedgerEntries = (query: LedgerEntriesQuery = {}) =>
+  apiFetch<LedgerEntriesResponse>('/admin/ledger/entries', {
+    query: cleanQuery({
+      type: query.type && query.type !== 'all' ? query.type : undefined,
+      asset: query.asset && query.asset !== 'all' ? query.asset : undefined,
+      query: query.query?.trim(),
+      limit: query.limit,
+      page: query.page,
+    }),
+  });
+
+export const fetchLedgerBalances = (query: LedgerBalancesQuery = {}) =>
+  apiFetch<LedgerBalancesResponse>('/admin/ledger/balances', {
     query: cleanQuery({
       exchange: query.exchange && query.exchange !== 'all' ? query.exchange : undefined,
       asset: query.asset && query.asset !== 'all' ? query.asset : undefined,

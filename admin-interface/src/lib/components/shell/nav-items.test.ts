@@ -28,7 +28,7 @@ describe('admin shell navigation', () => {
         '/setup',
         '/trading/strategies',
         '/trading/direct-market-making',
-        '/trading/positions',
+        '/trading/ledger',
         '/trading/exchange-orders',
         '/trading/user-orders',
         '/trading/analytics',
@@ -62,7 +62,7 @@ describe('admin shell navigation', () => {
       '/trading/exchange-orders',
       '/trading/market-making',
       '/trading/strategies',
-      '/trading/positions',
+      '/trading/ledger',
       '/trading/analytics',
     ]);
     expect(NAV_ITEMS.find((item) => item.key === 'system')?.children.map((entry) => entry.href)).toEqual([
