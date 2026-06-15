@@ -76,6 +76,13 @@ export type DualAccountVolumeStrategyParams = CexVolumeStrategyParams & {
   activeCycle?: DualAccountActiveCycleState;
   repairRequired?: boolean;
   repairReason?: string;
+  repairContext?: DualAccountRepairContext;
+  lastCycleOutcome?:
+    | 'matched'
+    | 'small_mismatch_carried'
+    | 'dust_mismatch_carried'
+    | 'paired_fill_mismatch';
+  lastCarriedMismatch?: DualAccountRepairContext;
   consecutiveNoProgressTicks?: number;
   lastNoProgressReason?: string;
   cycleMode?: 'alternating' | 'static';
@@ -184,6 +191,24 @@ export type DualAccountActiveCycleState = {
   takerFilledQty: string;
   matchedFilledQty?: string;
   matchedQuoteVolume?: string;
+};
+
+export type DualAccountRepairContext = {
+  cycleId: string;
+  tickId: string;
+  makerSide: 'buy' | 'sell';
+  makerAccountLabel: string;
+  takerAccountLabel: string;
+  price: string;
+  makerFilledQty: string;
+  takerFilledQty: string;
+  matchedFilledQty: string;
+  mismatchQty: string;
+  mismatchNotional: string;
+  mismatchRatio: string;
+  overfilledLeg: 'maker' | 'taker';
+  repairAccountLabel: string;
+  repairSide: 'buy' | 'sell';
 };
 
 export type DualAccountMatchedVolumeStats = {

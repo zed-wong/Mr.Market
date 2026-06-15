@@ -2,11 +2,18 @@
 
 ## 2026-06-14
 
+- Sync the active venue plan terminology to the latest yellowpaper order identity vocabulary: `userOrderId`, `ledgerOrderId`, `accountLabel`, `clientOrderId`, and `exchangeOrderId`, with venue mutation and evidence terms replacing loose exchange/external-order wording.
+- Update the active Hyperliquid/AMM/CLMM venue plan after the yellowpaper order identity change: DEX and on-chain execution records now carry `userOrderId`, `ledgerOrderId`, and `accountLabel`, while reservation, settlement, gas, LP, and reconciliation balance effects are keyed by `ledgerOrderId + asset`.
 - Complete the market-making order identity cleanup: ledger balances now keep explicit `ledgerOrderId` storage with `userOrderId` and `accountLabel` attribution, dual-account fills/reservations/tracked orders carry that identity end-to-end, order performance aggregates by `userOrderId`, and reconciliation reports scoped mismatches with account attribution.
 - Change admin direct resume to reallocate orders against current available exchange balance before runtime start, preserving the original order id while recording allocation shrinkage through typed order-scoped ledger entries.
+- Refine efficient dual-account mismatch settlement: exact and small paired-fill differences complete normally, below-exchange-minimum dust is carried without repair, and only material paired-fill mismatches enter repair with an explicit repair context.
+- Make efficient dual-account repair context-aware: repair mode first tries a targeted IOC for the exact mismatched account/side/quantity, then falls back to the existing generic rebalance path when targeted repair cannot execute.
+- Route efficient dual-account repair states through normal planning before repair: stale below-min repair context is carried and cleared, while states with no executable funding fall through to the classified no-progress guard.
+- Add an efficient dual-account no-progress guard: repeated empty runtime decisions are classified through the readiness evaluator and become a `STOP_CONTROLLER` after three matching blockers, while real published-cycle accounting now only counts maker `CREATE_LIMIT_ORDER` actions.
 
 ## 2026-06-13
 
+- Add the active yellowpaper-based venue execution plan for Hyperliquid plus AMM/CLMM DEX support: Hyperliquid stays on the CLOB exchange path, Uniswap/PancakeSwap split into AMM swap and CLMM LP paths, on-chain execution becomes receipt-confirmed and order-ledger-attributed, and DEX funding/withdrawal/reconciliation requirements are explicit before user-facing launch.
 - Remove the efficient dual-account runtime cycle panel from the admin direct order details account-routing dialog so that routing focuses only on maker/taker account labels.
 - Fix efficient dual-account taker-only mismatch recovery: when the inline taker leg fills but the maker leg has zero fill, the settled cycle now enters `paired_fill_mismatch` repair mode, and the optimal planner now attempts an IOC rebalance before returning empty actions when no sustainable candidate has base inventory.
 - Fix partial IOC fill settlement without a matched tracked-order snapshot: when the first settlement payload carries `qty` larger than `cumulativeQty`, settlement now caps the delta at cumulative fill so repair rebalance orders do not over-credit inventory and trip reservation mismatch pauses, while normal delta fills keep their original cumulative idempotency key.

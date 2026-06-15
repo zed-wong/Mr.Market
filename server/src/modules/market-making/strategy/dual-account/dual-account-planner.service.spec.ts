@@ -898,6 +898,151 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
     expect(exchangeConnector.loadTradingRules).not.toHaveBeenCalled();
   });
 
+  it('carries small settled mismatches without entering repair mode', () => {
+    const { planner } = buildPlanner();
+    const result = planner.finalizeSettledCycle({
+      ...baseParams,
+      completedCycles: 2,
+      totalMatchedBaseVolume: 5,
+      totalMatchedQuoteVolume: 500,
+      activeCycle: {
+        cycleId: 'cycle-small-mismatch',
+        tickId: '2026-06-08T00:00:00.000Z',
+        orderId: 'mm-order-1:account-a',
+        makerSide: 'buy',
+        makerAccountLabel: 'account-a',
+        takerAccountLabel: 'account-b',
+        price: '100',
+        requestedQty: '1',
+        makerFilledQty: '1.001',
+        takerFilledQty: '1',
+        matchedFilledQty: '1',
+        matchedQuoteVolume: '100',
+      },
+    });
+
+    expect(result.underHedged).toBe(false);
+    expect(result.params).toEqual(
+      expect.objectContaining({
+        activeCycle: undefined,
+        repairRequired: false,
+        repairReason: undefined,
+        repairContext: undefined,
+        lastCycleOutcome: 'small_mismatch_carried',
+        completedCycles: 3,
+        totalMatchedBaseVolume: 6,
+        totalMatchedQuoteVolume: 600,
+      }),
+    );
+    expect(result.params.lastCarriedMismatch).toEqual(
+      expect.objectContaining({
+        mismatchQty: '0.001',
+        overfilledLeg: 'maker',
+        repairAccountLabel: 'account-a',
+        repairSide: 'sell',
+      }),
+    );
+  });
+
+  it('carries below-minimum settled dust without entering repair mode', () => {
+    const { planner } = buildPlanner({
+      rules: {
+        amountMin: 0.001,
+        costMin: 1,
+        makerFee: 0.001,
+        takerFee: 0.001,
+      },
+    });
+    const result = planner.finalizeSettledCycle({
+      ...baseParams,
+      exchangeName: 'mexc',
+      symbol: 'XIN/USDT',
+      pair: 'XIN/USDT',
+      completedCycles: 2,
+      activeCycle: {
+        cycleId: 'cycle-dust-mismatch',
+        tickId: '2026-06-14T11:47:00.000Z',
+        orderId: 'mm-order-1:account-a',
+        makerSide: 'sell',
+        makerAccountLabel: 'account-a',
+        takerAccountLabel: 'account-b',
+        price: '53.81',
+        requestedQty: '0.02',
+        makerFilledQty: '0.009',
+        takerFilledQty: '0',
+        matchedFilledQty: '0',
+        matchedQuoteVolume: '0',
+      },
+    });
+
+    expect(result.underHedged).toBe(false);
+    expect(result.params).toEqual(
+      expect.objectContaining({
+        activeCycle: undefined,
+        repairRequired: false,
+        repairReason: undefined,
+        repairContext: undefined,
+        lastCycleOutcome: 'dust_mismatch_carried',
+        completedCycles: 2,
+      }),
+    );
+    expect(result.params.lastCarriedMismatch).toEqual(
+      expect.objectContaining({
+        mismatchQty: '0.009',
+        mismatchNotional: '0.48429',
+        overfilledLeg: 'maker',
+        repairAccountLabel: 'account-a',
+        repairSide: 'buy',
+      }),
+    );
+  });
+
+  it('stores repair context for material settled mismatches', () => {
+    const { planner } = buildPlanner();
+    const result = planner.finalizeSettledCycle({
+      ...baseParams,
+      activeCycle: {
+        cycleId: 'cycle-material-mismatch',
+        tickId: '2026-06-08T00:00:00.000Z',
+        orderId: 'mm-order-1:account-a',
+        makerSide: 'buy',
+        makerAccountLabel: 'account-a',
+        takerAccountLabel: 'account-b',
+        price: '100',
+        requestedQty: '0.4',
+        makerFilledQty: '0.4',
+        takerFilledQty: '0.2',
+        matchedFilledQty: '0.2',
+        matchedQuoteVolume: '20',
+      },
+    });
+
+    expect(result.underHedged).toBe(true);
+    expect(result.params).toEqual(
+      expect.objectContaining({
+        activeCycle: undefined,
+        repairRequired: true,
+        repairReason: 'paired_fill_mismatch',
+        lastCycleOutcome: 'paired_fill_mismatch',
+        lastCarriedMismatch: undefined,
+      }),
+    );
+    expect(result.params.repairContext).toEqual(
+      expect.objectContaining({
+        cycleId: 'cycle-material-mismatch',
+        makerSide: 'buy',
+        makerFilledQty: '0.4',
+        takerFilledQty: '0.2',
+        matchedFilledQty: '0.2',
+        mismatchQty: '0.2',
+        mismatchNotional: '20',
+        overfilledLeg: 'maker',
+        repairAccountLabel: 'account-a',
+        repairSide: 'sell',
+      }),
+    );
+  });
+
   it('counts inline taker fills from the sibling account-scoped order id', () => {
     const { planner } = buildPlanner();
     const params: DualAccountVolumeStrategyParams = {

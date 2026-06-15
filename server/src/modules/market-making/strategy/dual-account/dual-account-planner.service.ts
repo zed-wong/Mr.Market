@@ -17,6 +17,7 @@ import type {
   DualAccountPairBalances,
   DualAccountRebalanceCandidate,
   DualAccountResolvedAccounts,
+  DualAccountRepairContext,
   DualAccountSafetyBufferConfig,
   DualAccountTradeabilityPlan,
   DualAccountVolumeStrategyParams,
@@ -159,6 +160,8 @@ const MODE_AWARE_BEST_CAPACITY_WEIGHTS: Record<
     dust: 1,
   },
 };
+const DUAL_ACCOUNT_QTY_TOLERANCE = new BigNumber('0.00000001');
+const DEFAULT_DUAL_ACCOUNT_SMALL_MISMATCH_RATIO = new BigNumber('0.005');
 
 @Injectable()
 export class DualAccountPlannerService {
@@ -1323,41 +1326,200 @@ export class DualAccountPlannerService {
       makerFilledQty,
       takerFilledQty.isFinite() ? takerFilledQty : new BigNumber(0),
     );
-
-    if (
+    const price = new BigNumber(params.activeCycle.price || 0);
+    const mismatchQty = makerFilledQty.minus(takerFilledQty).abs();
+    const mismatchRatio = this.calculateDualAccountMismatchRatio(
+      makerFilledQty,
+      takerFilledQty,
+      mismatchQty,
+    );
+    const mismatchNotional =
+      mismatchQty.isFinite() && price.isFinite()
+        ? mismatchQty.multipliedBy(price)
+        : new BigNumber(0);
+    const repairContext = this.buildDualAccountRepairContext(
+      params.activeCycle,
+      makerFilledQty,
+      takerFilledQty,
+      matchedFilledQty,
+      mismatchQty,
+      mismatchNotional,
+      mismatchRatio,
+    );
+    const isMatched =
       matchedFilledQty.isGreaterThan(0) &&
-      makerFilledQty.isEqualTo(takerFilledQty)
-    ) {
+      this.quantitiesMatch(makerFilledQty, takerFilledQty);
+    const isSmallMismatch =
+      matchedFilledQty.isGreaterThan(0) &&
+      this.isSmallDualAccountMismatch(mismatchRatio);
+    const isDustMismatch = this.isBelowMinimumRepairDust(
+      params,
+      mismatchQty,
+      mismatchNotional,
+    );
+
+    if (isMatched || isSmallMismatch || isDustMismatch) {
       const matchedQuoteVolume = new BigNumber(
         params.activeCycle.matchedQuoteVolume || 0,
       );
 
-      nextParams.completedCycles = Number(nextParams.completedCycles || 0) + 1;
-      nextParams.totalMatchedBaseVolume = new BigNumber(
-        nextParams.totalMatchedBaseVolume || 0,
-      )
-        .plus(matchedFilledQty)
-        .toNumber();
-      nextParams.totalMatchedQuoteVolume = new BigNumber(
-        nextParams.totalMatchedQuoteVolume || 0,
-      )
-        .plus(matchedQuoteVolume.isFinite() ? matchedQuoteVolume : 0)
-        .toNumber();
+      if (matchedFilledQty.isGreaterThan(0)) {
+        nextParams.completedCycles =
+          Number(nextParams.completedCycles || 0) + 1;
+        nextParams.totalMatchedBaseVolume = new BigNumber(
+          nextParams.totalMatchedBaseVolume || 0,
+        )
+          .plus(matchedFilledQty)
+          .toNumber();
+        nextParams.totalMatchedQuoteVolume = new BigNumber(
+          nextParams.totalMatchedQuoteVolume || 0,
+        )
+          .plus(matchedQuoteVolume.isFinite() ? matchedQuoteVolume : 0)
+          .toNumber();
+        Object.assign(
+          nextParams,
+          this.advanceCycleRolesAfterSuccess(nextParams, params.activeCycle),
+        );
+      }
+
       nextParams.activeCycle = undefined;
-      Object.assign(
-        nextParams,
-        this.advanceCycleRolesAfterSuccess(nextParams, params.activeCycle),
-      );
       nextParams.repairRequired = false;
       nextParams.repairReason = undefined;
+      nextParams.repairContext = undefined;
+      nextParams.lastCycleOutcome = isMatched
+        ? 'matched'
+        : isSmallMismatch
+        ? 'small_mismatch_carried'
+        : 'dust_mismatch_carried';
+      nextParams.lastCarriedMismatch = isMatched ? undefined : repairContext;
 
       return { params: nextParams, underHedged: false };
     }
 
     nextParams.repairRequired = true;
     nextParams.repairReason = 'paired_fill_mismatch';
+    nextParams.repairContext = repairContext;
+    nextParams.lastCycleOutcome = 'paired_fill_mismatch';
+    nextParams.lastCarriedMismatch = undefined;
 
     return { params: nextParams, underHedged: true };
+  }
+
+  private buildDualAccountRepairContext(
+    activeCycle: DualAccountActiveCycleState,
+    makerFilledQty: BigNumber,
+    takerFilledQty: BigNumber,
+    matchedFilledQty: BigNumber,
+    mismatchQty: BigNumber,
+    mismatchNotional: BigNumber,
+    mismatchRatio: BigNumber,
+  ): DualAccountRepairContext {
+    const makerOverfilled = makerFilledQty.isGreaterThan(takerFilledQty);
+    const overfilledLeg = makerOverfilled ? 'maker' : 'taker';
+    const repairAccountLabel = makerOverfilled
+      ? activeCycle.makerAccountLabel
+      : activeCycle.takerAccountLabel;
+    const repairSide = makerOverfilled
+      ? activeCycle.makerSide === 'buy'
+        ? 'sell'
+        : 'buy'
+      : activeCycle.makerSide === 'buy'
+      ? 'buy'
+      : 'sell';
+
+    return {
+      cycleId: activeCycle.cycleId,
+      tickId: activeCycle.tickId,
+      makerSide: activeCycle.makerSide,
+      makerAccountLabel: activeCycle.makerAccountLabel,
+      takerAccountLabel: activeCycle.takerAccountLabel,
+      price: activeCycle.price,
+      makerFilledQty: makerFilledQty.toFixed(),
+      takerFilledQty: takerFilledQty.toFixed(),
+      matchedFilledQty: matchedFilledQty.isFinite()
+        ? matchedFilledQty.toFixed()
+        : '0',
+      mismatchQty: mismatchQty.isFinite() ? mismatchQty.toFixed() : '0',
+      mismatchNotional: mismatchNotional.isFinite()
+        ? mismatchNotional.toFixed()
+        : '0',
+      mismatchRatio: mismatchRatio.isFinite() ? mismatchRatio.toFixed() : '0',
+      overfilledLeg,
+      repairAccountLabel,
+      repairSide,
+    };
+  }
+
+  private quantitiesMatch(left: BigNumber, right: BigNumber): boolean {
+    return left
+      .minus(right)
+      .abs()
+      .isLessThanOrEqualTo(DUAL_ACCOUNT_QTY_TOLERANCE);
+  }
+
+  private calculateDualAccountMismatchRatio(
+    makerFilledQty: BigNumber,
+    takerFilledQty: BigNumber,
+    mismatchQty: BigNumber,
+  ): BigNumber {
+    const baseQty = BigNumber.maximum(
+      makerFilledQty.abs(),
+      takerFilledQty.abs(),
+    );
+
+    if (baseQty.isLessThanOrEqualTo(0)) {
+      return new BigNumber(0);
+    }
+
+    return mismatchQty.dividedBy(baseQty);
+  }
+
+  private isSmallDualAccountMismatch(mismatchRatio: BigNumber): boolean {
+    return mismatchRatio.isLessThanOrEqualTo(
+      this.resolveDualAccountSmallMismatchRatio(),
+    );
+  }
+
+  private resolveDualAccountSmallMismatchRatio(): BigNumber {
+    const configured = new BigNumber(
+      this.configService?.get(
+        'strategy.dual_account_small_mismatch_ratio',
+        0.005,
+      ) ??
+        0.005,
+    );
+
+    return configured.isFinite() && configured.isGreaterThanOrEqualTo(0)
+      ? configured
+      : DEFAULT_DUAL_ACCOUNT_SMALL_MISMATCH_RATIO;
+  }
+
+  private isBelowMinimumRepairDust(
+    params: DualAccountVolumeStrategyParams,
+    mismatchQty: BigNumber,
+    mismatchNotional: BigNumber,
+  ): boolean {
+    if (
+      !mismatchQty.isFinite() ||
+      mismatchQty.isLessThanOrEqualTo(DUAL_ACCOUNT_QTY_TOLERANCE)
+    ) {
+      return true;
+    }
+
+    const rules = this.getCachedDualAccountTradingRules(
+      params.exchangeName,
+      params.symbol || params.pair,
+      params.makerAccountLabel,
+    );
+    const amountMin = this.readPositiveBigNumber(rules?.amountMin);
+    const costMin = this.readPositiveBigNumber(rules?.costMin);
+
+    return Boolean(
+      (amountMin && mismatchQty.isLessThan(amountMin)) ||
+        (costMin &&
+          mismatchNotional.isFinite() &&
+          mismatchNotional.isLessThan(costMin)),
+    );
   }
 
   mergeFillRuntimeIntoPersisted(
@@ -1404,6 +1566,22 @@ export class DualAccountPlannerService {
     const metadata = action.metadata as Record<string, unknown>;
 
     return metadata.role === 'rebalance' || metadata.rebalance === true;
+  }
+
+  isDualAccountRepairContextDust(
+    params: DualAccountVolumeStrategyParams,
+  ): boolean {
+    const repairContext = params.repairContext;
+
+    if (!repairContext) {
+      return false;
+    }
+
+    return this.isBelowMinimumRepairDust(
+      params,
+      new BigNumber(repairContext.mismatchQty || 0),
+      new BigNumber(repairContext.mismatchNotional || 0),
+    );
   }
 
   private isPublishedCycleAction(action: ExecutorAction): boolean {
@@ -2859,6 +3037,126 @@ export class DualAccountPlannerService {
     return null;
   }
 
+  async maybeBuildDualAccountTargetedRepairAction(
+    strategyKey: string,
+    params: DualAccountVolumeStrategyParams,
+    bestBid: BigNumber,
+    bestAsk: BigNumber,
+    price: BigNumber,
+    publishedCycles: number,
+    ts: string,
+    balanceSnapshot?: DualAccountBalanceSnapshot | null,
+  ): Promise<ExecutorAction | null> {
+    const repairContext = params.repairContext;
+
+    if (!repairContext) {
+      return null;
+    }
+
+    const mismatchQty = new BigNumber(repairContext.mismatchQty || 0);
+
+    if (
+      !mismatchQty.isFinite() ||
+      mismatchQty.isLessThanOrEqualTo(DUAL_ACCOUNT_QTY_TOLERANCE)
+    ) {
+      return null;
+    }
+
+    const snapshot =
+      balanceSnapshot || (await this.loadBalanceSnapshot(params, 'rebalance'));
+
+    if (!snapshot) {
+      return null;
+    }
+
+    const selectedBalances =
+      repairContext.repairAccountLabel === params.makerAccountLabel
+        ? this.clonePairBalances(snapshot.makerBalances)
+        : repairContext.repairAccountLabel === params.takerAccountLabel
+        ? this.clonePairBalances(snapshot.takerBalances)
+        : null;
+
+    if (!selectedBalances) {
+      return null;
+    }
+
+    const executionPrice =
+      repairContext.repairSide === 'buy' ? bestAsk : bestBid;
+
+    if (
+      !executionPrice.isFinite() ||
+      executionPrice.isLessThanOrEqualTo(0) ||
+      !price.isFinite() ||
+      price.isLessThanOrEqualTo(0)
+    ) {
+      return null;
+    }
+
+    const adjustedQuote = await this.getQuotePlanner().quantizeAndValidateQuote(
+      `${strategyKey}:targeted-repair`,
+      params.exchangeName,
+      params.symbol,
+      repairContext.repairAccountLabel,
+      repairContext.repairSide,
+      0,
+      `dual-account-targeted-repair:${repairContext.repairAccountLabel}:${repairContext.repairSide}`,
+      mismatchQty,
+      executionPrice,
+      selectedBalances,
+    );
+
+    if (!adjustedQuote) {
+      return null;
+    }
+
+    const orderId = this.resolveOrderScopedOrderId(
+      params,
+      repairContext.repairAccountLabel,
+    );
+    const cycleId = `${strategyKey}:targeted-repair:${ts}:${
+      repairContext.repairAccountLabel
+    }:${repairContext.repairSide}`;
+    const repairNotional = adjustedQuote.qty.multipliedBy(adjustedQuote.price);
+
+    return this.createIntent(
+      strategyKey,
+      strategyKey,
+      params.userId,
+      params.clientId,
+      params.exchangeName,
+      params.symbol,
+      repairContext.repairSide,
+      adjustedQuote.price,
+      adjustedQuote.qty,
+      ts,
+      `efficient-dual-account-targeted-repair-${publishedCycles}-${repairContext.repairAccountLabel}-${repairContext.repairSide}`,
+      params.executionCategory,
+      {
+        cycleId,
+        orderId,
+        role: 'rebalance',
+        rebalance: true,
+        rebalanceReason: 'paired_fill_mismatch_targeted',
+        targetedRepair: true,
+        repairAccountLabel: repairContext.repairAccountLabel,
+        repairSide: repairContext.repairSide,
+        repairContext,
+        makerAccountLabel: repairContext.makerAccountLabel,
+        takerAccountLabel: repairContext.takerAccountLabel,
+        configuredMakerAccountLabel: params.makerAccountLabel,
+        configuredTakerAccountLabel: params.takerAccountLabel,
+        overfilledLeg: repairContext.overfilledLeg,
+        targetQty: mismatchQty.toFixed(),
+        requestedQty: mismatchQty.toFixed(),
+        effectiveQty: adjustedQuote.qty.toFixed(),
+        effectiveNotional: repairNotional.toFixed(),
+      },
+      false,
+      repairContext.repairAccountLabel,
+      'IOC',
+    );
+  }
+
   async maybeBuildDualAccountRebalanceAction(
     strategyKey: string,
     params: DualAccountVolumeStrategyParams,
@@ -2872,7 +3170,9 @@ export class DualAccountPlannerService {
     balanceSnapshot?: DualAccountBalanceSnapshot | null,
   ): Promise<ExecutorAction | null> {
     const snapshot =
-      balanceSnapshot || (await this.loadBalanceSnapshot(params, 'rebalance'));
+      balanceSnapshot === undefined
+        ? await this.loadBalanceSnapshot(params, 'rebalance')
+        : balanceSnapshot;
 
     if (!snapshot) {
       return null;

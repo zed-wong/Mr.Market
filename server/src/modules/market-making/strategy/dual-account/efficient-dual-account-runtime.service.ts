@@ -11,7 +11,10 @@ import {
 } from '../../trackers/exchange-order-tracker.service';
 import { ExecutorAction } from '../config/executor-action.types';
 import type { StrategyRuntimeSession } from '../config/strategy-controller.types';
-import type { DualAccountVolumeStrategyParams } from '../config/strategy-params.types';
+import type {
+  DualAccountRepairContext,
+  DualAccountVolumeStrategyParams,
+} from '../config/strategy-params.types';
 import { RuntimeObservationService } from '../observation/runtime-observation.service';
 import { DualAccountRuntimeStateService } from '../runtime/dual-account-runtime-state.service';
 import { StrategySessionRegistryService } from '../runtime/strategy-session-registry.service';
@@ -253,21 +256,44 @@ export class EfficientDualAccountRuntimeService {
       return { attempted: false, action: null };
     }
 
-    const action =
-      await this.getDualAccountPlanner().maybeBuildDualAccountRebalanceAction(
+    const planner = this.getDualAccountPlanner();
+    const feeBufferRate = await planner.resolveFeeBufferRate(
+      params.exchangeName,
+      params.symbol,
+    );
+    const publishedCycles = Number(params.publishedCycles || 0);
+    const balanceSnapshot = await planner.loadBalanceSnapshot(
+      params,
+      'rebalance',
+    );
+    const targetedRepairAction =
+      await planner.maybeBuildDualAccountTargetedRepairAction(
         strategyKey,
         params,
-        preferredSide,
         bestBid,
         bestAsk,
         price,
-        await this.getDualAccountPlanner().resolveFeeBufferRate(
-          params.exchangeName,
-          params.symbol,
-        ),
-        Number(params.publishedCycles || 0),
+        publishedCycles,
         ts,
+        balanceSnapshot,
       );
+
+    if (targetedRepairAction) {
+      return { attempted: true, action: targetedRepairAction };
+    }
+
+    const action = await planner.maybeBuildDualAccountRebalanceAction(
+      strategyKey,
+      params,
+      preferredSide,
+      bestBid,
+      bestAsk,
+      price,
+      feeBufferRate,
+      publishedCycles,
+      ts,
+      balanceSnapshot,
+    );
 
     return { attempted: true, action };
   }
@@ -277,28 +303,47 @@ export class EfficientDualAccountRuntimeService {
     params: DualAccountVolumeStrategyParams,
     ts: string,
   ): Promise<ExecutorAction[]> {
-    const resumedParams: DualAccountVolumeStrategyParams = {
-      ...params,
-      repairRequired: false,
-      repairReason: undefined,
-    };
+    const planner = this.getDualAccountPlanner();
+    const carriedRepairContext = planner.isDualAccountRepairContextDust(params)
+      ? params.repairContext
+      : undefined;
+    const resumedParams = this.buildRepairClearedParams(
+      params,
+      carriedRepairContext,
+    );
     const resumedActions = await this.buildEfficientDualAccountVolumeActions(
       session.strategyKey,
       resumedParams,
       ts,
     );
     const hasTradeAction = resumedActions.some(
-      (action) => !this.getDualAccountPlanner().isRebalanceAction(action),
+      (action) => !planner.isRebalanceAction(action),
     );
+    const hasResumeAction = resumedActions.length > 0;
 
-    if (hasTradeAction) {
+    if (hasTradeAction || (carriedRepairContext && hasResumeAction)) {
       await this.persistStrategyParams(session.strategyKey, resumedParams);
       this.updateActiveSessionParams(session, resumedParams);
+      const clearReason = hasTradeAction
+        ? 'current balances can resume paired execution'
+        : 'below-minimum repair context can be carried by normal planning';
+
       this.logger.warn(
-        `Cleared dual-account repair mode for ${session.strategyKey}: current balances can resume paired execution`,
+        `Cleared dual-account repair mode for ${session.strategyKey}: ${clearReason}`,
       );
 
       return resumedActions;
+    }
+
+    if (carriedRepairContext) {
+      await this.persistStrategyParams(session.strategyKey, resumedParams);
+      this.updateActiveSessionParams(session, resumedParams);
+
+      return await this.buildNoProgressActionOrWait(
+        session,
+        resumedParams,
+        ts,
+      );
     }
 
     const repairResult = await this.buildRepairRebalanceAction(
@@ -434,10 +479,28 @@ export class EfficientDualAccountRuntimeService {
     reason: EfficientNoProgressReason,
   ): boolean {
     return (
-      reason.code === 'below_exchange_minimums' ||
       reason.code === 'empty_decision_after_ready' ||
       reason.code === 'empty_decision_without_reason'
     );
+  }
+
+  private buildRepairClearedParams(
+    params: DualAccountVolumeStrategyParams,
+    carriedMismatch?: DualAccountRepairContext,
+  ): DualAccountVolumeStrategyParams {
+    const nextParams: DualAccountVolumeStrategyParams = {
+      ...params,
+      repairRequired: false,
+      repairReason: undefined,
+      repairContext: undefined,
+    };
+
+    if (carriedMismatch) {
+      nextParams.lastCycleOutcome = 'dust_mismatch_carried';
+      nextParams.lastCarriedMismatch = carriedMismatch;
+    }
+
+    return nextParams;
   }
 
   private async persistStrategyParams(

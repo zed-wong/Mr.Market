@@ -2968,7 +2968,112 @@ describe('StrategyService', () => {
     nowSpy.mockRestore();
   });
 
-  it('builds a rebalance intent for efficient dual-account repair mode', async () => {
+  it('builds a targeted repair intent for material efficient dual-account mismatches', async () => {
+    const repairContext = {
+      cycleId: 'cycle-material-mismatch',
+      tickId: '2026-06-08T00:00:00.000Z',
+      makerSide: 'buy' as const,
+      makerAccountLabel: 'maker',
+      takerAccountLabel: 'taker',
+      price: '100',
+      makerFilledQty: '0.4',
+      takerFilledQty: '0.2',
+      matchedFilledQty: '0.2',
+      mismatchQty: '0.2',
+      mismatchNotional: '20',
+      mismatchRatio: '0.5',
+      overfilledLeg: 'maker' as const,
+      repairAccountLabel: 'maker',
+      repairSide: 'sell' as const,
+    };
+    const session = {
+      runId: 'run-dual-targeted-repair',
+      strategyKey: 'user1-client1-efficientDualAccountVolume',
+      strategyType: 'efficientDualAccountVolume',
+      userId: 'user1',
+      clientId: 'client1',
+      cadenceMs: 1000,
+      nextRunAtMs: 0,
+      marketMakingOrderId: 'mm-order-1',
+      params: {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        pair: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 0.4,
+        maxOrderAmount: 1,
+        interval: 10,
+        numTrades: 0,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        targetQuoteVolume: 0,
+        publishedCycles: 3,
+        completedCycles: 1,
+        repairRequired: true,
+        repairReason: 'paired_fill_mismatch',
+        repairContext,
+      },
+    };
+
+    mockStrategyInstanceRepository.findOne.mockResolvedValue({
+      strategyKey: session.strategyKey,
+      parameters: session.params,
+    });
+    exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([]);
+    strategyMarketDataProviderService.getTrackedBestBidAsk.mockReturnValue({
+      bestBid: 100,
+      bestAsk: 101,
+    });
+    const scopedBalances: Record<string, Record<string, string>> = {
+      'mm-order-1:maker': { BTC: '0.3', USDT: '0' },
+      'mm-order-1:taker': { BTC: '0', USDT: '0' },
+    };
+
+    balanceLedgerService.getExistingBalance.mockImplementation(
+      async (orderId: string, assetId: string) => {
+        const available = scopedBalances[orderId]?.[assetId] || '0';
+
+        return { available, total: available };
+      },
+    );
+
+    const actions =
+      await efficientDualAccountRuntimeService.buildEfficientDualAccountVolumeSessionActions(
+        session as any,
+        '2026-06-08T00:00:00.000Z',
+      );
+
+    expect(actions).toEqual([
+      expect.objectContaining({
+        type: 'CREATE_LIMIT_ORDER',
+        side: 'sell',
+        accountLabel: 'maker',
+        qty: '0.2',
+        postOnly: false,
+        timeInForce: 'IOC',
+        metadata: expect.objectContaining({
+          role: 'rebalance',
+          rebalance: true,
+          rebalanceReason: 'paired_fill_mismatch_targeted',
+          targetedRepair: true,
+          repairAccountLabel: 'maker',
+          repairSide: 'sell',
+          repairContext: expect.objectContaining({
+            mismatchQty: '0.2',
+            repairSide: 'sell',
+          }),
+        }),
+      }),
+    ]);
+  });
+
+  it('falls back to generic rebalance when targeted efficient dual-account repair is not executable', async () => {
     const session = {
       runId: 'run-dual-repair',
       strategyKey: 'user1-client1-efficientDualAccountVolume',
@@ -3000,6 +3105,23 @@ describe('StrategyService', () => {
         completedCycles: 1,
         repairRequired: true,
         repairReason: 'paired_fill_mismatch',
+        repairContext: {
+          cycleId: 'cycle-material-mismatch',
+          tickId: '2026-06-08T00:00:00.000Z',
+          makerSide: 'buy',
+          makerAccountLabel: 'maker',
+          takerAccountLabel: 'taker',
+          price: '100',
+          makerFilledQty: '0.4',
+          takerFilledQty: '0.2',
+          matchedFilledQty: '0.2',
+          mismatchQty: '0.2',
+          mismatchNotional: '20',
+          mismatchRatio: '0.5',
+          overfilledLeg: 'maker',
+          repairAccountLabel: 'maker',
+          repairSide: 'sell',
+        },
       },
     };
 
@@ -3042,7 +3164,7 @@ describe('StrategyService', () => {
     ]);
   });
 
-  it('stops efficient dual-account repair mode when rebalance is below exchange minimum', async () => {
+  it('carries below-min settled efficient dual-account mismatches and continues', async () => {
     const params = {
       exchangeName: 'mexc',
       symbol: 'XIN/USDT',
@@ -3066,11 +3188,23 @@ describe('StrategyService', () => {
       completedCycles: 2,
       mode: 'balanced',
       strategyContract: 'efficientDualAccountVolume',
-      repairRequired: true,
-      repairReason: 'paired_fill_mismatch',
+      activeCycle: {
+        cycleId: 'cycle-xin-dust',
+        tickId: '2026-06-14T11:47:00.000Z',
+        orderId: 'order-1:4',
+        makerSide: 'sell',
+        makerAccountLabel: '4',
+        takerAccountLabel: '8',
+        price: '53.81',
+        requestedQty: '0.02',
+        makerFilledQty: '0.009',
+        takerFilledQty: '0',
+        matchedFilledQty: '0',
+        matchedQuoteVolume: '0',
+      },
     };
     const session = {
-      runId: 'run-dual-repair-below-min',
+      runId: 'run-dual-carry-below-min',
       strategyKey: 'admin-direct-order-1-efficientDualAccountVolume',
       strategyType: 'efficientDualAccountVolume',
       userId: 'admin-direct',
@@ -3081,8 +3215,8 @@ describe('StrategyService', () => {
       params,
     };
     const scopedBalances: Record<string, Record<string, string>> = {
-      'order-1:4': { XIN: '0', USDT: '0' },
-      'order-1:8': { XIN: '0.009', USDT: '0' },
+      'order-1:4': { XIN: '0.02', USDT: '2' },
+      'order-1:8': { XIN: '0.02', USDT: '2' },
     };
     const randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0.5);
 
@@ -3122,21 +3256,168 @@ describe('StrategyService', () => {
           '2026-06-14T11:47:00.000Z',
         );
 
-      expect(actions).toEqual([
+      expect(actions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'CREATE_LIMIT_ORDER',
+            metadata: expect.objectContaining({
+              role: 'maker',
+            }),
+          }),
+        ]),
+      );
+      expect(actions).not.toContainEqual(
         expect.objectContaining({
           type: 'STOP_CONTROLLER',
-          intentId:
-            'admin-direct-order-1-efficientDualAccountVolume:2026-06-14T11:47:00.000Z:stop-dual_account_repair_unexecutable',
-          metadata: { reason: 'dual_account_repair_unexecutable' },
         }),
-      ]);
-      expect(mockStrategyInstanceRepository.update).not.toHaveBeenCalledWith(
+      );
+      expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
         { strategyKey: session.strategyKey },
-        {
+        expect.objectContaining({
+          parameters: expect.objectContaining({
+            activeCycle: undefined,
+            repairRequired: false,
+            repairReason: undefined,
+            repairContext: undefined,
+            lastCycleOutcome: 'dust_mismatch_carried',
+            lastCarriedMismatch: expect.objectContaining({
+              mismatchQty: '0.009',
+              mismatchNotional: '0.48429',
+              repairAccountLabel: '4',
+              repairSide: 'buy',
+            }),
+          }),
+        }),
+      );
+    } finally {
+      randomSpy.mockRestore();
+    }
+  });
+
+  it('clears stale below-min efficient dual-account repair context and continues', async () => {
+    const repairContext = {
+      cycleId: 'cycle-xin-dust',
+      tickId: '2026-06-14T11:47:00.000Z',
+      makerSide: 'sell' as const,
+      makerAccountLabel: '4',
+      takerAccountLabel: '8',
+      price: '53.81',
+      makerFilledQty: '0.009',
+      takerFilledQty: '0',
+      matchedFilledQty: '0',
+      mismatchQty: '0.009',
+      mismatchNotional: '0.48429',
+      mismatchRatio: '1',
+      overfilledLeg: 'maker' as const,
+      repairAccountLabel: '4',
+      repairSide: 'buy' as const,
+    };
+    const params = {
+      exchangeName: 'mexc',
+      symbol: 'XIN/USDT',
+      pair: 'XIN/USDT',
+      baseIncrementPercentage: 0,
+      baseIntervalTime: 15,
+      baseTradeAmount: 0.02,
+      maxOrderAmount: 0.02,
+      interval: 15,
+      numTrades: 0,
+      userId: 'admin-direct',
+      clientId: 'order-1',
+      marketMakingOrderId: 'order-1',
+      pricePushRate: 0,
+      executionCategory: 'clob_cex',
+      executionVenue: 'cex',
+      makerAccountLabel: '4',
+      takerAccountLabel: '8',
+      targetQuoteVolume: 30000,
+      publishedCycles: 3,
+      completedCycles: 2,
+      mode: 'balanced',
+      strategyContract: 'efficientDualAccountVolume',
+      repairRequired: true,
+      repairReason: 'paired_fill_mismatch',
+      repairContext,
+    };
+    const session = {
+      runId: 'run-dual-clear-stale-dust-repair',
+      strategyKey: 'admin-direct-order-1-efficientDualAccountVolume',
+      strategyType: 'efficientDualAccountVolume',
+      userId: 'admin-direct',
+      clientId: 'order-1',
+      cadenceMs: 1000,
+      nextRunAtMs: 0,
+      marketMakingOrderId: 'order-1',
+      params,
+    };
+    const scopedBalances: Record<string, Record<string, string>> = {
+      'order-1:4': { XIN: '0.02', USDT: '2' },
+      'order-1:8': { XIN: '0.02', USDT: '2' },
+    };
+    const randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0.5);
+
+    mockStrategyInstanceRepository.findOne.mockResolvedValue({
+      strategyKey: session.strategyKey,
+      parameters: params,
+    });
+    balanceLedgerService.getExistingBalance.mockImplementation(
+      async (orderId: string, assetId: string) => {
+        const available = scopedBalances[orderId]?.[assetId] || '0';
+
+        return { available, total: available };
+      },
+    );
+    exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([]);
+    strategyMarketDataProviderService.getTrackedBestBidAsk.mockReturnValue({
+      bestBid: 53.8,
+      bestAsk: 53.82,
+    });
+    exchangeConnectorAdapterService.getCachedTradingRules.mockReturnValue({
+      amountMin: 0.001,
+      costMin: 1,
+      makerFee: 0.001,
+      takerFee: 0.001,
+    });
+    exchangeConnectorAdapterService.loadTradingRules.mockResolvedValue({
+      amountMin: 0.001,
+      costMin: 1,
+      makerFee: 0.001,
+      takerFee: 0.001,
+    });
+
+    try {
+      const actions =
+        await efficientDualAccountRuntimeService.buildEfficientDualAccountVolumeSessionActions(
+          session as any,
+          '2026-06-14T11:47:00.000Z',
+        );
+
+      expect(actions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'CREATE_LIMIT_ORDER',
+            metadata: expect.objectContaining({
+              role: 'maker',
+            }),
+          }),
+        ]),
+      );
+      expect(actions).not.toContainEqual(
+        expect.objectContaining({
+          type: 'STOP_CONTROLLER',
+        }),
+      );
+      expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
+        { strategyKey: session.strategyKey },
+        expect.objectContaining({
           parameters: expect.objectContaining({
             repairRequired: false,
+            repairReason: undefined,
+            repairContext: undefined,
+            lastCycleOutcome: 'dust_mismatch_carried',
+            lastCarriedMismatch: repairContext,
           }),
-        },
+        }),
       );
     } finally {
       randomSpy.mockRestore();
