@@ -15,6 +15,73 @@ import { StrategyDefinition } from '../../../src/common/entities/market-making/s
 import { runSeed } from '../../../src/database/seeder/seed';
 import { createSystemTestLogger } from '../helpers/system-test-log.helper';
 
+jest.mock('../../../src/database/seeder/mixin-fetcher', () => {
+  const assets = [
+    'BTC',
+    'ETH',
+    'SOL',
+    'XRP',
+    'DOGE',
+    'LTC',
+    'AVAX',
+    'MATIC',
+    'BNB',
+    'HMT',
+    'XIN',
+    'USDT',
+  ].map((symbol) => ({
+    asset_id: `${symbol.toLowerCase()}-asset-id`,
+    chain_id: `${symbol.toLowerCase()}-chain-id`,
+    symbol,
+    name: symbol,
+    icon_url: `https://example.test/${symbol.toLowerCase()}.png`,
+    precision: 8,
+  }));
+
+  return {
+    fetchMixinAssets: jest.fn(async () => {
+      return new Map(assets.map((asset) => [asset.symbol, asset]));
+    }),
+    getChainIconUrl: jest.fn(async (chainId: string) => {
+      return `https://example.test/chains/${chainId}.png`;
+    }),
+  };
+});
+
+jest.mock('../../../src/database/seeder/ccxt-fetcher', () => ({
+  clearCache: jest.fn(),
+  fetchAllMarkets: jest.fn(async (exchangeIds: string[], symbols: string[]) => {
+    const markets = new Map();
+
+    for (const exchangeId of exchangeIds) {
+      markets.set(
+        exchangeId,
+        new Map(
+          symbols.map((symbol) => {
+            const [base, quote] = symbol.split('/');
+
+            return [
+              symbol,
+              {
+                symbol,
+                base,
+                quote,
+                precision: { amount: 6, price: 2 },
+                limits: {
+                  amount: { min: 0.001, max: 1000 },
+                  price: { min: 0.01, max: 1000000 },
+                },
+              },
+            ];
+          }),
+        ),
+      );
+    }
+
+    return markets;
+  }),
+}));
+
 const log = createSystemTestLogger('database-migration-seed');
 
 describe('Database migration and seed scripts', () => {
@@ -201,9 +268,15 @@ describe('Database migration and seed scripts', () => {
     });
     expect(pureMarketMakingDefinition.defaultConfig).toEqual(
       expect.objectContaining({
-        pair: 'BTC/USDT',
-        exchangeName: 'binance',
+        orderAmount: 0.001,
+        numberOfLayers: 1,
       }),
+    );
+    expect(pureMarketMakingDefinition.defaultConfig).not.toHaveProperty(
+      'pair',
+    );
+    expect(pureMarketMakingDefinition.defaultConfig).not.toHaveProperty(
+      'exchangeName',
     );
 
     await dataSource.destroy();

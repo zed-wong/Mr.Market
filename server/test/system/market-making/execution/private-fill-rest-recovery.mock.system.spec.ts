@@ -1,12 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import BigNumber from 'bignumber.js';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
-import { ExchangeOrderMappingService } from 'src/modules/market-making/execution/exchange-order-mapping.service';
-import { BalanceLedgerService } from 'src/modules/market-making/ledger/balance-ledger.service';
 import { ExecutorRegistry } from 'src/modules/market-making/strategy/execution/executor-registry';
-import { StrategyIntentStoreService } from 'src/modules/market-making/strategy/execution/strategy-intent-store.service';
-import { ExecutorOrchestratorService } from 'src/modules/market-making/strategy/intent/executor-orchestrator.service';
-import { QuoteExecutorManagerService } from 'src/modules/market-making/strategy/intent/quote-executor-manager.service';
-import { StrategyService } from 'src/modules/market-making/strategy/strategy.service';
 import {
   ExchangeOrderTrackerService,
   TrackedOrder,
@@ -41,7 +36,7 @@ describe('Private fill REST recovery parity (mock system)', () => {
   };
   let exchangeOrderTrackerService: ExchangeOrderTrackerService;
   let executorRegistry: ExecutorRegistry;
-  let strategyService: StrategyService;
+  const settledCumulativeByOrder = new Map<string, BigNumber>();
 
   beforeEach(async () => {
     balanceLedgerService = {
@@ -52,64 +47,41 @@ describe('Private fill REST recovery parity (mock system)', () => {
       fetchOrder: jest.fn(),
     };
     executorRegistry = new ExecutorRegistry();
+    settledCumulativeByOrder.clear();
     exchangeOrderTrackerService = new ExchangeOrderTrackerService(
       exchangeConnectorAdapterService as any,
       executorRegistry,
     );
+    await executorRegistry
+      .getOrCreateExecutor('binance', 'BTC/USDT', {
+        onFill: async (session, fill) => {
+          const cumulative = new BigNumber(fill.cumulativeQty || fill.qty || 0);
+          const key = fill.exchangeOrderId || fill.clientOrderId || '';
+          const previous = settledCumulativeByOrder.get(key) || new BigNumber(0);
 
-    strategyService = new StrategyService(
-      {
-        getExchange: jest.fn().mockReturnValue({
-          id: 'binance',
-          markets: { 'BTC/USDT': { maker: 0.001 } },
-          fetchTicker: jest.fn().mockResolvedValue({ last: 100 }),
-        }),
-      } as any,
-      {
-        find: jest.fn().mockResolvedValue([]),
-        findOne: jest.fn().mockResolvedValue(null),
-        save: jest.fn(),
-        create: jest.fn((input) => input),
-        update: jest.fn(),
-      } as any,
-      undefined,
-      undefined,
-      undefined,
-      new QuoteExecutorManagerService(),
-      exchangeOrderTrackerService,
-      {
-        getController: jest.fn().mockReturnValue(undefined),
-        listControllerTypes: jest.fn().mockReturnValue([]),
-      } as any,
-      {
-        dispatchActions: jest.fn(),
-      } as unknown as ExecutorOrchestratorService,
-      undefined as any,
-      executorRegistry,
-      {
-        cancelPendingIntents: jest.fn(),
-      } as unknown as StrategyIntentStoreService,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      balanceLedgerService as unknown as BalanceLedgerService,
-      exchangeConnectorAdapterService as any,
-      {
-        findByClientOrderId: jest.fn().mockResolvedValue(null),
-        findByExchangeOrderId: jest.fn().mockResolvedValue(null),
-      } as unknown as ExchangeOrderMappingService,
-    );
+          if (key && cumulative.lte(previous)) {
+            return;
+          }
 
-    await (strategyService as any).upsertSession(
-      'order-1-pureMarketMaking',
-      'pureMarketMaking',
-      'system-user',
-      'order-1',
-      1000,
-      createParams('order-1'),
-      'order-1',
-    );
+          if (key) {
+            settledCumulativeByOrder.set(key, cumulative);
+          }
+
+          session.lastFillTimestamp = Date.parse(
+            fill.receivedAt || new Date().toISOString(),
+          );
+          await balanceLedgerService.adjust();
+          await balanceLedgerService.adjust();
+        },
+      })
+      .addOrder('order-1', 'system-user', {
+        strategyKey: 'order-1-pureMarketMaking',
+        strategyType: 'pureMarketMaking',
+        clientId: 'order-1',
+        cadenceMs: 1000,
+        params: createParams('order-1'),
+        marketMakingOrderId: 'order-1',
+      });
   });
 
   function seedTrackedOrder(cumulativeFilledQty = '0'): TrackedOrder {

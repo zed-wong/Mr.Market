@@ -34,6 +34,7 @@ export interface AdminOrdersQuery {
   side?: string;
   query?: string;
   userOrderId?: string;
+  strategyKey?: string;
   limit?: string;
   page?: string;
 }
@@ -63,6 +64,12 @@ export class AdminOrdersService {
     if (filters.userOrderId) {
       query.andWhere('order.userOrderId = :userOrderId', {
         userOrderId: filters.userOrderId,
+      });
+    }
+
+    if (filters.strategyKey) {
+      query.andWhere('order.strategyKey = :strategyKey', {
+        strategyKey: filters.strategyKey,
       });
     }
 
@@ -109,6 +116,7 @@ export class AdminOrdersService {
         side: filters.side || null,
         query: filters.query || null,
         userOrderId: filters.userOrderId || null,
+        strategyKey: filters.strategyKey || null,
       },
       limits: {
         defaultLimit: DEFAULT_LIMIT,
@@ -125,12 +133,15 @@ export class AdminOrdersService {
     side?: OrderSide;
     query?: string;
     userOrderId?: string;
+    strategyKey?: string;
   } {
     const status = this.normalizeOptionalToken(input.status);
     const side = this.normalizeOptionalToken(input.side);
     const query = typeof input.query === 'string' ? input.query.trim() : '';
     const userOrderId =
       typeof input.userOrderId === 'string' ? input.userOrderId.trim() : '';
+    const strategyKey =
+      typeof input.strategyKey === 'string' ? input.strategyKey.trim() : '';
 
     if (status && !ORDER_STATUSES.includes(status as OrderStatus)) {
       throw new BadRequestException(
@@ -158,11 +169,18 @@ export class AdminOrdersService {
       );
     }
 
+    if (strategyKey.length > MAX_QUERY_LENGTH) {
+      throw new BadRequestException(
+        `strategyKey is too long. Maximum length is ${MAX_QUERY_LENGTH} characters.`,
+      );
+    }
+
     return {
       status: status as OrderStatus | undefined,
       side: side as OrderSide | undefined,
       query: query || undefined,
       userOrderId: userOrderId || undefined,
+      strategyKey: strategyKey || undefined,
     };
   }
 

@@ -20,7 +20,15 @@ describe('AdminOrdersController', () => {
     const controller = new AdminOrdersController(ordersService as any);
 
     await expect(
-      controller.listOrders('open', 'buy', 'btc', '50', '2'),
+      controller.listOrders(
+        'open',
+        'buy',
+        'btc',
+        'user-order-1',
+        'strategy-key-1',
+        '50',
+        '2',
+      ),
     ).resolves.toEqual({
       generatedAt: '2026-05-23T00:00:00.000Z',
       items: [],
@@ -29,6 +37,8 @@ describe('AdminOrdersController', () => {
       status: 'open',
       side: 'buy',
       query: 'btc',
+      userOrderId: 'user-order-1',
+      strategyKey: 'strategy-key-1',
       limit: '50',
       page: '2',
     });

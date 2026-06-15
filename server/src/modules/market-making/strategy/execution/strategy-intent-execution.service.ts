@@ -29,6 +29,7 @@ import {
 import type { TrackedOrder } from '../../trackers/exchange-order-tracker.service';
 import { ExchangeOrderTrackerService } from '../../trackers/exchange-order-tracker.service';
 import { DexAdapterId } from '../config/strategy.dto';
+import type { StrategyRuntimeSession } from '../config/strategy-controller.types';
 import { StrategyOrderIntent } from '../config/strategy-intent.types';
 import { StrategyMarketDataProviderService } from '../data/strategy-market-data-provider.service';
 import { DexVolumeStrategyService } from '../dex/dex-volume.strategy.service';
@@ -36,6 +37,7 @@ import {
   DualAccountCycleOutcomeStatus,
   RuntimeObservationService,
 } from '../observation/runtime-observation.service';
+import { FillSettlementService } from '../settlement/fill-settlement.service';
 import { StrategyIntentStoreService } from './strategy-intent-store.service';
 
 class IntentCancelledError extends Error {
@@ -175,6 +177,8 @@ export class StrategyIntentExecutionService {
     private readonly exchangeApiKeyService?: ExchangeApiKeyService,
     @Optional()
     private readonly runtimeObservationService?: RuntimeObservationService,
+    @Optional()
+    private readonly fillSettlementService?: FillSettlementService,
   ) {
     this.executeIntents = this.toBoolean(
       this.configService.get('strategy.execute_intents', false),
@@ -1067,6 +1071,27 @@ export class StrategyIntentExecutionService {
         this.readMetadataString(intent, 'baseOrderId'),
       accountLabel: intent.accountLabel || this.resolveIntentRole(intent),
     });
+  }
+
+  private resolveBaseUserOrderId(intent: StrategyOrderIntent): string {
+    return this.resolveIntentOrderScope(intent).userOrderId;
+  }
+
+  private readStringFromRecord(
+    record: Record<string, unknown>,
+    key: string,
+  ): string | undefined {
+    const value = record[key];
+
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim();
+    }
+
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return String(value);
+    }
+
+    return undefined;
   }
 
   private assertImmediateDualAccountTakerReservationAvailable(
@@ -2340,6 +2365,9 @@ export class StrategyIntentExecutionService {
         ? createAckStatus
         : 'pending_create';
     const filledQty = this.readFilledQtyFromResult(result)?.toFixed() || '0';
+    const filledQtyBn = new BigNumber(filledQty);
+    const hasFilledQty =
+      filledQtyBn.isFinite() && filledQtyBn.isGreaterThan(0);
     const orderScope = this.resolveIntentOrderScope(intent);
 
     await this.strategyIntentStoreService?.attachMixinOrderId(
@@ -2395,21 +2423,54 @@ export class StrategyIntentExecutionService {
       updatedAt: getRFC3339Timestamp(),
     });
 
+    if (hasFilledQty) {
+      await this.settleFilledCreateAck(
+        intent,
+        exchangeOrderId,
+        clientOrderId,
+        filledQty,
+        result,
+      );
+    }
+
     if (rejectedCreateAck) {
       if (reservation?.applied) {
-        await this.orderReservationService?.releaseLimitOrderReservation({
-          orderId,
-          userOrderId: orderScope.userOrderId,
-          accountLabel: orderScope.accountLabel,
-          userId: intent.userId,
-          intentId: intent.intentId,
-          releaseId: clientOrderId,
-          pair: intent.pair,
-          side: intent.side,
-          price: intent.price,
-          qty: intent.qty,
-          reason: 'exchange_create_rejected',
-        });
+        if (hasFilledQty) {
+          await this.orderReservationService?.releaseRemainingLimitOrderReservation(
+            {
+              orderId,
+              userOrderId: orderScope.userOrderId,
+              accountLabel: orderScope.accountLabel,
+              userId: intent.userId,
+              intentId: intent.intentId,
+              releaseId: clientOrderId,
+              pair: intent.pair,
+              side: intent.side,
+              price: intent.price,
+              qty: intent.qty,
+              filledQty,
+              reason: 'exchange_order_cancelled',
+            },
+          );
+        } else {
+          await this.orderReservationService?.releaseLimitOrderReservation({
+            orderId,
+            userOrderId: orderScope.userOrderId,
+            accountLabel: orderScope.accountLabel,
+            userId: intent.userId,
+            intentId: intent.intentId,
+            releaseId: clientOrderId,
+            pair: intent.pair,
+            side: intent.side,
+            price: intent.price,
+            qty: intent.qty,
+            reason: 'exchange_create_rejected',
+          });
+        }
+      }
+
+      if (hasFilledQty && createAckStatus === 'cancelled') {
+        return;
       }
       throw new Error(
         `exchange create returned terminal status ${createAckStatus}`,
@@ -2420,6 +2481,51 @@ export class StrategyIntentExecutionService {
       intent,
       result,
       clientOrderId,
+    );
+  }
+
+  private async settleFilledCreateAck(
+    intent: StrategyOrderIntent,
+    exchangeOrderId: string,
+    clientOrderId: string,
+    filledQty: string,
+    result: Record<string, unknown>,
+  ): Promise<void> {
+    const price =
+      this.readStringFromRecord(result, 'average') ||
+      this.readStringFromRecord(result, 'price') ||
+      intent.price;
+
+    await this.fillSettlementService?.handleSessionFill(
+      {
+        runId: `${intent.intentId}:create-ack-fill`,
+        strategyKey: intent.strategyKey,
+        strategyType: this.extractStrategyType(
+          intent.strategyKey,
+        ) as StrategyRuntimeSession['strategyType'],
+        userId: intent.userId,
+        clientId: intent.clientId,
+        cadenceMs: 0,
+        nextRunAtMs: Date.now(),
+        marketMakingOrderId: this.resolveBaseUserOrderId(intent),
+        params: {
+          exchangeName: intent.exchange,
+          pair: intent.pair,
+          symbol: intent.pair,
+        },
+      },
+      {
+        orderId: this.resolveOrderIdForClientOrderId(intent),
+        exchangeOrderId,
+        clientOrderId,
+        accountLabel: intent.accountLabel,
+        role: this.resolveIntentRole(intent),
+        side: intent.side,
+        price,
+        qty: filledQty,
+        cumulativeQty: filledQty,
+        receivedAt: getRFC3339Timestamp(),
+      },
     );
   }
 
@@ -2559,7 +2665,11 @@ export class StrategyIntentExecutionService {
     if (normalized === 'closed' || normalized === 'filled') {
       return 'filled';
     }
-    if (normalized === 'canceled' || normalized === 'cancelled') {
+    if (
+      normalized === 'canceled' ||
+      normalized === 'cancelled' ||
+      normalized === 'expired'
+    ) {
       return 'cancelled';
     }
 
@@ -2624,6 +2734,22 @@ export class StrategyIntentExecutionService {
   }
 
   private extractStrategyType(strategyKey: string): string {
+    const knownStrategyTypes = [
+      'efficientDualAccountVolume',
+      'pureMarketMaking',
+      'timeIndicator',
+      'arbitrage',
+      'volume',
+    ];
+    const matchedType = knownStrategyTypes.find(
+      (strategyType) =>
+        strategyKey === strategyType || strategyKey.endsWith(`-${strategyType}`),
+    );
+
+    if (matchedType) {
+      return matchedType;
+    }
+
     const parts = strategyKey.split('-');
 
     if (parts.length <= 2) {

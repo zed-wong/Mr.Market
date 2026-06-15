@@ -211,6 +211,28 @@ describe('AdminOrdersService', () => {
     expect(result.filters.userOrderId).toBe('user-order-7');
   });
 
+  it('scopes results to a single direct order with an exact strategyKey filter', async () => {
+    const { service, queryBuilder } = buildService();
+
+    const result = await service.listOrders({
+      strategyKey: 'admin-direct-abc-efficientDualAccountVolume',
+    });
+
+    expect(queryBuilder.clauses).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sql: 'order.strategyKey = :strategyKey',
+          params: {
+            strategyKey: 'admin-direct-abc-efficientDualAccountVolume',
+          },
+        }),
+      ]),
+    );
+    expect(result.filters.strategyKey).toBe(
+      'admin-direct-abc-efficientDualAccountVolume',
+    );
+  });
+
   it('rejects an excessively long userOrderId without querying orders', async () => {
     const { service, queryBuilder } = buildService();
 

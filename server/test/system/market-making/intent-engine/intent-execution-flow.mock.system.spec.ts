@@ -11,7 +11,7 @@ describe('Intent execution flow (mock system)', () => {
 
   let helper: MarketMakingIntentLifecycleHelper;
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     log.suite('initializing helper');
     helper = new MarketMakingIntentLifecycleHelper({
       maxRetries: 1,
@@ -24,12 +24,10 @@ describe('Intent execution flow (mock system)', () => {
   afterEach(async () => {
     // Drain any leftover pending placements so they don't leak into the next test
     while (helper?.getPendingPlacements().length) {
-      helper.rejectNextPlacement('test cleanup');
+      helper.releaseNextPlacement();
     }
     await helper?.stopWorker();
-  });
 
-  afterAll(async () => {
     await helper?.close();
     log.suite('helper closed');
   });
@@ -202,14 +200,16 @@ describe('Intent execution flow (mock system)', () => {
       'NEW',
     ]);
     const firstPendingPlacements = await helper.waitForPendingPlacements(1);
+    const failedClientOrderId = firstPendingPlacements[0]?.clientOrderId;
 
     expect(firstPendingPlacements).toHaveLength(1);
     expect(firstSent[0]?.status).toBe('SENT');
+    expect(failedClientOrderId).toBeDefined();
 
     log.step('rejecting placement until retries are exhausted');
-    helper.rejectNextPlacement('exchange down');
+    helper.rejectPlacementByClientOrderId(failedClientOrderId, 'exchange down');
     await helper.waitForPendingPlacements(1);
-    helper.rejectNextPlacement('exchange down');
+    helper.rejectPlacementByClientOrderId(failedClientOrderId, 'exchange down');
 
     const failedState = await helper.waitForIntentStatuses(strategyKey, [
       'FAILED',
@@ -252,12 +252,21 @@ describe('Intent execution flow (mock system)', () => {
     log.step('starting worker');
     await helper.startWorker();
     await helper.waitForIntentStatuses(strategyKey, ['SENT', 'NEW']);
-    await helper.waitForPendingPlacements(1);
+    const firstPendingPlacements = await helper.waitForPendingPlacements(1);
+    const failedClientOrderId = firstPendingPlacements[0]?.clientOrderId;
+
+    expect(failedClientOrderId).toBeDefined();
 
     log.step('rejecting placement to trigger worker error logging');
-    helper.rejectNextPlacement('exchange api unavailable');
+    helper.rejectPlacementByClientOrderId(
+      failedClientOrderId,
+      'exchange api unavailable',
+    );
     await helper.waitForPendingPlacements(1);
-    helper.rejectNextPlacement('exchange api unavailable');
+    helper.rejectPlacementByClientOrderId(
+      failedClientOrderId,
+      'exchange api unavailable',
+    );
 
     const failedState = await helper.waitForIntentStatuses(strategyKey, [
       'SENT',

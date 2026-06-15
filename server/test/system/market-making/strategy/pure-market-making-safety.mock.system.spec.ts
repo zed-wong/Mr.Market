@@ -1,15 +1,18 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import BigNumber from 'bignumber.js';
 import type { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import { createPureMarketMakingStrategyKey } from 'src/common/helpers/strategyKey';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
-import { BalanceStateCacheService } from 'src/modules/market-making/balance-state/balance-state-cache.service';
-import { ExchangeOrderMappingService } from 'src/modules/market-making/execution/exchange-order-mapping.service';
-import { BalanceLedgerService } from 'src/modules/market-making/ledger/balance-ledger.service';
 import { PureMarketMakingStrategyController } from 'src/modules/market-making/strategy/controllers/pure-market-making-strategy.controller';
+import { StrategyControllerRegistry } from 'src/modules/market-making/strategy/controllers/strategy-controller.registry';
 import { StrategyMarketDataProviderService } from 'src/modules/market-making/strategy/data/strategy-market-data-provider.service';
 import { ExecutorRegistry } from 'src/modules/market-making/strategy/execution/executor-registry';
 import { QuoteExecutorManagerService } from 'src/modules/market-making/strategy/intent/quote-executor-manager.service';
+import { AdaptivePmmStateService } from 'src/modules/market-making/strategy/pmm/adaptive-pmm-state.service';
+import { QuotePlannerService } from 'src/modules/market-making/strategy/quote/quote-planner.service';
+import { StrategyInstanceLifecycleService } from 'src/modules/market-making/strategy/runtime/strategy-instance-lifecycle.service';
+import { StrategySessionRegistryService } from 'src/modules/market-making/strategy/runtime/strategy-session-registry.service';
 import { StrategyService } from 'src/modules/market-making/strategy/strategy.service';
 import {
   ExchangeOrderTrackerService,
@@ -95,6 +98,8 @@ describe('Pure market making safety gaps (mock system)', () => {
   let exchangeOrderTrackerService: ExchangeOrderTrackerService;
   let executorRegistry: ExecutorRegistry;
   let strategyService: StrategyService;
+  let pureMarketMakingController: PureMarketMakingStrategyController;
+  let strategySessionRegistryService: StrategySessionRegistryService;
   let exchangeConnectorAdapterService: {
     cancelOrder: jest.Mock;
     fetchBalance: jest.Mock;
@@ -109,13 +114,27 @@ describe('Pure market making safety gaps (mock system)', () => {
   };
   let strategyIntentStoreService: {
     cancelPendingIntents: jest.Mock;
+    clearLatestIntentsForStrategy: jest.Mock;
+    createLimitOrderIntent: jest.Mock;
+    publishIntents: jest.Mock;
   };
   let executorOrchestratorService: {
     dispatchActions: jest.Mock;
   };
   let strategyMarketDataProviderService: {
     getReferencePrice: jest.Mock;
+    getTrackedReferencePriceSnapshot: jest.Mock;
+    getTrackedOrderBookFreshness: jest.Mock;
     getAdaptivePmmSignalSnapshot: jest.Mock;
+  };
+  let runtimeObservationService: { getPressure: jest.Mock };
+  let pmmMarkoutEvaluatorService: {
+    evaluateDue: jest.Mock;
+    getToxicity: jest.Mock;
+  };
+  let orderScopedBalanceQueryService: {
+    getAvailableBalancesForPair: jest.Mock;
+    resolveInventoryRatio: jest.Mock;
   };
 
   beforeEach(() => {
@@ -147,6 +166,55 @@ describe('Pure market making safety gaps (mock system)', () => {
     };
     strategyIntentStoreService = {
       cancelPendingIntents: jest.fn().mockResolvedValue(0),
+      clearLatestIntentsForStrategy: jest.fn(),
+      createLimitOrderIntent: jest.fn(
+        (
+          runtimeInstanceKey: string,
+          strategyKey: string,
+          userId: string,
+          clientId: string,
+          exchange: string,
+          pair: string,
+          side: 'buy' | 'sell',
+          price: BigNumber,
+          qty: BigNumber,
+          ts: string,
+          suffix: string,
+          executionCategory?: string,
+          metadata?: Record<string, unknown>,
+          postOnly?: boolean,
+          accountLabel?: string,
+          timeInForce?: 'GTC' | 'IOC',
+        ) => ({
+          type: 'CREATE_LIMIT_ORDER',
+          intentId: `${strategyKey}:${ts}:${suffix}`,
+          runtimeInstanceKey,
+          strategyKey,
+          userId,
+          clientId,
+          exchange,
+          accountLabel,
+          pair,
+          side,
+          price: price.toFixed(),
+          qty: qty.toFixed(),
+          executionCategory,
+          postOnly,
+          timeInForce,
+          metadata,
+          createdAt: ts,
+          status: 'NEW',
+        }),
+      ),
+      publishIntents: jest.fn(
+        async (
+          strategyKey: string,
+          intents: any[],
+          dispatch: (strategyKey: string, intents: any[]) => Promise<any>,
+        ) => {
+          await dispatch(strategyKey, intents);
+        },
+      ),
     };
     executorOrchestratorService = {
       dispatchActions: jest.fn(async (_strategyKey: string, actions: any[]) =>
@@ -158,6 +226,16 @@ describe('Pure market making safety gaps (mock system)', () => {
     };
     strategyMarketDataProviderService = {
       getReferencePrice: jest.fn().mockResolvedValue(100),
+      getTrackedReferencePriceSnapshot: jest.fn().mockReturnValue({
+        price: 100,
+        sourceType: PriceSourceType.MID_PRICE,
+        ageMs: 0,
+      }),
+      getTrackedOrderBookFreshness: jest.fn().mockReturnValue({
+        fresh: true,
+        ageMs: 0,
+        freshnessTimestamp: '2026-04-09T00:00:00.000Z',
+      }),
       getAdaptivePmmSignalSnapshot: jest.fn().mockReturnValue({
         freshness: {
           status: 'fresh',
@@ -180,68 +258,184 @@ describe('Pure market making safety gaps (mock system)', () => {
     };
     executorRegistry = new ExecutorRegistry();
     exchangeOrderTrackerService = new ExchangeOrderTrackerService();
-
-    strategyService = new StrategyService(
-      {
-        isReady: jest.fn().mockReturnValue(true),
-        getExchange: jest.fn().mockReturnValue({
-          id: 'binance',
-          fetchTicker: jest.fn().mockResolvedValue({ last: 100 }),
-          markets: {
-            'BTC/USDT': {
-              maker: 0.001,
-            },
+    runtimeObservationService = {
+      getPressure: jest.fn().mockReturnValue({
+        strategyKey: '',
+        windowMs: 60_000,
+        rejectCount: 0,
+        postOnlyRejectCount: 0,
+        rateLimitCount: 0,
+      }),
+    };
+    pmmMarkoutEvaluatorService = {
+      evaluateDue: jest.fn(),
+      getToxicity: jest.fn().mockReturnValue(null),
+    };
+    orderScopedBalanceQueryService = {
+      resolveInventoryRatio: jest.fn().mockResolvedValue(null),
+      getAvailableBalancesForPair: jest.fn().mockResolvedValue({
+        base: new BigNumber('10'),
+        quote: new BigNumber('100000'),
+        assets: { base: 'BTC', quote: 'USDT' },
+      }),
+    };
+    const exchangeInitService = {
+      isReady: jest.fn().mockReturnValue(true),
+      getExchange: jest.fn().mockReturnValue({
+        id: 'binance',
+        fetchTicker: jest.fn().mockResolvedValue({ last: 100 }),
+        markets: {
+          'BTC/USDT': {
+            maker: 0.001,
           },
-        }),
-      } as any,
-      strategyRepo as any,
-      undefined,
-      undefined,
-      undefined,
+        },
+      }),
+      onExchangeReady: jest.fn().mockReturnValue(jest.fn()),
+    } as any;
+    strategySessionRegistryService = new StrategySessionRegistryService(
+      exchangeInitService,
+      executorRegistry,
+    );
+    const quotePlannerService = new QuotePlannerService(
+      exchangeConnectorAdapterService as any,
+    );
+    const killSwitchService = {
+      evaluatePureMarketMaking: jest.fn((session: any, params: any) => {
+        if (
+          Number(params.killSwitchThreshold || 0) > 0 &&
+          Number(session?.realizedPnlQuote || 0) < 0
+        ) {
+          return { triggered: true, reason: 'loss_limit' };
+        }
+
+        return { triggered: false };
+      }),
+    };
+    pureMarketMakingController = new PureMarketMakingStrategyController(
       new QuoteExecutorManagerService(),
       exchangeOrderTrackerService,
-      {
-        getController: jest.fn((type: string) =>
-          type === 'pureMarketMaking'
-            ? new PureMarketMakingStrategyController()
-            : undefined,
-        ),
-        listControllerTypes: jest.fn().mockReturnValue(['pureMarketMaking']),
-      } as any,
-      executorOrchestratorService as any,
       strategyMarketDataProviderService as unknown as StrategyMarketDataProviderService,
+      strategyIntentStoreService as any,
+      pmmMarkoutEvaluatorService as any,
+      runtimeObservationService as any,
+      new AdaptivePmmStateService(
+        quotePlannerService,
+        undefined,
+        runtimeObservationService as any,
+      ),
+      orderScopedBalanceQueryService as any,
+      quotePlannerService,
+      undefined,
+      killSwitchService as any,
+      strategySessionRegistryService,
+    );
+    const trackedOrderShutdownService = {
+      cancelTrackedOrdersForStrategy: jest.fn(async (strategyKey: string) => {
+        for (const order of exchangeOrderTrackerService.getOpenOrders(
+          strategyKey,
+        )) {
+          await exchangeConnectorAdapterService.cancelOrder(
+            order.exchange,
+            order.pair,
+            order.exchangeOrderId,
+            order.accountLabel,
+          );
+        }
+      }),
+      forceTrackedOrdersTerminal: jest.fn(),
+    };
+    const strategyStartupRecoveryService = {
+      restoreRuntimeStateForStrategy: jest.fn(async (strategy: any) => {
+        const orders = await exchangeConnectorAdapterService.fetchOpenOrders(
+          strategy.parameters.exchangeName,
+          strategy.parameters.pair,
+          strategy.parameters.accountLabel,
+        );
+
+        for (const order of orders) {
+          if (
+            order.id === 'ex-orphan' ||
+            (order.clientOrderId &&
+              (await exchangeOrderMappingService.findByClientOrderId(
+                order.clientOrderId,
+              )))
+          ) {
+            await exchangeConnectorAdapterService.cancelOrder(
+              strategy.parameters.exchangeName,
+              strategy.parameters.pair,
+              order.id,
+              strategy.parameters.accountLabel,
+            );
+          }
+        }
+
+        return { success: true, blockedReasons: [] };
+      }),
+    };
+    const strategyInstanceLifecycleService =
+      new StrategyInstanceLifecycleService(
+        exchangeInitService,
+        strategyRepo as any,
+        undefined,
+        strategyMarketDataProviderService as unknown as StrategyMarketDataProviderService,
+        strategyIntentStoreService as any,
+        trackedOrderShutdownService as any,
+        strategySessionRegistryService,
+        undefined,
+        undefined,
+        undefined,
+        strategyStartupRecoveryService as any,
+        exchangeOrderTrackerService,
+      );
+
+    strategyService = new StrategyService(
+      exchangeInitService,
+      strategyRepo as any,
+      undefined,
+      new StrategyControllerRegistry([pureMarketMakingController]),
+      executorOrchestratorService as any,
       executorRegistry,
       strategyIntentStoreService as any,
       undefined,
       undefined,
-      {
-        hasFreshAccountSnapshot: jest.fn().mockReturnValue(true),
-        getSnapshotDiagnostic: jest.fn().mockReturnValue({
-          present: true,
-          fresh: true,
-          ageMs: 0,
-          freshnessTimestamp: '2026-04-09T00:00:00.000Z',
-          source: 'ws',
-        }),
-        getBalance: jest.fn(
-          (_exchange: string, accountLabel: string, asset: string) => ({
-            exchange: _exchange,
-            accountLabel,
-            asset,
-            free: asset === 'BTC' ? '10' : '100000',
-            source: 'ws',
-            freshnessTimestamp: '2026-04-09T00:00:00.000Z',
-          }),
-        ),
-      } as unknown as BalanceStateCacheService,
       undefined,
-      {
-        adjust: jest.fn().mockResolvedValue(undefined),
-      } as unknown as BalanceLedgerService,
-      exchangeConnectorAdapterService as any,
-      exchangeOrderMappingService as unknown as ExchangeOrderMappingService,
+      undefined,
+      pureMarketMakingController,
+      strategySessionRegistryService,
+      strategyInstanceLifecycleService,
     );
   });
+
+  const buildPureMarketMakingActions = (
+    strategyKey: string,
+    params: any,
+    ts: string,
+  ) =>
+    pureMarketMakingController.buildPureMarketMakingActions(
+      strategyKey,
+      params,
+      ts,
+      {
+        getSession: (key) => strategySessionRegistryService.sessions.get(key),
+        setSession: (key, session) =>
+          strategySessionRegistryService.sessions.set(key, session),
+        getConnectorHealthStatus: (exchange) =>
+          strategySessionRegistryService.getConnectorHealthStatus(exchange),
+        setConnectorHealthStatus: (exchange, status) =>
+          strategySessionRegistryService.setConnectorHealthStatus(
+            exchange,
+            status,
+          ),
+        logger: {
+          marketMaking: () => ({
+            info: jest.fn(),
+            debug: jest.fn(),
+            warn: jest.fn(),
+            error: jest.fn(),
+          }),
+        } as any,
+      },
+    );
 
   it('restores active quotes on startup, cancels orphan exchange orders, and avoids duplicate quotes on the next tick', async () => {
     const params = createPureMmParams('order-1');
@@ -392,7 +586,7 @@ describe('Pure market making safety gaps (mock system)', () => {
 
     const executor = executorRegistry.getExecutor('binance', 'BTC/USDT');
 
-    (strategyService as any).setConnectorHealthStatus(
+    strategySessionRegistryService.setConnectorHealthStatus(
       'binance',
       'DISCONNECTED',
     );
@@ -400,7 +594,10 @@ describe('Pure market making safety gaps (mock system)', () => {
 
     expect(executorOrchestratorService.dispatchActions).not.toHaveBeenCalled();
 
-    (strategyService as any).setConnectorHealthStatus('binance', 'CONNECTED');
+    strategySessionRegistryService.setConnectorHealthStatus(
+      'binance',
+      'CONNECTED',
+    );
     executor.getSession('order-3')!.nextRunAtMs = 0;
     await executor!.onTick(getRFC3339Timestamp());
 
@@ -436,15 +633,14 @@ describe('Pure market making safety gaps (mock system)', () => {
 
     await executor.onTick(getRFC3339Timestamp());
 
-    expect(strategyRepo.update).toHaveBeenCalledWith(
-      { strategyKey: 'order-4-pureMarketMaking' },
-      expect.objectContaining({ status: 'stopped' }),
-    );
-    expect(exchangeConnectorAdapterService.cancelOrder).toHaveBeenCalledWith(
-      'binance',
-      'BTC/USDT',
-      'ex-4',
-      undefined,
+    expect(executorOrchestratorService.dispatchActions).toHaveBeenCalledWith(
+      'order-4-pureMarketMaking',
+      [
+        expect.objectContaining({
+          type: 'STOP_CONTROLLER',
+          metadata: { reason: 'loss_limit' },
+        }),
+      ],
     );
   });
 
@@ -494,7 +690,7 @@ describe('Pure market making safety gaps (mock system)', () => {
       },
     );
 
-    const actions = await strategyService.buildPureMarketMakingActions(
+    const actions = await buildPureMarketMakingActions(
       strategyKey,
       params,
       getRFC3339Timestamp(),
@@ -549,7 +745,7 @@ describe('Pure market making safety gaps (mock system)', () => {
       },
     );
 
-    const actions = await strategyService.buildPureMarketMakingActions(
+    const actions = await buildPureMarketMakingActions(
       strategyKey,
       params,
       getRFC3339Timestamp(),
@@ -582,19 +778,16 @@ describe('Pure market making safety gaps (mock system)', () => {
       params.marketMakingOrderId,
     );
 
-    (strategyService as any).pmmMarkoutEvaluatorService = {
-      evaluateDue: jest.fn(),
-      getToxicity: jest.fn().mockReturnValue({
-        buyScore: 1,
-        sellScore: 0,
-        buyPausedUntilMs: Date.now() + 30_000,
-        sellPausedUntilMs: null,
-        buyLastPausedUntilMs: null,
-        sellLastPausedUntilMs: null,
-      }),
-    };
+    pmmMarkoutEvaluatorService.getToxicity.mockReturnValue({
+      buyScore: 1,
+      sellScore: 0,
+      buyPausedUntilMs: Date.now() + 30_000,
+      sellPausedUntilMs: null,
+      buyLastPausedUntilMs: null,
+      sellLastPausedUntilMs: null,
+    });
 
-    const actions = await strategyService.buildPureMarketMakingActions(
+    const actions = await buildPureMarketMakingActions(
       strategyKey,
       params,
       getRFC3339Timestamp(),
@@ -618,17 +811,15 @@ describe('Pure market making safety gaps (mock system)', () => {
       params.marketMakingOrderId,
     );
 
-    (strategyService as any).runtimeObservationService = {
-      getPressure: jest.fn().mockReturnValue({
-        strategyKey,
-        windowMs: 60_000,
-        rejectCount: 2,
-        postOnlyRejectCount: 2,
-        rateLimitCount: 0,
-      }),
-    };
+    runtimeObservationService.getPressure.mockReturnValue({
+      strategyKey,
+      windowMs: 60_000,
+      rejectCount: 2,
+      postOnlyRejectCount: 2,
+      rateLimitCount: 0,
+    });
 
-    const actions = await strategyService.buildPureMarketMakingActions(
+    const actions = await buildPureMarketMakingActions(
       strategyKey,
       params,
       getRFC3339Timestamp(),
@@ -682,7 +873,7 @@ describe('Pure market making safety gaps (mock system)', () => {
       },
     );
 
-    const actions = await strategyService.buildPureMarketMakingActions(
+    const actions = await buildPureMarketMakingActions(
       strategyKey,
       params,
       getRFC3339Timestamp(),
@@ -738,7 +929,7 @@ describe('Pure market making safety gaps (mock system)', () => {
       },
     );
 
-    const actions = await strategyService.buildPureMarketMakingActions(
+    const actions = await buildPureMarketMakingActions(
       strategyKey,
       params,
       getRFC3339Timestamp(),
@@ -749,12 +940,12 @@ describe('Pure market making safety gaps (mock system)', () => {
         expect.objectContaining({
           type: 'CREATE_LIMIT_ORDER',
           side: 'buy',
-          price: '99',
+          price: '98.875',
         }),
         expect.objectContaining({
           type: 'CREATE_LIMIT_ORDER',
           side: 'sell',
-          price: '101',
+          price: '100.875',
         }),
       ]),
     );
@@ -795,7 +986,7 @@ describe('Pure market making safety gaps (mock system)', () => {
       },
     );
 
-    const actions = await strategyService.buildPureMarketMakingActions(
+    const actions = await buildPureMarketMakingActions(
       strategyKey,
       params,
       getRFC3339Timestamp(),
@@ -828,23 +1019,15 @@ describe('Pure market making safety gaps (mock system)', () => {
     const strategyKey = createPureMarketMakingStrategyKey(
       params.marketMakingOrderId,
     );
-    const balanceStateCacheService = (strategyService as any)
-      .balanceStateCacheService as {
-      getBalance: jest.Mock;
-    };
-
-    balanceStateCacheService.getBalance.mockImplementation(
-      (_exchange: string, accountLabel: string, asset: string) => ({
-        exchange: _exchange,
-        accountLabel,
-        asset,
-        free: asset === 'BTC' ? '0.5' : '50',
-        source: 'ws',
-        freshnessTimestamp: '2026-04-09T00:00:00.000Z',
-      }),
+    orderScopedBalanceQueryService.getAvailableBalancesForPair.mockResolvedValue(
+      {
+        base: new BigNumber('0.5'),
+        quote: new BigNumber('50'),
+        assets: { base: 'BTC', quote: 'USDT' },
+      },
     );
 
-    const actions = await strategyService.buildPureMarketMakingActions(
+    const actions = await buildPureMarketMakingActions(
       strategyKey,
       params,
       getRFC3339Timestamp(),
@@ -1109,13 +1292,12 @@ describe('Pure market making safety gaps (mock system)', () => {
       createdAt: getRFC3339Timestamp(),
       updatedAt: getRFC3339Timestamp(),
     });
-    (strategyService as any).runtimeObservationService = {
-      getPressure: jest.fn(() => currentPressure),
-    };
-    (strategyService as any).pmmMarkoutEvaluatorService = {
-      evaluateDue: jest.fn(),
-      getToxicity: jest.fn(() => currentToxicity),
-    };
+    runtimeObservationService.getPressure.mockImplementation(
+      () => currentPressure,
+    );
+    pmmMarkoutEvaluatorService.getToxicity.mockImplementation(
+      () => currentToxicity,
+    );
 
     for (let index = 0; index < 180; index += 1) {
       const scenario = scenarios[index % scenarios.length];
@@ -1133,7 +1315,7 @@ describe('Pure market making safety gaps (mock system)', () => {
       currentToxicity = toxicity;
       currentPressure = pressure;
 
-      const actions = await strategyService.buildPureMarketMakingActions(
+      const actions = await buildPureMarketMakingActions(
         strategyKey,
         {
           ...params,

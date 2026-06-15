@@ -98,6 +98,7 @@ describe('ReconciliationService persistence parity (system)', () => {
     await balanceRepository.save(
       balanceRepository.create({
         orderId: 'order-1',
+        userOrderId: 'order-1',
         userId: 'u1',
         assetId: 'usdt',
         available: '70',
@@ -115,6 +116,7 @@ describe('ReconciliationService persistence parity (system)', () => {
     await balanceRepository.save(
       balanceRepository.create({
         orderId: 'order-1',
+        userOrderId: 'order-1',
         userId: 'u1',
         assetId: 'usdt',
         available: '60',

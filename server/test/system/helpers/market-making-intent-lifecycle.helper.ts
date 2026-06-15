@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken, TypeOrmModule } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
+import * as ccxt from 'ccxt';
 import { Contribution } from 'src/common/entities/campaign/contribution.entity';
 import { ExchangeOrderMapping } from 'src/common/entities/market-making/exchange-order-mapping.entity';
 import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';
@@ -196,6 +197,11 @@ export class MarketMakingIntentLifecycleHelper {
     };
     const strategyMarketDataProviderServiceMock = {
       getReferencePrice: jest.fn(async () => 100),
+      getTrackedReferencePriceSnapshot: jest.fn(() => ({
+        price: 100,
+        sourceType: PriceSourceType.MID_PRICE,
+        ageMs: 0,
+      })),
       getBestBidAsk: jest.fn(async () => ({ bestBid: 99.5, bestAsk: 100.5 })),
       getTrackedOrderBookFreshness: jest.fn(() => ({
         fresh: true,
@@ -510,7 +516,24 @@ export class MarketMakingIntentLifecycleHelper {
       throw new Error('No pending placements to reject');
     }
 
-    placement.reject(new Error(message));
+    placement.reject(new ccxt.ExchangeError(message));
+  }
+
+  rejectPlacementByClientOrderId(
+    clientOrderId: string,
+    message = 'simulated placement failure',
+  ): void {
+    const index = this.pendingPlacements.findIndex(
+      (placement) => placement.clientOrderId === clientOrderId,
+    );
+
+    if (index === -1) {
+      throw new Error(`No pending placement for clientOrderId=${clientOrderId}`);
+    }
+
+    const [placement] = this.pendingPlacements.splice(index, 1);
+
+    placement.reject(new ccxt.ExchangeError(message));
   }
 
   private async sleep(ms: number): Promise<void> {

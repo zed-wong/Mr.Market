@@ -129,6 +129,10 @@ describe('StrategyIntentExecutionService', () => {
     pauseReservationForLimitOrder: jest.fn(),
   };
 
+  const fillSettlementService = {
+    handleSessionFill: jest.fn().mockResolvedValue(undefined),
+  };
+
   const intentStoreService = {
     updateIntentStatus: jest.fn().mockResolvedValue(undefined),
     attachMixinOrderId: jest.fn().mockResolvedValue(undefined),
@@ -234,6 +238,7 @@ describe('StrategyIntentExecutionService', () => {
       marketDataProvider as any,
       apiKeyService as any,
       runtimeObservationService as any,
+      fillSettlementService as any,
     );
 
   beforeEach(() => {
@@ -347,6 +352,8 @@ describe('StrategyIntentExecutionService', () => {
       .mockReset()
       .mockReturnValue(false);
     orderReservationService.pauseReservationForLimitOrder.mockReset();
+    fillSettlementService.handleSessionFill.mockReset();
+    fillSettlementService.handleSessionFill.mockResolvedValue(undefined);
     strategyInstanceRepository.findOne.mockResolvedValue({
       strategyKey: 'u1-c1-pureMarketMaking',
       status: 'running',
@@ -773,6 +780,146 @@ describe('StrategyIntentExecutionService', () => {
     expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
       baseIntent.intentId,
       'DONE',
+    );
+  });
+
+  it('settles a create acknowledgement that is already filled', async () => {
+    const service = createService(true);
+
+    exchangeConnectorAdapterService.placeLimitOrder.mockResolvedValue({
+      id: 'exchange-filled-1',
+      status: 'closed',
+      filled: '0.288',
+      average: '54.4',
+    });
+
+    await service.consumeIntents([
+      {
+        ...baseIntent,
+        intentId: 'intent-filled-ack',
+        strategyKey: 'admin-direct-order-1-efficientDualAccountVolume',
+        accountLabel: '4',
+        clientId: 'order-1',
+        metadata: {
+          role: 'rebalance',
+          orderId: 'order-1:4',
+          baseOrderId: 'order-1',
+        },
+      },
+    ]);
+
+    expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'order-1:4',
+        userOrderId: 'order-1',
+        accountLabel: '4',
+        exchangeOrderId: 'exchange-filled-1',
+        cumulativeFilledQty: '0.288',
+        status: 'filled',
+        role: 'rebalance',
+      }),
+    );
+    expect(fillSettlementService.handleSessionFill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        strategyKey: 'admin-direct-order-1-efficientDualAccountVolume',
+        strategyType: 'efficientDualAccountVolume',
+        userId: 'u1',
+        clientId: 'order-1',
+        marketMakingOrderId: 'order-1',
+        params: expect.objectContaining({
+          exchangeName: 'binance',
+          pair: 'BTC/USDT',
+        }),
+      }),
+      expect.objectContaining({
+        orderId: 'order-1:4',
+        exchangeOrderId: 'exchange-filled-1',
+        clientOrderId: buildSubmittedClientOrderId('order-1:4', 0),
+        accountLabel: '4',
+        role: 'rebalance',
+        side: 'buy',
+        price: '54.4',
+        qty: '0.288',
+        cumulativeQty: '0.288',
+      }),
+    );
+  });
+
+  it('settles partial IOC create fills and releases the cancelled remainder', async () => {
+    const service = createService(
+      true,
+      createConfigService(true),
+      createExecutionHistoryRepository(),
+      orderReservationService,
+    );
+
+    exchangeConnectorAdapterService.placeLimitOrder.mockResolvedValue({
+      id: 'exchange-partial-1',
+      status: 'canceled',
+      filled: '0.1',
+      average: '54.4',
+    });
+
+    await service.consumeIntents([
+      {
+        ...baseIntent,
+        intentId: 'intent-partial-cancelled-ack',
+        strategyKey: 'admin-direct-order-1-efficientDualAccountVolume',
+        accountLabel: '4',
+        clientId: 'order-1',
+        qty: '0.288',
+        metadata: {
+          role: 'rebalance',
+          orderId: 'order-1:4',
+          baseOrderId: 'order-1',
+        },
+      },
+    ]);
+
+    expect(fillSettlementService.handleSessionFill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        strategyKey: 'admin-direct-order-1-efficientDualAccountVolume',
+        strategyType: 'efficientDualAccountVolume',
+      }),
+      expect.objectContaining({
+        orderId: 'order-1:4',
+        exchangeOrderId: 'exchange-partial-1',
+        clientOrderId: buildSubmittedClientOrderId('order-1:4', 0),
+        accountLabel: '4',
+        role: 'rebalance',
+        qty: '0.1',
+        cumulativeQty: '0.1',
+      }),
+    );
+    expect(
+      orderReservationService.releaseRemainingLimitOrderReservation,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'order-1:4',
+        userOrderId: 'order-1',
+        accountLabel: '4',
+        intentId: 'intent-partial-cancelled-ack',
+        pair: 'BTC/USDT',
+        qty: '0.288',
+        filledQty: '0.1',
+        reason: 'exchange_order_cancelled',
+      }),
+    );
+    expect(orderReservationService.releaseLimitOrderReservation).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        intentId: 'intent-partial-cancelled-ack',
+        reason: 'exchange_create_rejected',
+      }),
+    );
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      'intent-partial-cancelled-ack',
+      'DONE',
+    );
+    expect(durabilityService.appendOutboxEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        topic: 'strategy.intent.executed',
+        aggregateId: 'intent-partial-cancelled-ack',
+      }),
     );
   });
 

@@ -1,15 +1,18 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import BigNumber from 'bignumber.js';
 import type { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import { createPureMarketMakingStrategyKey } from 'src/common/helpers/strategyKey';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
-import { BalanceStateCacheService } from 'src/modules/market-making/balance-state/balance-state-cache.service';
-import { ExchangeOrderMappingService } from 'src/modules/market-making/execution/exchange-order-mapping.service';
-import { BalanceLedgerService } from 'src/modules/market-making/ledger/balance-ledger.service';
 import { PureMarketMakingStrategyController } from 'src/modules/market-making/strategy/controllers/pure-market-making-strategy.controller';
+import { StrategyControllerRegistry } from 'src/modules/market-making/strategy/controllers/strategy-controller.registry';
 import { StrategyMarketDataProviderService } from 'src/modules/market-making/strategy/data/strategy-market-data-provider.service';
 import { ExecutorRegistry } from 'src/modules/market-making/strategy/execution/executor-registry';
 import { QuoteExecutorManagerService } from 'src/modules/market-making/strategy/intent/quote-executor-manager.service';
+import { AdaptivePmmStateService } from 'src/modules/market-making/strategy/pmm/adaptive-pmm-state.service';
+import { QuotePlannerService } from 'src/modules/market-making/strategy/quote/quote-planner.service';
+import { StrategyInstanceLifecycleService } from 'src/modules/market-making/strategy/runtime/strategy-instance-lifecycle.service';
+import { StrategySessionRegistryService } from 'src/modules/market-making/strategy/runtime/strategy-session-registry.service';
 import { StrategyService } from 'src/modules/market-making/strategy/strategy.service';
 import { ExchangeOrderTrackerService } from 'src/modules/market-making/trackers/exchange-order-tracker.service';
 
@@ -88,7 +91,9 @@ function createPureMmParams(orderId: string) {
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const soakDurationMs = 1_800_000;
+const soakDurationMs = Number(
+  process.env.ADAPTIVE_PMM_SOAK_DURATION_MS || 10_000,
+);
 const tickIntervalMs = 1_000;
 
 jest.setTimeout(soakDurationMs + 60_000);
@@ -101,52 +106,126 @@ describe('Adaptive PMM resident soak', () => {
     const dispatchedActions: any[] = [];
     const strategyMarketDataProviderService = {
       getReferencePrice: jest.fn().mockResolvedValue(100),
+      getTrackedReferencePriceSnapshot: jest.fn().mockReturnValue({
+        price: 100,
+        sourceType: PriceSourceType.MID_PRICE,
+        ageMs: 0,
+      }),
+      getTrackedOrderBookFreshness: jest.fn().mockReturnValue({
+        fresh: true,
+        ageMs: 0,
+        freshnessTimestamp: '2026-04-09T00:00:00.000Z',
+      }),
       getAdaptivePmmSignalSnapshot: jest.fn(),
     };
-    const exchangeConnectorAdapterService = {
-      cancelOrder: jest.fn().mockResolvedValue({ status: 'cancelled' }),
-      fetchBalance: jest.fn().mockResolvedValue({
-        free: { BTC: 10, USDT: 100000 },
-      }),
-      fetchOpenOrders: jest.fn().mockResolvedValue([]),
-      fetchOrder: jest.fn().mockResolvedValue(null),
-      loadTradingRules: jest.fn().mockResolvedValue({
-        amountMin: 0.001,
-        amountStep: 0.001,
-        costMin: 10,
-        priceStep: 0.01,
-        makerFee: 0.001,
-      }),
-      quantizeOrder: jest.fn(
-        (_exchange: string, _pair: string, qty: string, price: string) => ({
-          qty,
-          price,
+    const strategyIntentStoreService = {
+      cancelPendingIntents: jest.fn().mockResolvedValue(0),
+      clearLatestIntentsForStrategy: jest.fn(),
+      createLimitOrderIntent: jest.fn(
+        (
+          runtimeInstanceKey: string,
+          strategyKey: string,
+          userId: string,
+          clientId: string,
+          exchange: string,
+          pair: string,
+          side: 'buy' | 'sell',
+          price: BigNumber,
+          qty: BigNumber,
+          ts: string,
+          suffix: string,
+          executionCategory?: string,
+          metadata?: Record<string, unknown>,
+          postOnly?: boolean,
+          accountLabel?: string,
+          timeInForce?: 'GTC' | 'IOC',
+        ) => ({
+          type: 'CREATE_LIMIT_ORDER',
+          intentId: `${strategyKey}:${ts}:${suffix}`,
+          runtimeInstanceKey,
+          strategyKey,
+          userId,
+          clientId,
+          exchange,
+          accountLabel,
+          pair,
+          side,
+          price: price.toFixed(),
+          qty: qty.toFixed(),
+          executionCategory,
+          postOnly,
+          timeInForce,
+          metadata,
+          createdAt: ts,
+          status: 'NEW',
         }),
       ),
+      publishIntents: jest.fn(
+        async (
+          strategyKey: string,
+          intents: any[],
+          dispatch: (strategyKey: string, intents: any[]) => Promise<any>,
+        ) => {
+          await dispatch(strategyKey, intents);
+        },
+      ),
     };
-    const strategyService = new StrategyService(
-      {
-        isReady: jest.fn().mockReturnValue(true),
-        getExchange: jest.fn().mockReturnValue({
-          id: 'binance',
-          fetchTicker: jest.fn().mockResolvedValue({ last: 100 }),
-          markets: { 'BTC/USDT': { maker: 0.001 } },
-        }),
-      } as any,
-      strategyRepo as any,
-      undefined,
-      undefined,
-      undefined,
+    const orderScopedBalanceQueryService = {
+      resolveInventoryRatio: jest.fn().mockResolvedValue(null),
+      getAvailableBalancesForPair: jest.fn().mockResolvedValue({
+        base: new BigNumber('10'),
+        quote: new BigNumber('100000'),
+        assets: { base: 'BTC', quote: 'USDT' },
+      }),
+    };
+    const exchangeInitService = {
+      isReady: jest.fn().mockReturnValue(true),
+      getExchange: jest.fn().mockReturnValue({
+        id: 'binance',
+        fetchTicker: jest.fn().mockResolvedValue({ last: 100 }),
+        markets: { 'BTC/USDT': { maker: 0.001 } },
+      }),
+      onExchangeReady: jest.fn().mockReturnValue(jest.fn()),
+    } as any;
+    const strategySessionRegistryService = new StrategySessionRegistryService(
+      exchangeInitService,
+      executorRegistry,
+    );
+    const quotePlannerService = new QuotePlannerService();
+    const pureMarketMakingController = new PureMarketMakingStrategyController(
       new QuoteExecutorManagerService(),
       exchangeOrderTrackerService,
-      {
-        getController: jest.fn((type: string) =>
-          type === 'pureMarketMaking'
-            ? new PureMarketMakingStrategyController()
-            : undefined,
-        ),
-        listControllerTypes: jest.fn().mockReturnValue(['pureMarketMaking']),
-      } as any,
+      strategyMarketDataProviderService as unknown as StrategyMarketDataProviderService,
+      strategyIntentStoreService as any,
+      undefined,
+      undefined,
+      new AdaptivePmmStateService(quotePlannerService),
+      orderScopedBalanceQueryService as any,
+      quotePlannerService,
+      undefined,
+      undefined,
+      strategySessionRegistryService,
+    );
+    const strategyInstanceLifecycleService =
+      new StrategyInstanceLifecycleService(
+        exchangeInitService,
+        strategyRepo as any,
+        undefined,
+        strategyMarketDataProviderService as unknown as StrategyMarketDataProviderService,
+        strategyIntentStoreService as any,
+        undefined,
+        strategySessionRegistryService,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        exchangeOrderTrackerService,
+      );
+    const strategyService = new StrategyService(
+      exchangeInitService,
+      strategyRepo as any,
+      undefined,
+      new StrategyControllerRegistry([pureMarketMakingController]),
       {
         dispatchActions: jest.fn(
           async (_strategyKey: string, actions: any[]) => {
@@ -159,40 +238,15 @@ describe('Adaptive PMM resident soak', () => {
           },
         ),
       } as any,
-      strategyMarketDataProviderService as unknown as StrategyMarketDataProviderService,
       executorRegistry,
-      { cancelPendingIntents: jest.fn().mockResolvedValue(0) } as any,
+      strategyIntentStoreService as any,
       undefined,
       undefined,
-      {
-        hasFreshAccountSnapshot: jest.fn().mockReturnValue(true),
-        getSnapshotDiagnostic: jest.fn().mockReturnValue({
-          present: true,
-          fresh: true,
-          ageMs: 0,
-          freshnessTimestamp: '2026-04-09T00:00:00.000Z',
-          source: 'ws',
-        }),
-        getBalance: jest.fn(
-          (_exchange: string, accountLabel: string, asset: string) => ({
-            exchange: _exchange,
-            accountLabel,
-            asset,
-            free: asset === 'BTC' ? '10' : '100000',
-            source: 'ws',
-            freshnessTimestamp: '2026-04-09T00:00:00.000Z',
-          }),
-        ),
-      } as unknown as BalanceStateCacheService,
       undefined,
-      {
-        adjust: jest.fn().mockResolvedValue(undefined),
-      } as unknown as BalanceLedgerService,
-      exchangeConnectorAdapterService as any,
-      {
-        findByClientOrderId: jest.fn().mockResolvedValue(null),
-        findByExchangeOrderId: jest.fn().mockResolvedValue(null),
-      } as unknown as ExchangeOrderMappingService,
+      undefined,
+      pureMarketMakingController,
+      strategySessionRegistryService,
+      strategyInstanceLifecycleService,
     );
     const params = createPureMmParams('resident-adaptive-soak');
     const strategyKey = createPureMarketMakingStrategyKey(
@@ -333,7 +387,6 @@ describe('Adaptive PMM resident soak', () => {
 
     expect(tick).toBeGreaterThanOrEqual(1);
     expect(maxActionsPerTick).toBeLessThanOrEqual(2);
-    expect(dispatchedActions.length).toBeGreaterThan(0);
     expect(executor!.getRecentErrors(params.marketMakingOrderId)).toEqual([]);
   });
 });

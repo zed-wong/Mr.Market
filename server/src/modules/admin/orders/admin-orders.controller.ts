@@ -44,6 +44,12 @@ export class AdminOrdersController {
       'Exact user (market-making) order id to scope exchange orders to a single user order.',
   })
   @ApiQuery({
+    name: 'strategyKey',
+    required: false,
+    description:
+      'Exact strategy key to scope exchange orders to a single direct order (all account legs).',
+  })
+  @ApiQuery({
     name: 'limit',
     required: false,
     description: 'Page size. Defaults to 25 and is capped at 100.',
@@ -58,6 +64,7 @@ export class AdminOrdersController {
     @Query('side') side?: string,
     @Query('query') query?: string,
     @Query('userOrderId') userOrderId?: string,
+    @Query('strategyKey') strategyKey?: string,
     @Query('limit') limit?: string,
     @Query('page') page?: string,
   ) {
@@ -66,6 +73,7 @@ export class AdminOrdersController {
       side,
       query,
       userOrderId,
+      strategyKey,
       limit,
       page,
     });
