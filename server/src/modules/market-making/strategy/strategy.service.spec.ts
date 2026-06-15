@@ -22,13 +22,13 @@ import { TrackedOrderShutdownService } from '../trackers/tracked-order-shutdown.
 import { UserStreamIngestionService } from '../trackers/user-stream-ingestion.service';
 import { PureMarketMakingStrategyDto } from './config/strategy.dto';
 import { ArbitrageStrategyController } from './controllers/arbitrage-strategy.controller';
-import { EfficientDualAccountRuntimeService } from './dual-account/efficient-dual-account-runtime.service';
 import { PureMarketMakingStrategyController } from './controllers/pure-market-making-strategy.controller';
 import { StrategyControllerRegistry } from './controllers/strategy-controller.registry';
 import { TimeIndicatorStrategyController } from './controllers/time-indicator-strategy.controller';
 import { VolumeStrategyController } from './controllers/volume-strategy.controller';
 import { StrategyMarketDataProviderService } from './data/strategy-market-data-provider.service';
 import { DualAccountPlannerService } from './dual-account/dual-account-planner.service';
+import { EfficientDualAccountRuntimeService } from './dual-account/efficient-dual-account-runtime.service';
 import { ExecutorRegistry } from './execution/executor-registry';
 import { StrategyIntentStoreService } from './execution/strategy-intent-store.service';
 import { ExecutorOrchestratorService } from './intent/executor-orchestrator.service';
@@ -1549,7 +1549,7 @@ describe('StrategyService', () => {
         parameters: expect.objectContaining({
           publishedCycles: 3,
           completedCycles: 2,
-          tradedQuoteVolume: 420,
+          tradedQuoteVolume: 0,
           inventoryBaseQty: 1,
           inventoryCostQuote: 100,
           realizedPnlQuote: 0,
@@ -1561,9 +1561,9 @@ describe('StrategyService', () => {
 
     expect(executor?.getSession('client1')).toEqual(
       expect.objectContaining({
-        tradedQuoteVolume: 420,
+        tradedQuoteVolume: 0,
         params: expect.objectContaining({
-          tradedQuoteVolume: 420,
+          tradedQuoteVolume: 0,
           inventoryBaseQty: 1,
           inventoryCostQuote: 100,
         }),
@@ -1674,7 +1674,7 @@ describe('StrategyService', () => {
     );
   });
 
-  it('counts traded quote volume only from tracked taker fills', async () => {
+  it('updates matched fill progress without counting single-leg traded volume', async () => {
     const params = {
       exchangeName: 'binance',
       symbol: 'BTC/USDT',
@@ -1758,7 +1758,7 @@ describe('StrategyService', () => {
       { strategyKey: 'user1-client1-efficientDualAccountVolume' },
       expect.objectContaining({
         parameters: expect.objectContaining({
-          tradedQuoteVolume: 40,
+          tradedQuoteVolume: 0,
           inventoryBaseQty: 0,
           inventoryCostQuote: 0,
           realizedPnlQuote: 0,
@@ -1799,6 +1799,8 @@ describe('StrategyService', () => {
         requestedQty: '1',
         makerFilledQty: '0.4',
         takerFilledQty: '0.4',
+        matchedFilledQty: '0.4',
+        matchedQuoteVolume: '40',
       },
     };
     const buildActionsSpy = jest
@@ -1833,6 +1835,8 @@ describe('StrategyService', () => {
       expect.objectContaining({
         parameters: expect.objectContaining({
           completedCycles: 1,
+          totalMatchedQuoteVolume: 40,
+          tradedQuoteVolume: 40,
           activeCycle: undefined,
         }),
       }),
@@ -2758,7 +2762,10 @@ describe('StrategyService', () => {
       observedAtMs: Date.now() - 500,
     });
     jest
-      .spyOn(efficientDualAccountRuntimeService, 'buildEfficientDualAccountVolumeActions')
+      .spyOn(
+        efficientDualAccountRuntimeService,
+        'buildEfficientDualAccountVolumeActions',
+      )
       .mockResolvedValue([]);
 
     await expect(
@@ -2832,7 +2839,10 @@ describe('StrategyService', () => {
     });
     exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([]);
     jest
-      .spyOn(efficientDualAccountRuntimeService, 'buildEfficientDualAccountVolumeActions')
+      .spyOn(
+        efficientDualAccountRuntimeService,
+        'buildEfficientDualAccountVolumeActions',
+      )
       .mockResolvedValue([]);
 
     for (let index = 1; index <= 4; index += 1) {

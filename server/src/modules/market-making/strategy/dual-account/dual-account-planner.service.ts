@@ -16,8 +16,8 @@ import type {
   DualAccountExecutionPlan,
   DualAccountPairBalances,
   DualAccountRebalanceCandidate,
-  DualAccountResolvedAccounts,
   DualAccountRepairContext,
+  DualAccountResolvedAccounts,
   DualAccountSafetyBufferConfig,
   DualAccountTradeabilityPlan,
   DualAccountVolumeStrategyParams,
@@ -1160,8 +1160,7 @@ export class DualAccountPlannerService {
     return {
       ...params,
       publishedCycles:
-        Number(params.publishedCycles || 0) +
-        (tradeAction ? 1 : 0),
+        Number(params.publishedCycles || 0) + (tradeAction ? 1 : 0),
       consecutiveFallbackCycles: Number.isFinite(consecutiveFallbackCycles)
         ? consecutiveFallbackCycles
         : Number(params.consecutiveFallbackCycles || 0),
@@ -1238,10 +1237,10 @@ export class DualAccountPlannerService {
       return true;
     }
 
-    const activeBaseOrderId = this.stripKnownAccountScope(
-      activeCycle.orderId,
-      [activeCycle.makerAccountLabel, activeCycle.takerAccountLabel],
-    );
+    const activeBaseOrderId = this.stripKnownAccountScope(activeCycle.orderId, [
+      activeCycle.makerAccountLabel,
+      activeCycle.takerAccountLabel,
+    ]);
     const trackedBaseOrderId = this.stripKnownAccountScope(
       trackedOrder.orderId,
       [activeCycle.makerAccountLabel, activeCycle.takerAccountLabel],
@@ -1268,7 +1267,7 @@ export class DualAccountPlannerService {
       return orderId;
     }
 
-    return orderId.slice(0, -1 * (`:${matchedAccountLabel}`.length));
+    return orderId.slice(0, -1 * `:${matchedAccountLabel}`.length);
   }
 
   updateMatchedCycleMetrics(
@@ -1376,6 +1375,7 @@ export class DualAccountPlannerService {
         )
           .plus(matchedQuoteVolume.isFinite() ? matchedQuoteVolume : 0)
           .toNumber();
+        nextParams.tradedQuoteVolume = nextParams.totalMatchedQuoteVolume;
         Object.assign(
           nextParams,
           this.advanceCycleRolesAfterSuccess(nextParams, params.activeCycle),
@@ -1485,8 +1485,7 @@ export class DualAccountPlannerService {
       this.configService?.get(
         'strategy.dual_account_small_mismatch_ratio',
         0.005,
-      ) ??
-        0.005,
+      ) ?? 0.005,
     );
 
     return configured.isFinite() && configured.isGreaterThanOrEqualTo(0)
@@ -1548,11 +1547,19 @@ export class DualAccountPlannerService {
       );
     }
 
-    if (Number.isFinite(Number(persisted.tradedQuoteVolume))) {
-      next.tradedQuoteVolume = Math.max(
-        Number(runtime.tradedQuoteVolume || 0),
-        Number(persisted.tradedQuoteVolume),
+    if (Number.isFinite(Number(persisted.totalMatchedBaseVolume))) {
+      next.totalMatchedBaseVolume = Math.max(
+        Number(runtime.totalMatchedBaseVolume || 0),
+        Number(persisted.totalMatchedBaseVolume),
       );
+    }
+
+    if (Number.isFinite(Number(persisted.totalMatchedQuoteVolume))) {
+      next.totalMatchedQuoteVolume = Math.max(
+        Number(runtime.totalMatchedQuoteVolume || 0),
+        Number(persisted.totalMatchedQuoteVolume),
+      );
+      next.tradedQuoteVolume = next.totalMatchedQuoteVolume;
     }
 
     return next;
@@ -1585,7 +1592,10 @@ export class DualAccountPlannerService {
   }
 
   private isPublishedCycleAction(action: ExecutorAction): boolean {
-    if (action.type !== 'CREATE_LIMIT_ORDER' || this.isRebalanceAction(action)) {
+    if (
+      action.type !== 'CREATE_LIMIT_ORDER' ||
+      this.isRebalanceAction(action)
+    ) {
       return false;
     }
 
@@ -2605,9 +2615,9 @@ export class DualAccountPlannerService {
         maxQty.multipliedBy(new BigNumber(1).minus(makerFeeRate)),
       );
       const postTakerQuote = takerBalances.quote.plus(
-        maxQty.multipliedBy(price).multipliedBy(
-          new BigNumber(1).minus(takerFeeRate),
-        ),
+        maxQty
+          .multipliedBy(price)
+          .multipliedBy(new BigNumber(1).minus(takerFeeRate)),
       );
       const reverseCapacity = BigNumber.min(
         postMakerBase,
@@ -2621,9 +2631,11 @@ export class DualAccountPlannerService {
         // Still allow if current qty itself is valid (last viable cycle).
         if (
           maxQty.isGreaterThanOrEqualTo(amountMin) &&
-          maxQty.multipliedBy(price).isGreaterThanOrEqualTo(
-            costMin.isGreaterThan(0) ? costMin : new BigNumber(0),
-          )
+          maxQty
+            .multipliedBy(price)
+            .isGreaterThanOrEqualTo(
+              costMin.isGreaterThan(0) ? costMin : new BigNumber(0),
+            )
         ) {
           return maxQty;
         }
@@ -2671,9 +2683,9 @@ export class DualAccountPlannerService {
 
     // Verify reverse (buy) feasibility
     const postMakerQuote = makerBalances.quote.plus(
-      maxQty.multipliedBy(price).multipliedBy(
-        new BigNumber(1).minus(makerFeeRate),
-      ),
+      maxQty
+        .multipliedBy(price)
+        .multipliedBy(new BigNumber(1).minus(makerFeeRate)),
     );
     const postTakerBase = takerBalances.base.plus(
       maxQty.multipliedBy(new BigNumber(1).minus(takerFeeRate)),
@@ -2687,9 +2699,11 @@ export class DualAccountPlannerService {
     if (reverseNotional.isLessThan(sustainableMinNotional)) {
       if (
         maxQty.isGreaterThanOrEqualTo(amountMin) &&
-        maxQty.multipliedBy(price).isGreaterThanOrEqualTo(
-          costMin.isGreaterThan(0) ? costMin : new BigNumber(0),
-        )
+        maxQty
+          .multipliedBy(price)
+          .isGreaterThanOrEqualTo(
+            costMin.isGreaterThan(0) ? costMin : new BigNumber(0),
+          )
       ) {
         return maxQty;
       }
@@ -3113,9 +3127,7 @@ export class DualAccountPlannerService {
       params,
       repairContext.repairAccountLabel,
     );
-    const cycleId = `${strategyKey}:targeted-repair:${ts}:${
-      repairContext.repairAccountLabel
-    }:${repairContext.repairSide}`;
+    const cycleId = `${strategyKey}:targeted-repair:${ts}:${repairContext.repairAccountLabel}:${repairContext.repairSide}`;
     const repairNotional = adjustedQuote.qty.multipliedBy(adjustedQuote.price);
 
     return this.createIntent(
@@ -3472,8 +3484,9 @@ export class DualAccountPlannerService {
         new BigNumber(0),
         selectedBalances.base.minus(adjustedQuote.qty),
       );
-      selectedBalances.quote =
-        selectedBalances.quote.plus(rebalanceNotionalQuote);
+      selectedBalances.quote = selectedBalances.quote.plus(
+        rebalanceNotionalQuote,
+      );
     }
 
     // Validate the post-rebalance state with the SAME executable predicate the

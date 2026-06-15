@@ -1,5 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import { LedgerEntry } from 'src/common/entities/ledger/ledger-entry.entity';
+import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
 
 import { PerformanceService } from './performance.service';
@@ -106,6 +107,7 @@ const fill = (
 const buildService = (
   entries: LedgerEntry[],
   order: MarketMakingOrder | null = createOrder(),
+  strategyInstances: StrategyInstance[] = [],
 ) => {
   const sortedEntries = [...entries].sort((a, b) => {
     const createdAt = a.createdAt.localeCompare(b.createdAt);
@@ -124,6 +126,7 @@ const buildService = (
     createRepository([]) as never,
     createRepository(order ? [order] : []) as never,
     balanceLedgerService as never,
+    createRepository(strategyInstances) as never,
   );
 
   return { service, balanceLedgerService };
@@ -239,6 +242,52 @@ describe('PerformanceService order performance', () => {
     expect(balanceLedgerService.findByOrderId).not.toHaveBeenCalled();
     expect(result.summary.realizedPnlQuote).toBe('10');
     expect(result.summary.fillCount).toBe(2);
+  });
+
+  it('reports matched quote volume for efficient dual-account orders', async () => {
+    const order = createOrder({
+      strategySnapshot: {
+        strategyDefinitionId: 'strategy-1',
+        definitionKey: 'efficient-dual-account-volume',
+        definitionName: 'Efficient Dual Account Volume',
+        controllerType: 'efficientDualAccountVolume',
+        resolvedAt: '2026-05-31T00:02:00.000Z',
+        resolvedConfig: { totalMatchedQuoteVolume: '95' },
+      },
+    });
+    const strategyInstance = {
+      marketMakingOrderId: 'order-1',
+      parameters: { totalMatchedQuoteVolume: '100' },
+    } as unknown as StrategyInstance;
+    const { service } = buildService(
+      [
+        ...fill('1', 'buy', '1', '100', '2026-05-31T00:00:00.000Z').map(
+          (ledgerEntry) =>
+            entry({
+              ...ledgerEntry,
+              orderId: 'order-1:maker',
+              userOrderId: 'order-1',
+              accountLabel: 'maker',
+            }),
+        ),
+        ...fill('2', 'sell', '1', '110', '2026-05-31T00:01:00.000Z').map(
+          (ledgerEntry) =>
+            entry({
+              ...ledgerEntry,
+              orderId: 'order-1:taker',
+              userOrderId: 'order-1',
+              accountLabel: 'taker',
+            }),
+        ),
+      ],
+      order,
+      [strategyInstance],
+    );
+
+    const result = await service.getOrderPerformance('order-1');
+
+    expect(result.summary.tradedQuoteVolume).toBe('100');
+    expect(result.summary.effectiveSpreadBps).toBe('1000');
   });
 
   it('returns zero performance for orders without fill ledger entries', async () => {

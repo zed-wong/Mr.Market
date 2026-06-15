@@ -15,10 +15,10 @@ import type {
   DualAccountRepairContext,
   DualAccountVolumeStrategyParams,
 } from '../config/strategy-params.types';
+import { StrategyMarketDataProviderService } from '../data/strategy-market-data-provider.service';
 import { RuntimeObservationService } from '../observation/runtime-observation.service';
 import { DualAccountRuntimeStateService } from '../runtime/dual-account-runtime-state.service';
 import { StrategySessionRegistryService } from '../runtime/strategy-session-registry.service';
-import { StrategyMarketDataProviderService } from '../data/strategy-market-data-provider.service';
 import * as dualAccountConfig from './dual-account-config';
 import {
   DualAccountPlannerService,
@@ -107,8 +107,11 @@ export class EfficientDualAccountRuntimeService {
       this.setActiveSession(session.strategyKey, activeSession);
     }
 
-    const tradedQuoteVolume = Number(
-      latestParams.tradedQuoteVolume || activeSession?.tradedQuoteVolume || 0,
+    const matchedQuoteVolume = Number(
+      latestParams.totalMatchedQuoteVolume ||
+        latestParams.tradedQuoteVolume ||
+        activeSession?.tradedQuoteVolume ||
+        0,
     );
     const targetQuoteVolume = Number(latestParams.targetQuoteVolume || 0);
 
@@ -122,7 +125,7 @@ export class EfficientDualAccountRuntimeService {
       return repairActions;
     }
 
-    if (targetQuoteVolume > 0 && tradedQuoteVolume >= targetQuoteVolume) {
+    if (targetQuoteVolume > 0 && matchedQuoteVolume >= targetQuoteVolume) {
       const activeBeforeStop = this.getActiveSession(session.strategyKey);
 
       if (!this.isSameActiveSession(activeBeforeStop, session)) {
@@ -145,8 +148,7 @@ export class EfficientDualAccountRuntimeService {
 
     if (activeTrackedOrders.length > 0) {
       const oldestOrder = activeTrackedOrders[0];
-      const orderAge =
-        Date.now() - new Date(oldestOrder.createdAt).getTime();
+      const orderAge = Date.now() - new Date(oldestOrder.createdAt).getTime();
 
       if (orderAge < dualAccountConfig.OPTIMAL_MAKER_TIMEOUT_MS) {
         return [];
@@ -339,11 +341,7 @@ export class EfficientDualAccountRuntimeService {
       await this.persistStrategyParams(session.strategyKey, resumedParams);
       this.updateActiveSessionParams(session, resumedParams);
 
-      return await this.buildNoProgressActionOrWait(
-        session,
-        resumedParams,
-        ts,
-      );
+      return await this.buildNoProgressActionOrWait(session, resumedParams, ts);
     }
 
     const repairResult = await this.buildRepairRebalanceAction(

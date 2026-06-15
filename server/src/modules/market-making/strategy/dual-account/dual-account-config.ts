@@ -217,6 +217,11 @@ export function normalizeEfficientDualAccountVolumeStrategyParams(
       ? Number(normalized.targetQuoteVolume)
       : undefined;
   const pair = resolveStrategyInputPair(normalized.symbol, normalized.pair);
+  const normalizedRecord = normalized as unknown as Record<string, unknown>;
+  const totalMatchedBaseVolume =
+    readNonNegativeNumber(normalizedRecord.totalMatchedBaseVolume) ?? 0;
+  const totalMatchedQuoteVolume =
+    readNonNegativeNumber(normalizedRecord.totalMatchedQuoteVolume) ?? 0;
 
   return {
     exchangeName: String(normalized.exchangeName || '').trim(),
@@ -249,8 +254,12 @@ export function normalizeEfficientDualAccountVolumeStrategyParams(
     mode: normalized.mode || 'balanced',
     strategyContract: EFFICIENT_DUAL_ACCOUNT_VOLUME_STRATEGY_CONTRACT,
     safetyBuffer: normalizeSafetyBuffer(normalized.safetyBuffer),
-    publishedCycles: 0,
-    completedCycles: 0,
+    publishedCycles:
+      readNonNegativeNumber(normalizedRecord.publishedCycles) ?? 0,
+    completedCycles:
+      readNonNegativeNumber(normalizedRecord.completedCycles) ?? 0,
+    totalMatchedBaseVolume,
+    totalMatchedQuoteVolume,
     cycleMode: normalized.cycleMode || 'alternating',
     makerProtectionMode: normalized.makerProtectionMode || 'alive_only',
     dynamicRoleSwitching:
@@ -261,7 +270,7 @@ export function normalizeEfficientDualAccountVolumeStrategyParams(
     nextTakerAccountLabel: normalized.takerAccountLabel,
     orderBookReady: false,
     consecutiveFallbackCycles: 0,
-    tradedQuoteVolume: 0,
+    tradedQuoteVolume: totalMatchedQuoteVolume,
     realizedPnlQuote: 0,
     inventoryBaseQty: 0,
     inventoryCostQuote: 0,

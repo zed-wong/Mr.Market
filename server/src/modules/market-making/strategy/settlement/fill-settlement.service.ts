@@ -2,8 +2,8 @@ import { Injectable, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
-import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { buildDualAccountLedgerOrderId } from 'src/common/helpers/ledger-order-scope';
+import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
@@ -110,14 +110,10 @@ export class FillSettlementService {
 
     this.markTrackedFillSettled(trackedOrder, settlementFill);
     this.runtimeObservationService?.recordSessionPnL(session, settlementFill, {
-      includeTradedQuoteVolume:
-        session.strategyType === 'pureMarketMaking' ||
-        trackedOrder?.role === 'taker',
+      includeTradedQuoteVolume: session.strategyType === 'pureMarketMaking',
     });
 
-    if (
-      session.strategyType === 'efficientDualAccountVolume'
-    ) {
+    if (session.strategyType === 'efficientDualAccountVolume') {
       const persistedParams = (
         await this.strategyInstanceRepository?.findOne({
           where: { strategyKey: session.strategyKey },
@@ -511,6 +507,7 @@ export class FillSettlementService {
       !command.fill.feeAsset
     ) {
       await this.applyEstimatedFillFee(command, eventKey, quoteAmount);
+
       return;
     }
 
@@ -610,7 +607,9 @@ export class FillSettlementService {
     }
   }
 
-  private resolveEstimatedFillFeeRate(command: FillSettlementCommand): BigNumber {
+  private resolveEstimatedFillFeeRate(
+    command: FillSettlementCommand,
+  ): BigNumber {
     try {
       const exchange = this.exchangeInitService?.getExchange(
         command.exchangeName || '',
@@ -623,6 +622,7 @@ export class FillSettlementService {
       const takerFee = new BigNumber(
         market?.taker ?? exchange?.fees?.trading?.taker ?? 0,
       );
+
       if (command.fill.role === 'maker' && this.isPositiveFeeRate(makerFee)) {
         return makerFee;
       }

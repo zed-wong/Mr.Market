@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
 import { LedgerEntry } from 'src/common/entities/ledger/ledger-entry.entity';
 import { Performance } from 'src/common/entities/market-making/performance.entity';
+import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
 import { Repository } from 'typeorm';
 
@@ -50,6 +51,9 @@ export class PerformanceService {
     @InjectRepository(MarketMakingOrder)
     private readonly marketMakingOrderRepository: Repository<MarketMakingOrder>,
     private readonly balanceLedgerService: BalanceLedgerService,
+    @Optional()
+    @InjectRepository(StrategyInstance)
+    private readonly strategyInstanceRepository?: Repository<StrategyInstance>,
   ) {}
 
   async recordPerformance(data: Partial<Performance>): Promise<Performance> {
@@ -77,8 +81,9 @@ export class PerformanceService {
     }
 
     const pairAssets = this.parsePair(order.pair);
-    const entries =
-      await this.balanceLedgerService.findEntriesByUserOrderId(orderId);
+    const entries = await this.balanceLedgerService.findEntriesByUserOrderId(
+      orderId,
+    );
     const reversedEntryIds = new Set(
       entries
         .filter((entry) => entry.type === 'reversal' && entry.reversalOf)
@@ -193,6 +198,9 @@ export class PerformanceService {
       });
     }
 
+    const displayedQuoteVolume =
+      (await this.readDualAccountMatchedQuoteVolume(order)) ??
+      tradedQuoteVolume;
     const storedRealizedPnlQuote = this.readStoredRealizedPnlQuote(order);
     const result: OrderPerformanceDto = {
       series: this.downsampleSeries(series, 240),
@@ -200,10 +208,10 @@ export class PerformanceService {
         realizedPnlQuote: realizedPnlQuote.toFixed(),
         feesQuote: feesQuote.toFixed(),
         netPnlQuote: realizedPnlQuote.minus(feesQuote).toFixed(),
-        tradedQuoteVolume: tradedQuoteVolume.toFixed(),
-        effectiveSpreadBps: tradedQuoteVolume.isGreaterThan(0)
+        tradedQuoteVolume: displayedQuoteVolume.toFixed(),
+        effectiveSpreadBps: displayedQuoteVolume.isGreaterThan(0)
           ? realizedPnlQuote
-              .dividedBy(tradedQuoteVolume)
+              .dividedBy(displayedQuoteVolume)
               .multipliedBy(10000)
               .toFixed()
           : null,
@@ -321,6 +329,52 @@ export class PerformanceService {
       base: String(base || '').trim(),
       quote: String(quote || '').trim(),
     };
+  }
+
+  private async readDualAccountMatchedQuoteVolume(
+    order: MarketMakingOrder,
+  ): Promise<BigNumber | null> {
+    if (!this.isEfficientDualAccountOrder(order)) {
+      return null;
+    }
+
+    const strategyInstance = await this.strategyInstanceRepository?.findOne({
+      where: { marketMakingOrderId: order.orderId },
+    });
+    const instanceVolume = this.toFiniteBigNumber(
+      strategyInstance?.parameters?.totalMatchedQuoteVolume,
+    );
+
+    if (instanceVolume) {
+      return instanceVolume;
+    }
+
+    return this.toFiniteBigNumber(
+      order.strategySnapshot?.resolvedConfig?.totalMatchedQuoteVolume,
+    );
+  }
+
+  private isEfficientDualAccountOrder(order: MarketMakingOrder): boolean {
+    const snapshot = order.strategySnapshot;
+    const resolvedConfig = snapshot?.resolvedConfig || {};
+
+    return (
+      snapshot?.controllerType === 'efficientDualAccountVolume' ||
+      snapshot?.definitionKey === 'efficient-dual-account-volume' ||
+      resolvedConfig.strategyContract === 'efficientDualAccountVolume'
+    );
+  }
+
+  private toFiniteBigNumber(value: unknown): BigNumber | null {
+    if (value === undefined || value === null || value === '') {
+      return null;
+    }
+
+    const decimal = new BigNumber(String(value));
+
+    return decimal.isFinite() && decimal.isGreaterThanOrEqualTo(0)
+      ? decimal
+      : null;
   }
 
   private readStoredRealizedPnlQuote(

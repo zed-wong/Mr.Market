@@ -16,8 +16,8 @@ import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/ex
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
 
-import { TrackedOrderShutdownService } from '../../trackers/tracked-order-shutdown.service';
 import { ExchangeOrderTrackerService } from '../../trackers/exchange-order-tracker.service';
+import { TrackedOrderShutdownService } from '../../trackers/tracked-order-shutdown.service';
 import { ExecutorAction } from '../config/executor-action.types';
 import {
   ArbitrageStrategyDto,
@@ -94,7 +94,7 @@ export class StrategyInstanceLifecycleService {
     const eligibleStrategies: StrategyInstance[] = [];
 
     for (const strategy of runningStrategies) {
-      if (await this.isStrategyRuntimeEligible(strategy, logger)) {
+      if (await this.isStrategyRuntimeEligible(strategy)) {
         eligibleStrategies.push(strategy);
         continue;
       }
@@ -113,7 +113,6 @@ export class StrategyInstanceLifecycleService {
 
   private async isStrategyRuntimeEligible(
     strategy: StrategyInstance,
-    logger: Pick<CustomLogger, 'warn'>,
   ): Promise<boolean> {
     if (strategy.status !== 'running') {
       return false;
@@ -143,6 +142,11 @@ export class StrategyInstanceLifecycleService {
     const existing = await this.strategyInstanceRepository.findOne({
       where: { strategyKey },
     });
+    const nextParameters = this.mergePersistentMatchedVolumeCounters(
+      strategyType,
+      parameters,
+      existing?.parameters,
+    );
 
     if (existing) {
       await this.strategyInstanceRepository.update(
@@ -150,7 +154,7 @@ export class StrategyInstanceLifecycleService {
         {
           status: 'running',
           strategyType,
-          parameters,
+          parameters: nextParameters,
           marketMakingOrderId: marketMakingOrderId || null,
           updatedAt: getRFC3339Timestamp(),
         },
@@ -164,13 +168,43 @@ export class StrategyInstanceLifecycleService {
       userId,
       clientId,
       strategyType,
-      parameters,
+      parameters: nextParameters,
       marketMakingOrderId: marketMakingOrderId || null,
       status: 'running',
-      startPrice: await this.fetchStartPrice(strategyType, parameters),
+      startPrice: await this.fetchStartPrice(strategyType, nextParameters),
     });
 
     await this.strategyInstanceRepository.save(instance);
+  }
+
+  private mergePersistentMatchedVolumeCounters(
+    strategyType: StrategyType,
+    parameters: Record<string, any>,
+    persisted?: Record<string, any> | null,
+  ): Record<string, any> {
+    if (strategyType !== 'efficientDualAccountVolume' || !persisted) {
+      return parameters;
+    }
+
+    const next = { ...parameters };
+
+    for (const key of [
+      'publishedCycles',
+      'completedCycles',
+      'totalMatchedBaseVolume',
+      'totalMatchedQuoteVolume',
+    ]) {
+      const persistedValue = Number(persisted[key]);
+      const runtimeValue = Number(next[key] || 0);
+
+      if (Number.isFinite(persistedValue)) {
+        next[key] = Math.max(runtimeValue, persistedValue);
+      }
+    }
+
+    next.tradedQuoteVolume = Number(next.totalMatchedQuoteVolume || 0);
+
+    return next;
   }
 
   async rollbackFailedStrategyStart(
