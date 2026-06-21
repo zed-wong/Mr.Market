@@ -79,6 +79,7 @@ export type {
 export {
   buildDirectOrderDiagnosis,
   explainDirectOrderWarning,
+  isActionableDirectOrderWarning,
 } from "./diagnosis-summary";
 
 const errorKeyMap: Record<string, string> = {

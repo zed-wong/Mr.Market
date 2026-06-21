@@ -79,6 +79,19 @@ function normalizeToken(value: unknown): string {
     .toLowerCase();
 }
 
+function normalizeWarningToken(value: unknown): string {
+  return normalizeToken(value).replace(/[\s-]+/g, "_");
+}
+
+export function isActionableDirectOrderWarning(warning: string): boolean {
+  const normalized = normalizeWarningToken(warning);
+  return ![
+    "execution_blocked",
+    "blocked_by_failed_intent",
+    "failed_head_intent",
+  ].includes(normalized);
+}
+
 function formatAgeFromMs(ageMs: number): string {
   if (ageMs < 0) return "just now";
   const seconds = Math.floor(ageMs / 1000);
@@ -153,7 +166,7 @@ function formatRuntimeSignalState(value: string | null | undefined): string {
 }
 
 export function explainDirectOrderWarning(warning: string): string {
-  const normalized = normalizeToken(warning).replace(/[\s-]+/g, "_");
+  const normalized = normalizeWarningToken(warning);
   const map: Record<string, string> = {
     execution_blocked: "Execution is blocked until the failed queue item is cleared.",
     blocked_by_failed_intent: "A failed intent is blocking new market-making work.",
@@ -169,12 +182,12 @@ export function explainDirectOrderWarning(warning: string): string {
     api_key_validation_failed: "The linked API key failed validation.",
   };
 
-  if (map[normalized]) return `${map[normalized]} Source: ${warning}`;
-  if (normalized.includes("blocked")) return `Execution appears blocked. Source: ${warning}`;
+  if (map[normalized]) return map[normalized];
+  if (normalized.includes("blocked")) return "Execution appears blocked.";
   if (normalized.includes("failed") || normalized.includes("error")) {
-    return `A failure needs operator attention. Source: ${warning}`;
+    return "A failure needs operator attention.";
   }
-  if (normalized.includes("stale")) return `A freshness diagnostic needs attention. Source: ${warning}`;
+  if (normalized.includes("stale")) return "A freshness diagnostic needs attention.";
 
   return `Operator warning: ${warning}`;
 }
@@ -362,7 +375,7 @@ export function buildDirectOrderDiagnosis(
   const openOrders = status.openOrders || [];
   const intents = status.intents || [];
   const firstError = recentErrors.find((error) => error.message)?.message || "";
-  const blockingWarning = warnings.find((warning) => {
+  const blockingWarning = warnings.filter(isActionableDirectOrderWarning).find((warning) => {
     const normalized = normalizeToken(warning);
     return (
       normalized.includes("blocked") ||

@@ -251,4 +251,29 @@ describe("Order detail sub-dialogs", () => {
     expect(body).not.toContain("Resolve planner readiness blockers before resuming.");
     expect(body).not.toMatch(/<button[^>]*\sdisabled(?:=|\s|>)[^>]*>[\s\S]*Resume Order/);
   });
+
+  it("hides non-actionable execution-blocked warnings from order details", () => {
+    const { body } = render(OrderDetailsDialog, {
+      props: {
+        show: true,
+        order: {
+          ...baseOrder,
+          warnings: ["execution_blocked"],
+        },
+        data: baseStatus,
+        performance: basePerformance,
+        loading: false,
+        refreshing: false,
+        error: null,
+        onClose: noop,
+        onRefresh: noop,
+        onStartOrder: noop,
+        onStopOrder: noop,
+        onRemoveOrder: noop,
+      },
+    });
+
+    expect(body).not.toContain("Execution is blocked");
+    expect(body).not.toContain("execution_blocked");
+  });
 });

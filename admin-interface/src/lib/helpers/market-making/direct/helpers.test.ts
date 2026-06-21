@@ -114,7 +114,7 @@ describe('buildDirectOrderDiagnosis', () => {
     expect(diagnosis.summary).toContain('not being treated as a runtime failure');
   });
 
-  it('diagnoses failed or blocked orders with the blocking reason', () => {
+  it('diagnoses failed or blocked orders with actionable blocking reason', () => {
     const diagnosis = buildDirectOrderDiagnosis(
       {
         ...baseDiagnosisStatus,
@@ -128,7 +128,7 @@ describe('buildDirectOrderDiagnosis', () => {
     expect(diagnosis.kind).toBe('blocked');
     expect(diagnosis.title).toBe('Failed or blocked');
     expect(diagnosis.summary).toContain('Blocking reason');
-    expect(diagnosis.risks[0]).toContain('Execution is blocked');
+    expect(diagnosis.risks[0]).toContain('Exchange authentication failed');
   });
 
   it('diagnoses delayed ticks, streams, or balances as operational risk', () => {

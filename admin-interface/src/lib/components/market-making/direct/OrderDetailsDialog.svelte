@@ -21,6 +21,7 @@
         isKnownDirectStrategyControllerType,
         getStateLabel,
         explainDirectOrderWarning,
+        isActionableDirectOrderWarning,
         getDirectOrderActionAvailability,
         getDirectOrderDisplayState,
     } from "$lib/helpers/market-making/direct/helpers";
@@ -129,6 +130,9 @@
         isKnownDirectStrategyControllerType(resolvedControllerType);
     $: fills = performance?.summary.fillCount ?? 0;
     $: recentErrors = data?.recentErrors ?? [];
+    $: visibleWarnings = (order?.warnings ?? []).filter(
+        isActionableDirectOrderWarning,
+    );
     $: quoteAsset =
         order?.pair
             ?.split("/")
@@ -474,9 +478,9 @@
                         </div>
 
                         <!-- Warnings Banner -->
-                        {#if order.warnings && order.warnings.length > 0}
+                        {#if visibleWarnings.length > 0}
                             <div class="flex flex-col gap-1.5">
-                                {#each order.warnings as warning}
+                                {#each visibleWarnings as warning}
                                     <div
                                         class="flex items-center gap-2 bg-warning/10 border border-warning/30 rounded-lg px-3 py-2"
                                     >
