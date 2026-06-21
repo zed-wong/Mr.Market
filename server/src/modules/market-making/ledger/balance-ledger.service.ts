@@ -23,6 +23,8 @@ type BalanceLedgerCommand = {
   accountLabel?: string;
   userId: string;
   assetId: string;
+  tradingAccountId?: string;
+  chainId?: number;
   amount: string;
   idempotencyKey: string;
   refType?: string;
@@ -310,6 +312,8 @@ export class BalanceLedgerService {
           userId: result.entry.userId,
           orderId: result.entry.orderId,
           assetId: result.entry.assetId,
+          tradingAccountId: result.entry.tradingAccountId,
+          chainId: result.entry.chainId,
           type: result.entry.type,
           amount: result.entry.amount,
           idempotencyKey: result.entry.idempotencyKey,
@@ -442,6 +446,8 @@ export class BalanceLedgerService {
     balance.userId = command.userId;
     balance.userOrderId = scope.userOrderId;
     balance.accountLabel = scope.accountLabel;
+    balance.tradingAccountId = command.tradingAccountId;
+    balance.chainId = command.chainId;
     const availableBn = new BigNumber(balance.available);
     const lockedBn = new BigNumber(balance.locked);
 
@@ -523,6 +529,8 @@ export class BalanceLedgerService {
       type,
       refType: command.refType,
       refId: command.refId,
+      tradingAccountId: command.tradingAccountId,
+      chainId: command.chainId,
       idempotencyKey: command.idempotencyKey,
       idempotencyContentHash: this.buildIdempotencyContentHash(
         type,
@@ -657,6 +665,7 @@ export class BalanceLedgerService {
       assetId,
       available: '0',
       locked: '0',
+      externalLocked: '0',
       total: '0',
       initialDeposit: '0',
       realizedDelta: '0',
@@ -693,6 +702,7 @@ export class BalanceLedgerService {
       assetId,
       available: '0',
       locked: '0',
+      externalLocked: '0',
       total: '0',
       initialDeposit: '0',
       realizedDelta: '0',

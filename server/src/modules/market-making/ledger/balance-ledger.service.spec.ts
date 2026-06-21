@@ -637,6 +637,7 @@ describe('BalanceLedgerService', () => {
       assetId: 'asset-usdt',
       available: '100',
       locked: '0',
+      externalLocked: '0',
       total: '100',
       initialDeposit: '100',
       realizedDelta: '0',

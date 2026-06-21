@@ -43,7 +43,9 @@ import { StrategyDefinition } from './common/entities/market-making/strategy-def
 import { StrategyExecutionHistory } from './common/entities/market-making/strategy-execution-history.entity';
 import { StrategyInstance } from './common/entities/market-making/strategy-instances.entity';
 import { StrategyOrderIntentEntity } from './common/entities/market-making/strategy-order-intent.entity';
+import { TokenRegistryEntry } from './common/entities/market-making/token-registry-entry.entity';
 import { TrackedOrderEntity } from './common/entities/market-making/tracked-order.entity';
+import { TradingAccount } from './common/entities/market-making/trading-account.entity';
 import {
   MixinReleaseHistory,
   MixinReleaseToken,
@@ -176,6 +178,8 @@ function buildRedisConfig(configService: ConfigService) {
         StrategyOrderIntentEntity,
         ExchangeOrderMapping,
         TrackedOrderEntity,
+        TradingAccount,
+        TokenRegistryEntry,
         Web3FundingRequest,
         Web3EventLog,
         Web3Withdrawal,

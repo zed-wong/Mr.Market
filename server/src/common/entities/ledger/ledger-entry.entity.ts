@@ -61,6 +61,14 @@ export class LedgerEntry {
   @Column({ nullable: true })
   reversalOf?: string;
 
+  @Column({ nullable: true })
+  @Index()
+  tradingAccountId?: string;
+
+  @Column({ nullable: true })
+  @Index()
+  chainId?: number;
+
   @Column()
   createdAt: string;
 }

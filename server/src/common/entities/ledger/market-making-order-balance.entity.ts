@@ -31,6 +31,9 @@ export class MarketMakingOrderBalance {
   locked: string;
 
   @Column({ default: '0' })
+  externalLocked: string;
+
+  @Column({ default: '0' })
   total: string;
 
   @Column({ default: '0' })
@@ -41,6 +44,14 @@ export class MarketMakingOrderBalance {
 
   @Column({ default: '0' })
   feePaid: string;
+
+  @Column({ nullable: true })
+  @Index()
+  tradingAccountId?: string;
+
+  @Column({ nullable: true })
+  @Index()
+  chainId?: number;
 
   @Column()
   updatedAt: string;
