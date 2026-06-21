@@ -84,18 +84,30 @@ Rules:
 | Grouping naming | **ExchangeType** (clob, amm, clmm, clob_dex [future]) |
 | Connector interface | High-level action-based: submitAction/cancelAction/queryState |
 | Adapter interface | Split now: EvmDexAdapter, documented SolanaDexAdapter path |
-| On-chain confirmation | Decouple tx submission from receipt confirmation, durable OnchainExecution records |
-| Confirmation service | Shared OnchainExecutionService, per-chain strategies internally |
-| Execution account purposes | Two: clob_trading, dex_execution |
+| On-chain confirmation | Decouple tx submission from receipt confirmation, durable EvmExecution records |
+| Confirmation service | EvmExecutionService + EvmReceiptConfirmerService, EVM-specific strategies internally |
+| Execution account purposes | Three: clob_trading, dex_execution, funding_operator |
 | Execution account storage | Keep ExchangeApiKey for CEX, add TradingAccount for EVM wallets, plan CEX migration to TradingAccount as a TODO |
 | Intent model | Per-connector-family intent types (CLOB, AMM, CLMM as separate type groups) |
 | Controller model | Multiple new controllers: ammVolume, liquidityProvision |
-| Reconciliation | Separate runners: CLOB, on-chain, LP position |
-| Connector runtime | Separate types: ExchangeConnectorRuntime (CLOB), OnchainConnectorRuntime (on-chain) |
+| Reconciliation | Separate runners: CLOB, EVM execution, wallet balance, LP position |
+| Connector runtime | Separate types: ExchangeConnectorRuntime (CLOB), EvmConnectorRuntime (EVM on-chain) |
 | Multi-chain | BSC + Ethereum + Polygon |
-| Gas handling | Full: EIP-1559 + gas price oracle + gas limit optimization + pre-execution gas cost reservation in ledger |
+| Gas handling | Gas sponsorship from funding_operator scope, with EIP-1559 + gas price oracle + gas limit optimization + per-order PnL attribution |
 | MEV protection | Basic only: slippage tolerance + deadline |
 | LP management | Hybrid: pool state poller outside tick -> cached state -> tick-driven LP controller -> emits intents |
+| On-chain ledger model | Unified Ledger with explicit EVM dimensions: tradingAccountId, chainId, and TokenRegistry-resolved assetId |
+| Wallet balance reconciliation | Required WalletBalanceReconciliationRunner comparing wallet balances against aggregated ledger balances |
+| EVM nonce safety | Pre-broadcast NonceAllocatorService, persist EvmExecution(created, nonce) before broadcast |
+| EVM submit retry | Generic runWithRetries is disabled for on-chain submit; recovery is via confirmer + nonce reconciliation |
+| Token mapping | TokenRegistry is required before AMM settlement |
+| EVM sub-executions | Approve, wrap, and unwrap transactions are modeled as child EvmExecution records now, not deferred |
+| Failed tx handling | Revert, fail, and dropped tx paths have explicit reservation release and gas debit rules |
+| Reorg handling | Required confirmations plus reliable confirmer sources; reorgs emit reversal and manual review |
+| Stuck-pending handling | Decision deferred |
+| LP reconciliation | Structural consistency checks only; IL is PnL, not a reconciliation mismatch |
+| On-chain interface semantics | AMM/CLMM queryState and cancelAction must return explicit status or not_supported, never silent no-op |
+| EVM/Solana split | EVM and Solana execution models are separate; only the top-level Connector interface is shared |
 
 ## Naming Conventions
 
@@ -105,8 +117,8 @@ Rules:
 |---|---|---|
 | Trading destination | **Connector** (connectorId) | "binance", "mexc", "hyperliquid", "uniswapV3", "pancakeV3" |
 | Connector grouping | **ExchangeType** | clob, amm, clmm, clob_dex |
-| Credential entity (non-CEX) | **TradingAccount** (trading_accounts) | EVM wallet with purpose dex_execution |
-| On-chain tx lifecycle | **OnchainExecution** (onchain_executions) | tx submission, confirmation, settlement |
+| Credential entity (non-CEX) | **TradingAccount** (trading_accounts) | EVM wallet with purpose dex_execution or funding_operator |
+| On-chain tx lifecycle (EVM) | **EvmExecution** (evm_executions) | EVM tx submission, confirmation, settlement |
 | LP position record | **OrderLpPosition** (order_lp_positions) | NFT position with tick range, liquidity, fees |
 
 ### Renaming existing modules
@@ -123,7 +135,7 @@ Rules:
 | `common/constants/defi-addresses.ts` | `common/constants/connector-addresses.ts` | Connector-neutral naming |
 | `DexId` type | `ConnectorId` type | Unified with CLOB connector IDs |
 | `strategy/dex/dex.module.ts` | Removed, distributed into connector and strategy modules | No longer a separate module |
-| `strategy/dex/dex-volume.strategy.service.ts` | Logic moves into `OnchainDexConnector.submitAction()` + `AmmVolumeStrategyController` | Execution in connector, decisions in controller |
+| `strategy/dex/dex-volume.strategy.service.ts` | Logic moves into `EvmDexConnector.submitAction()` + `AmmVolumeStrategyController` | Execution in connector, decisions in controller |
 | `strategy/dex/strategy-config-resolver.service.ts` | Stays in `strategy/config/` (already there conceptually) | Config resolution is cross-connector |
 | `strategy-execution-category.ts` `clob_cex` | `clob` | Simplified, matches ExchangeType |
 | `strategy-execution-category.ts` `amm_dex` | `amm` | Simplified, matches ExchangeType |
@@ -164,8 +176,8 @@ Scheduling Layer
 Trading Layer
   Intent Worker -> Connector Registry -> Connector.submitAction(intent)
     CLOB:           ClobConnector       -> Exchange API -> Tracked Orders -> Fill Settlement -> CLOB Reconciliation
-    AMM:            OnchainDexConnector -> EVM Tx Submit -> OnchainExecution -> Receipt Confirm -> Swap Settle -> Onchain Reconciliation
-    CLMM:           OnchainDexConnector -> EVM Tx Submit -> OnchainExecution -> Receipt Confirm -> LP Position Update + LP Settle -> LP Reconciliation
+    AMM:            EvmDexConnector -> EVM Tx Submit -> EvmExecution -> Receipt Confirm -> Swap Settle -> EVM Reconciliation
+    CLMM:           EvmDexConnector -> EVM Tx Submit -> EvmExecution -> Receipt Confirm -> LP Position Update + LP Settle -> LP Reconciliation
 
 Horizontal: Ledger (source of truth) | Reservation | Reconciliation | Risk | Audit
 ```
@@ -206,10 +218,10 @@ interface Connector {
 }
 
 type ConnectorActionResult = {
-  status: 'submitted' | 'confirmed' | 'failed';
+  status: 'submitted' | 'confirmed' | 'failed' | 'not_supported';
   exchangeOrderId?: string;    // CLOB: exchange order id
   txHash?: string;             // on-chain: transaction hash
-  onchainExecutionId?: string; // on-chain: OnchainExecution record id
+  evmExecutionId?: string;     // EVM on-chain: EvmExecution record id
   details?: Record<string, unknown>;
 };
 ```
@@ -223,15 +235,15 @@ Wraps the existing `ExchangeConnectorAdapterService`:
 - `cancelAction` for `CANCEL_ORDER` -> cancelOrder
 - `queryState` -> fetchOrder / fetchOpenOrders
 
-### OnchainDexConnector (implements Connector)
+### EvmDexConnector (implements Connector)
 
 Wraps `EvmDexAdapter` implementations:
 - `submitAction` for `EXECUTE_AMM_SWAP` -> adapter.exactInputSingle (submit tx, return txHash)
 - `submitAction` for `ADD_LIQUIDITY` -> adapter.mint / increaseLiquidity
 - `submitAction` for `REMOVE_LIQUIDITY` -> adapter.decreaseLiquidity
 - `submitAction` for `COLLECT_FEES` -> adapter.collect
-- `cancelAction` -> not supported (on-chain txs cannot be cancelled after submission)
-- `queryState` -> adapter.readPosition / readPoolState
+- `cancelAction` -> returns `not_supported` for confirmed or non-cancellable txs; replacement cancel remains deferred under Issue 9
+- `queryState` -> returns EvmExecution status for AMM and EvmExecution + OrderLpPosition state for CLMM
 
 ### EvmDexAdapter (chain-family-specific, lower level)
 
@@ -301,7 +313,7 @@ class TradingAccount {
   id: string;
   label: string;                    // user-friendly name
   type: 'evm_wallet';               // future: 'exchange_api_key'
-  purpose: 'clob_trading' | 'dex_execution';
+  purpose: 'clob_trading' | 'dex_execution' | 'funding_operator';
   chainIds: number[];               // supported chains
   walletAddress: string;            // EVM wallet address
   encryptedPrivateKey: string;      // encrypted with admin.encryption_private_key
@@ -317,12 +329,36 @@ class TradingAccount {
 - CRUD for admin management
 - Never returns private keys through APIs
 
-### OnchainExecution Entity
+### TokenRegistry Entity
 
 ```typescript
-@Entity('onchain_executions')
-class OnchainExecution {
+@Entity('token_registry')
+class TokenRegistryEntry {
+  assetId: string;          // "USDC_56_0x8AC76A..."
+  chainId: number;          // 56
+  contractAddress: string;  // zero address for native token
+  symbol: string;           // "USDC"
+  decimals: number;         // chain-native token decimals
+  isNative: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+```
+
+`TokenRegistryService`:
+- `resolveAssetId(chainId, contractAddress)` -> ledger `assetId`
+- `resolveToken(assetId)` -> chain token metadata
+- `resolveNativeAssetId(chainId)` -> gas asset such as `BNB_56`, `ETH_1`, or `MATIC_137`
+- All EVM settlement must resolve through TokenRegistry before ledger mutation.
+
+### EvmExecution Entity
+
+```typescript
+@Entity('evm_executions')
+class EvmExecution {
   id: string;
+  parentExecutionId?: string;
+  executionType: 'swap' | 'lp_add' | 'lp_remove' | 'lp_collect' | 'approve' | 'wrap' | 'unwrap' | 'cancel';
   userOrderId: string;
   ledgerOrderId: string;
   accountLabel: string;
@@ -331,9 +367,9 @@ class OnchainExecution {
   exchangeType: ExchangeType;
   chainId: number;
   tradingAccountId: string;
-  nonce?: number;
+  nonce: number;
   txHash?: string;
-  status: 'created' | 'submitted' | 'confirmed' | 'failed' | 'reverted' | 'replaced' | 'manual_review';
+  status: 'created' | 'submitted' | 'confirmed' | 'failed' | 'reverted' | 'manual_review';
   submittedAt?: string;
   confirmedAt?: string;
   blockNumber?: number;
@@ -344,6 +380,7 @@ class OnchainExecution {
   gasUsed?: string;
   gasPrice?: string;
   effectiveGasCost?: string;
+  gasSponsorLedgerOrderId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -390,7 +427,7 @@ Extended from the existing ledger types:
 | `reserve_lock` | Balance locked before action (existing) | ledgerOrderId + asset |
 | `reserve_release` | Locked balance released (existing) | ledgerOrderId + asset |
 | `fill_settle` | CLOB fill settlement (existing) | ledgerOrderId + asset |
-| `fee_debit` | Fee deduction (existing, extended with subtype `gas`) | ledgerOrderId + asset |
+| `fee_debit` | Trading/exchange fee deduction (existing) | ledgerOrderId + asset |
 | `withdraw_debit` | Withdrawal deduction (existing) | ledgerOrderId + asset |
 | `reward_credit` | Reward credit (existing) | ledgerOrderId + asset |
 | `reversal` | Reversal entry (existing) | ledgerOrderId + asset |
@@ -398,9 +435,9 @@ Extended from the existing ledger types:
 | **`lp_add_settle`** | LP add: move tokens into position exposure | ledgerOrderId + asset |
 | **`lp_remove_settle`** | LP remove: credit returned tokens | ledgerOrderId + asset |
 | **`lp_fee_credit`** | LP fee collection: credit collected fees | ledgerOrderId + asset |
-| **`gas_debit`** | Gas cost deduction (typed, not generic) | ledgerOrderId + gas_asset |
+| **`gas_debit`** | Gas cost deduction paid by gas sponsor | funding_operator ledgerOrderId + gas_asset |
 
-The `OrderBalance` read model is extended with an `external_locked` bucket for funds in LP positions, keyed by `ledgerOrderId + asset`.
+The `OrderBalance` read model is extended with an `external_locked` bucket for funds in LP positions, keyed by `ledgerOrderId + asset`. EVM-related ledger entries and balance rows must carry `tradingAccountId` and `chainId` when the balance is held by, or reconciled against, a chain wallet.
 
 ## Module Structure
 
@@ -412,11 +449,11 @@ server/src/modules/market-making/
 │   ├── connector.types.ts              # Connector interface, ConnectorCapability, ExchangeType
 │   ├── connector-registry.ts           # ConnectorRegistry - resolves connectorId -> Connector
 │   ├── clob-connector.ts               # ClobConnector implements Connector
-│   ├── onchain-dex-connector.ts        # OnchainDexConnector implements Connector
+│   ├── evm-dex-connector.ts            # EvmDexConnector implements Connector
 │   ├── exchange-connector.ts           # ExchangeConnectorRuntime (existing, CLOB runtime services)
 │   ├── exchange-connector-registry.ts  # ExchangeConnectorRegistry (existing)
-│   ├── onchain-connector.ts            # OnchainConnectorRuntime (new, on-chain runtime services)
-│   ├── onchain-connector-registry.ts   # OnchainConnectorRegistry (new)
+│   ├── evm-connector.ts                # EvmConnectorRuntime (new, EVM runtime services)
+│   ├── evm-connector-registry.ts       # EvmConnectorRegistry (new)
 │   ├── connector.module.ts             # Wires all connector components
 │   └── adapters/                       # EVM DEX adapters (moved from defi/)
 │       ├── evm-dex-adapter.ts          # EvmDexAdapter interface
@@ -431,12 +468,18 @@ server/src/modules/market-making/
 │   ├── trading-account.service.ts      # CRUD, signer resolution by (accountId, chainId)
 │   └── trading-account.module.ts
 │
-├── onchain-execution/                  # On-chain tx lifecycle (new)
-│   ├── onchain-execution.entity.ts     # OnchainExecution record
-│   ├── onchain-execution.service.ts    # Create/update/query OnchainExecution records
-│   ├── onchain-receipt-confirmer.service.ts  # Async confirmer, per-chain confirmation strategies
+├── evm-execution/                      # EVM tx lifecycle (new)
+│   ├── evm-execution.entity.ts         # EvmExecution record
+│   ├── evm-execution.service.ts        # Create/update/query EvmExecution records
+│   ├── nonce-allocator.service.ts      # Atomic nonce allocation by (tradingAccountId, chainId)
+│   ├── evm-receipt-confirmer.service.ts  # Async confirmer, per-chain confirmation strategies
 │   ├── gas-price-oracle.service.ts     # EIP-1559 gas price estimation per chain
-│   └── onchain-execution.module.ts
+│   └── evm-execution.module.ts
+│
+├── token-registry/                     # Chain token <-> ledger asset mapping (new)
+│   ├── token-registry.entity.ts
+│   ├── token-registry.service.ts
+│   └── token-registry.module.ts
 │
 ├── lp-position/                        # LP position management (new)
 │   ├── order-lp-position.entity.ts     # OrderLpPosition record
@@ -467,13 +510,14 @@ server/src/modules/market-making/
 │
 ├── reconciliation/
 │   ├── exchange-order-reconciliation-runner.ts       # existing CLOB
-│   ├── onchain-execution-reconciliation-runner.ts    # NEW: on-chain receipt vs ledger
+│   ├── evm-execution-reconciliation-runner.ts        # NEW: EVM receipt vs ledger
+│   ├── wallet-balance-reconciliation-runner.ts       # NEW: wallet balance vs aggregated ledger
 │   ├── lp-position-reconciliation-runner.ts          # NEW: LP position vs ledger
 │   └── reconciliation.service.ts                     # coordinates all runners
 │
 ├── ledger/                             # existing, extended
 │   ├── balance-ledger.service.ts       # new ledger types: swap_settle, lp_add_settle, etc.
-│   └── order-reservation.service.ts    # extended: reserve gas asset, reserve for LP
+│   └── order-reservation.service.ts    # extended: reserve for AMM and LP; gas sponsor reservations
 │
 └── ... (existing modules: tick, trackers, user-orders, etc.)
 ```
@@ -499,16 +543,16 @@ type ExchangeConnectorRuntime = {
 };
 ```
 
-**OnchainConnectorRuntime (new, on-chain)**:
+**EvmConnectorRuntime (new, EVM on-chain)**:
 
 ```typescript
-type OnchainConnectorRuntime = {
+type EvmConnectorRuntime = {
   connectorId: string;           // "uniswapV3", "pancakeV3"
   chainId: number;
-  onchainExecutionTracker: OnchainExecutionService;
+  evmExecutionTracker: EvmExecutionService;
   lpPositionTracker: LpPositionTrackerService;
   poolStateTracker: PoolStateTrackerService;
-  reconciliationRunner: OnchainExecutionReconciliationRunner;
+  reconciliationRunner: EvmExecutionReconciliationRunner;
   lpReconciliationRunner: LpPositionReconciliationRunner;
 };
 ```
@@ -536,21 +580,28 @@ Hyperliquid stays on this path. It is a CLOB connector that uses wallet-based cr
 ```text
 Controller -> EXECUTE_AMM_SWAP intent
   -> intent worker risk check
-  -> reserve_lock for tokenIn + gas asset by ledgerOrderId + asset
+  -> reserve_lock for tokenIn by ledgerOrderId + asset
+  -> reserve_lock for estimated gas by funding_operator ledgerOrderId + gas_asset
   -> gas price oracle: estimate EIP-1559 gas price
   -> gas limit estimation
+  -> NonceAllocator.preAllocate() creates EvmExecution(status: created, nonce: N)
+  -> create required child EvmExecution records for approve/wrap/unwrap when needed
+  -> submit and confirm child executions first
   -> ConnectorRegistry.resolve(connectorId).submitAction(intent)
-    -> OnchainDexConnector: EvmDexAdapter.exactInputSingle (submit tx, return txHash)
-  -> persist OnchainExecution record (status: submitted)
+    -> EvmDexConnector: EvmDexAdapter.exactInputSingle (broadcast once with nonce N, return txHash)
+  -> update EvmExecution record (status: submitted, txHash)
   -> intent marked SENT (worker moves on, does NOT wait for confirmation)
-  -> OnchainReceiptConfirmer (async, outside tick):
+  -> EvmReceiptConfirmer (async, outside tick):
     -> wait for required confirmations per chain
     -> decode receipt logs for actual tokenIn, tokenOut, gas
-    -> update OnchainExecution (status: confirmed, decodedEvents, gasUsed)
+    -> update EvmExecution (status: confirmed, decodedEvents, gasUsed)
+    -> TokenRegistry resolves tokenIn/tokenOut/native gas assetIds
     -> swap_settle debit tokenIn, swap_settle credit tokenOut by ledgerOrderId + asset
-    -> gas_debit by ledgerOrderId + gas_asset
+    -> gas_debit by funding_operator ledgerOrderId + gas_asset
+    -> PnL attributes gas cost to initiating userOrderId
     -> reserve_release for unused reservation
-  -> on-chain reconciliation (receipt vs ledger)
+  -> EVM reconciliation (receipt vs ledger)
+  -> WalletBalanceReconciliationRunner compares wallet balances against aggregated ledger balances
 ```
 
 ### CLMM LP flow (Uniswap V3, PancakeSwap V3) - new
@@ -564,17 +615,24 @@ LP Controller (tick-driven, reads cached pool/position state):
 
 Intent worker (for each LP intent):
   -> risk check
-  -> reserve_lock for token0, token1, gas asset by ledgerOrderId + asset
+  -> reserve_lock for token0/token1 by ledgerOrderId + asset
+  -> reserve_lock for estimated gas by funding_operator ledgerOrderId + gas_asset
+  -> NonceAllocator.preAllocate() creates EvmExecution(status: created, nonce: N)
+  -> create required child EvmExecution records for approve/wrap/unwrap when needed
+  -> submit and confirm child executions first
   -> ConnectorRegistry.resolve(connectorId).submitAction(intent)
-    -> OnchainDexConnector: EvmDexAdapter.mint/decreaseLiquidity/collect
-  -> persist OnchainExecution record
-  -> OnchainReceiptConfirmer:
+    -> EvmDexConnector: EvmDexAdapter.mint/decreaseLiquidity/collect (broadcast once with nonce N)
+  -> update EvmExecution record
+  -> EvmReceiptConfirmer:
     -> confirm receipt
     -> decode events
     -> update OrderLpPosition (status, liquidity, fees)
+    -> TokenRegistry resolves token0/token1/native gas assetIds
     -> lp_add_settle / lp_remove_settle / lp_fee_credit by ledgerOrderId + asset
-    -> gas_debit by ledgerOrderId + gas_asset
+    -> gas_debit by funding_operator ledgerOrderId + gas_asset
+    -> PnL attributes gas cost to initiating userOrderId
   -> LP position reconciliation
+  -> WalletBalanceReconciliationRunner compares wallet balances against aggregated ledger balances
 ```
 
 ### Pool state tracking (hybrid, outside tick)
@@ -586,7 +644,7 @@ PoolStateTrackerService (runs outside tick, like OrderBookTrackerService):
   -> LP controller reads cached state on tick (no I/O)
 
 LpPositionTrackerService:
-  -> reads position state from OnchainExecution confirmations and periodic polls
+  -> reads position state from EvmExecution confirmations and periodic polls
   -> caches position state per (userOrderId, positionTokenId)
   -> LP controller reads cached state on tick
 ```
@@ -600,33 +658,43 @@ LpPositionTrackerService:
 - Uses `ethers.provider.getFeeData()` with gas multiplier config
 - Supports BSC (legacy gas price), Ethereum (EIP-1559), Polygon (EIP-1559)
 
-### Pre-execution gas cost reservation
+### Gas sponsorship and pre-execution reservation
 
 Before any on-chain tx submission:
 
 1. Estimate gas limit via `adapter.estimateGas*()` or `provider.estimateGas()`
 2. Get gas price from GasPriceOracleService
 3. Compute `estimatedGasCost = gasLimit * gasPrice`
-4. `reserve_lock` for gas asset (native token) by `ledgerOrderId + gas_asset`
-5. After confirmation, `gas_debit` for actual gas cost, `reserve_release` for unused gas reservation
+4. `reserve_lock` for gas asset (native token) by `funding_operator` ledgerOrderId + gas_asset
+5. After confirmation, `gas_debit` actual gas cost from the `funding_operator` scope and `reserve_release` unused gas reservation
+6. Record gas cost on `EvmExecution` and attribute it to the initiating `userOrderId` in PnL/reporting
+
+This separates custody from attribution. The gas sponsor pays the chain cost in ledger terms; the initiating order owns the performance attribution.
 
 ## Reconciliation
 
-Three separate reconciliation runners, coordinated by `ReconciliationService`:
+Four separate reconciliation runners, coordinated by `ReconciliationService`:
 
 1. **ExchangeOrderReconciliationRunner** (existing, CLOB):
    - Compares tracked orders, fills, fees against exchange state
    - Blocks risk-increasing operations on mismatch
 
-2. **OnchainExecutionReconciliationRunner** (new):
-   - Compares OnchainExecution records (confirmed status, decoded events) against ledger entries
+2. **EvmExecutionReconciliationRunner** (new):
+   - Compares EvmExecution records (confirmed status, decoded events) against ledger entries
    - Detects: confirmed tx without ledger settlement, ledger settlement without confirmed receipt, receipt content hash mismatch
    - Blocks risk-increasing operations for affected ledgerOrderId + asset
 
-3. **LpPositionReconciliationRunner** (new):
+3. **WalletBalanceReconciliationRunner** (new):
+   - For each `(tradingAccountId, chainId, assetId)`, compares on-chain wallet token/native balance against aggregated `OrderBalance.available + locked + external_locked`
+   - Requires EVM ledger entries and balance rows to carry `tradingAccountId` and `chainId`
+   - Includes LP `external_locked` amounts in the aggregation
+   - Blocks all risk-increasing operations on the affected wallet when the diff exceeds tolerance
+
+4. **LpPositionReconciliationRunner** (new):
    - Compares OrderLpPosition records against on-chain position state (liquidity, fees, tick range)
-   - Compares LP position ledger entries against actual position value
-   - Detects: position mismatch, missing position record, stale position state
+   - Performs structural consistency checks only: NFT existence, wallet ownership, liquidity, tick range, status, and fee tolerance
+   - Does not treat impermanent loss as a reconciliation mismatch; IL is reported through PnL
+   - Detects: position mismatch, missing position record, stale position state, fee mismatch beyond tolerance
    - Blocks new LP intents for affected orders
 
 All reconciliation runners:
@@ -651,31 +719,42 @@ All reconciliation runners:
 ### Phase 2: TradingAccount and EVM signer resolution
 
 - Create TradingAccount entity, migration, service
+- Add TradingAccount purposes: `clob_trading`, `dex_execution`, `funding_operator`
 - Implement `getSigner(accountId, chainId)` with encrypted private key decryption
 - Implement `getSignerForPurpose(purpose, chainId)`
-- Wire TradingAccountService into OnchainDexConnector
+- Wire TradingAccountService into EvmDexConnector
+- Create TokenRegistry entity, migration, service
+- Add EVM ledger dimensions needed for wallet aggregation: `tradingAccountId` and `chainId`
 - Keep Web3Service for provider/chain connectivity (RPC URLs, block queries)
 - Keep ExchangeApiKey for CEX credentials
-- Tests: signer resolution, encryption/decryption, multi-chain support
+- Tests: signer resolution, encryption/decryption, multi-chain support, TokenRegistry resolution
 
-### Phase 3: OnchainExecution and receipt confirmer
+### Phase 3: EvmExecution and receipt confirmer
 
-- Create OnchainExecution entity, migration, service
-- Implement OnchainReceiptConfirmerService (shared, per-chain confirmation strategies)
+- Create EvmExecution entity, migration, service
+- Add `executionType`, `parentExecutionId`, required `nonce`, and gas sponsor fields to EvmExecution
+- Implement NonceAllocatorService with atomic allocation per `(tradingAccountId, chainId)`
+- Implement EvmReceiptConfirmerService (EVM-specific, per-chain confirmation strategies)
 - Implement GasPriceOracleService (EIP-1559, per-chain)
 - Add confirmation config per chain (required confirmations, poll interval)
-- Handle: submitted -> confirmed, failed, reverted, replaced, stuck pending
-- Tests: receipt confirmation lifecycle, gas estimation, per-chain strategies
+- Disable generic `runWithRetries` for EVM submit; recovery must use confirmer + nonce reconciliation
+- Handle: created -> submitted -> confirmed, failed, reverted, manual_review
+- Implement reorg monitoring with reversal emission after reliable multi-confirmation settlement
+- Detect stuck-pending executions and route to manual_review for now; replacement/speed-up/cancel remains deferred under Issue 9
+- Tests: receipt confirmation lifecycle, nonce allocation, gas estimation, reorg reversal, per-chain strategies
 
 ### Phase 4: AMM swap full settlement
 
-- Create OnchainDexConnector implementing Connector for AMM swap
-- Refactor EXECUTE_AMM_SWAP: reserve tokenIn + gas, submit tx, persist OnchainExecution, async confirm, swap_settle + gas_debit
+- Create EvmDexConnector implementing Connector for AMM swap
+- Refactor EXECUTE_AMM_SWAP: reserve tokenIn, reserve gas from funding_operator, pre-allocate nonce, persist EvmExecution(created), submit once, async confirm, swap_settle + gas_debit
+- Model approve/wrap/unwrap as child EvmExecution records before the parent swap when needed
 - Add `swap_settle` and `gas_debit` ledger types
-- Add gas cost reservation to OrderReservationService
+- Add gas sponsor reservation to OrderReservationService
+- All settlement assetIds must resolve through TokenRegistry
 - Create AmmVolumeStrategyController (new controller type)
-- OnchainExecutionReconciliationRunner for swap receipts
-- Tests: full AMM swap lifecycle from intent to ledger settlement with mocked receipt
+- EvmExecutionReconciliationRunner for swap receipts
+- WalletBalanceReconciliationRunner for wallet-vs-ledger checks
+- Tests: full AMM swap lifecycle from intent to ledger settlement with mocked receipt, child approve/wrap execution, gas sponsorship, wallet balance reconciliation
 
 ### Phase 5: CLMM LP lifecycle
 
@@ -686,7 +765,7 @@ All reconciliation runners:
 - Add ADD_LIQUIDITY, REMOVE_LIQUIDITY, COLLECT_FEES intent types
 - Add `lp_add_settle`, `lp_remove_settle`, `lp_fee_credit` ledger types
 - Extend OrderBalance with `external_locked` bucket for LP positions
-- LpPositionReconciliationRunner
+- LpPositionReconciliationRunner with structural consistency checks only; IL is PnL, not a mismatch
 - Tests: LP open -> monitor -> rebalance -> collect -> close with mocked position manager
 
 ### Phase 6: Hyperliquid hardening
@@ -698,7 +777,7 @@ All reconciliation runners:
 
 ### Phase 7: Reconciliation and operational safety
 
-- Wire all three reconciliation runners into ReconciliationService
+- Wire all four reconciliation runners into ReconciliationService
 - Add manual-review record creation for mismatches
 - Add reservation pause for affected orders on mismatch
 - Tests: reconciliation blocks risk-increasing operations for all connector families
@@ -706,6 +785,13 @@ All reconciliation runners:
 ### Phase 8: Admin UI updates
 
 - Admin direct create form: exchangeType selector, connector picker, TradingAccount picker for DEX
+- Admin direct market-making creation must support `ammVolume` orders:
+  - Select `exchangeType = amm`
+  - Select AMM connector (`uniswapV3`, `pancakeV3`)
+  - Select chain, token pair, fee tier/pool, swap direction, sizing, slippage tolerance, deadline, and tick cadence
+  - Select `dex_execution` TradingAccount and funding_operator gas sponsor account
+  - Validate token registry entries, wallet balances, allowance/wrap requirements, and connector capabilities before start
+- `admin-interface` must expose AMM volume strategy configuration as a first-class admin-direct market-making path, not as the existing CEX volume form with hidden DEX fields
 - Strategy templates filter by connector capabilities
 - Runtime status views: CLOB tracked orders, on-chain tx state, LP position state, gas/fee ledger facts
 - Reconciliation block visibility
@@ -726,20 +812,23 @@ All reconciliation runners:
 1. Hyperliquid is formally modeled as a CLOB connector, not AMM
 2. Uniswap/PancakeSwap swap execution is userOrderId-attributed, ledgerOrderId-settled, and receipt-confirmed
 3. LP positions have a durable userOrderId / ledgerOrderId attributed lifecycle: open -> monitor -> rebalance -> collect fees -> close
-4. Gas, slippage, LP fees, failed txs, and reversals are represented with typed ledger/reconciliation paths
+4. Gas sponsorship, slippage, LP fees, failed txs, reorg reversals, and child approve/wrap/unwrap executions are represented with typed ledger/reconciliation paths
 5. Controllers remain side-effect-free and tick remains non-blocking (on-chain confirmation is async)
-6. Reconciliation can block risk-increasing operations for CLOB, AMM swap, and CLMM LP mismatches
-7. New connector/on-chain service contracts and persistence records carry userOrderId, ledgerOrderId, and accountLabel; balance mutation paths are keyed by ledgerOrderId + asset
+6. Reconciliation can block risk-increasing operations for CLOB, AMM swap, wallet balance, and CLMM LP mismatches
+7. New connector/on-chain service contracts and persistence records carry userOrderId, ledgerOrderId, accountLabel, tradingAccountId, and chainId where EVM custody is involved; balance mutation paths are keyed by ledgerOrderId + asset
 8. The Connector interface is unified (submitAction/cancelAction/queryState) with EvmDexAdapter as the chain-family-specific lower layer
 9. All existing DEX-related modules are renamed to use connector-based naming
+10. Admin direct market-making in `admin-interface` supports `ammVolume` creation and validation as a first-class AMM flow
 
 ---
 
-## Open Issues and Proposed Solutions (Pending Approval)
+## Design Review Decisions
 
-The following issues were identified during design review. They are documented here as proposed solutions pending approval before being merged into the main plan body. The numbering follows the original review.
+The following issues were identified during design review. Approved items are part of the active plan. Issue 9 remains deferred and must be resolved before production EVM execution supports stuck-pending recovery.
 
 ### Issue 1: Commingled on-chain wallet vs per-ledgerOrderId balance invariant
+
+**Decision:** Approved with unified Ledger plus explicit on-chain dimensions. Do not create a separate chain ledger. Add `tradingAccountId`, `chainId`, and TokenRegistry-resolved `assetId` dimensions to the unified ledger paths where required.
 
 **Problem:** CLOB gets balance isolation via per-account API keys. On-chain, `getSignerForPurpose(purpose, chainId)` implies one wallet holding tokens for many ledgerOrderIds at once. The chain only knows the wallet total; the ledger claims balances are scoped per `ledgerOrderId + asset`. Without a wallet-level reconciliation that verifies `sum(ledger balances across orders) == on-chain wallet balance per asset`, the "ledger is source of truth" invariant is unverifiable on-chain.
 
@@ -760,7 +849,9 @@ The `external_locked` bucket (funds in LP positions) must be included in the wal
 
 ### Issue 2: In-doubt submission window + nonce management (EVM-specific)
 
-**Problem:** The AMM flow persists `OnchainExecution(status: submitted)` after `submitAction` returns a txHash. If the worker crashes between broadcast and persist, you cannot tell whether the tx hit the mempool. CLOB already solves this with `isAmbiguousPlacementError` / `reconcileInDoubtPlacement`. On-chain EVM requires: allocate a deterministic nonce, persist `created` with `(tradingAccountId, chainId, nonce)` before broadcast, then reconcile by `(account, nonce)`. The plan had a `nonce?` field but no allocator and no serialization across concurrent intents sharing one wallet.
+**Decision:** Approved.
+
+**Problem:** The AMM flow persists `EvmExecution(status: submitted)` after `submitAction` returns a txHash. If the worker crashes between broadcast and persist, you cannot tell whether the tx hit the mempool. CLOB already solves this with `isAmbiguousPlacementError` / `reconcileInDoubtPlacement`. On-chain EVM requires: allocate a deterministic nonce, persist `created` with `(tradingAccountId, chainId, nonce)` before broadcast, then reconcile by `(account, nonce)`. The original plan had a nullable nonce field but no allocator and no serialization across concurrent intents sharing one wallet.
 
 **Note:** Nonce is an EVM-only concept. Solana uses a completely different transaction model (recent_blockhash + signature, optional durable nonce accounts). See Issue 12 below for the EVM/Solana separation.
 
@@ -769,7 +860,7 @@ The `external_locked` bucket (funds in LP positions) must be included in the wal
 ```text
 NonceAllocatorService (EVM-only, new):
   - Atomic nonce allocation per (tradingAccountId, chainId)
-  - Allocates sequential nonces: max(pending OnchainExecution nonce, on-chain transactionCount) + 1
+  - Allocates sequential nonces: max(pending EvmExecution nonce, on-chain transactionCount) + 1
   - Serialized via database row lock or optimistic lock
 
 Modified AMM flow (EVM):
@@ -789,12 +880,14 @@ Nonce allocation must be serialized by `(tradingAccountId, chainId)` to prevent 
 
 ### Issue 3: runWithRetries on on-chain submit is dangerous
 
+**Decision:** Approved. Generic `runWithRetries` must be disabled for EVM submit.
+
 **Problem:** The current code wraps `executeCycle` in `runWithRetries`. If the tx was broadcast but timed out, retrying can double-spend across nonces. The plan must explicitly disable generic retry for on-chain submit and recover via the confirmer instead.
 
 **Proposed solution: On-chain submit path must NOT use runWithRetries.**
 
 ```text
-OnchainDexConnector.submitAction (EVM):
+EvmDexConnector.submitAction (EVM):
   - Submit only once (no runWithRetries)
   - If broadcast fails before sign/send: release reservation, mark failed
   - If broadcast succeeds but receipt pending: let confirmer handle it
@@ -803,6 +896,8 @@ OnchainDexConnector.submitAction (EVM):
 ```
 
 ### Issue 4: Gas asset funding contradicts no-negative-balance ledger
+
+**Decision:** Approved. Use gas sponsorship with `funding_operator` custody and per-order reporting attribution.
 
 **Problem:** `gas_debit` is keyed by `ledgerOrderId + gas_asset`. But an order funded with USDC/WETH has no native BNB/ETH/MATIC scope. Reserving/debiting gas against `ledgerOrderId + gas_asset` produces an unfunded/negative balance. The admin-direct funding model must explicitly resolve this contradiction.
 
@@ -826,6 +921,8 @@ Attribution (cost reporting):
 This preserves the per-ledgerOrderId invariant (gas debited from funding_operator scope) while allowing per-order gas cost visibility in PnL. If stricter per-order gas accounting is needed later, admin-direct order creation can require explicit native gas funding per ledgerOrderId.
 
 ### Issue 5: Token <-> assetId mapping layer
+
+**Decision:** Approved. TokenRegistry is a required foundational component before AMM settlement.
 
 **Problem:** Ledger uses `assetId`; on-chain uses `(chainId, contractAddress, decimals)`. `swap_settle` credit tokenOut by `ledgerOrderId + asset` has no defined mapping. USDC on Ethereum/Polygon/BSC are distinct assets with different decimals. A `(chainId, address) <-> assetId` token registry is required and absent.
 
@@ -855,26 +952,27 @@ All on-chain settlement operations must resolve through `TokenRegistry.resolveAs
 
 ### Issue 6: ERC20 approve and WETH wrap/unwrap txs are unmodeled
 
+**Decision:** Approved with immediate sub-execution modeling. Do not defer approve/wrap/unwrap tracking.
+
 **Problem:** Current `ensureAllowance` broadcasts a separate approve tx (own nonce, own gas). The plan's EvmExecution/gas model only covers the swap/LP tx. Approve and wrap/unwrap are extra on-chain txs that need tracking, gas attribution, and nonce slots.
 
-**Proposed solution: Pre-approval out-of-band (MVP) + sub-execution modeling (future).**
+**Approved solution: Model approve, wrap, and unwrap as EvmExecution sub-executions now.**
 
 ```text
-MVP approach:
-  - Admin pre-sets token allowance via admin UI or script (approve MaxUint256 once)
-  - ensureAllowance becomes a read-only check (does not broadcast)
-  - If allowance insufficient, intent fails with admin-actionable message
-  - One-time approve eliminates per-swap approve txs
-
-Future approach (if needed):
-  - EvmExecution gains parentExecutionId field
-  - Approve tx -> EvmExecution(type: 'approve', parentExecutionId: swapExecution.id)
-  - Wrap/unwrap tx -> EvmExecution(type: 'wrap', parentExecutionId: swapExecution.id)
-  - Confirmer handles all EvmExecution records including sub-executions
-  - Gas attribution tracks to sub-execution
+Sub-execution approach:
+  - EvmExecution gains executionType and parentExecutionId fields
+  - Main business tx -> EvmExecution(type: 'swap' | 'lp_add' | 'lp_remove' | 'lp_collect')
+  - Approve tx -> EvmExecution(type: 'approve', parentExecutionId: mainExecution.id)
+  - Wrap/unwrap tx -> EvmExecution(type: 'wrap' | 'unwrap', parentExecutionId: mainExecution.id)
+  - NonceAllocator allocates nonce for each child and parent execution
+  - EvmReceiptConfirmer handles all EvmExecution records, including sub-executions
+  - Gas attribution tracks to each sub-execution and rolls up to the initiating userOrderId for reporting
+  - Parent execution may only submit after required child executions are confirmed
 ```
 
 ### Issue 7: Failed/reverted swap ledger path
+
+**Decision:** Approved.
 
 **Problem:** Acceptance criterion 4 mentions failed txs, but no flow shows the revert path. On revert (e.g., slippage exceeded), tokenIn is not spent (release reservation) yet gas is consumed (gas_debit). Only the success path is diagrammed.
 
@@ -901,6 +999,8 @@ Dropped tx (never mined, expired):
 
 ### Issue 8: Reorg-after-settlement
 
+**Decision:** Approved with reliable confirmer sources and required multi-confirmation settlement gates.
+
 **Problem:** `requiredConfirmations` reduces risk but a reorg that drops an already-settled tx needs a reversal emission path. The plan lists "ledger settle without confirmed receipt" but not reorg-triggered reversal.
 
 **Proposed solution: Reorg monitoring + reversal emission.**
@@ -916,13 +1016,19 @@ EvmReceiptConfirmer continuously monitors confirmed EvmExecution records:
         - Pause affected order's risk-increasing operations
         - Emit manual_review record
   3. requiredConfirmations per chain: Ethereum 12, BSC 15, Polygon 20
+  4. Confirmer data sources must be treated as infrastructure-critical:
+     - Use reliable RPC/provider sources with health checks
+     - Do not settle until required confirmations are reached
+     - Pause EVM settlement for a chain if confirmer source health is degraded
 ```
 
 ### Issue 9: Stuck-pending resolution
 
+**Decision:** Deferred. Keep this as an unresolved design item.
+
 **Problem:** Phase 3 lists "stuck pending" but no design for replacement (speed-up), cancel-by-self-tx, nonce gap repair, or how long reservations stay locked.
 
-**Proposed solution: Replacement + timeout + nonce gap repair.**
+**Candidate solution: Replacement + timeout + nonce gap repair.**
 
 ```text
 Stuck-pending handling:
@@ -945,6 +1051,8 @@ Stuck-pending handling:
 ```
 
 ### Issue 10: LP reconciliation feasibility / IL tolerance
+
+**Decision:** Approved. LP reconciliation uses structural consistency checks; impermanent loss is handled as PnL, not a mismatch.
 
 **Problem:** A CLMM position's token0/token1 amounts are a continuous function of price; `external_locked` is a fixed deposit figure. Comparing "LP ledger entries against actual position value" needs a defined tolerance and treatment of impermanent loss. Without this, the LP runner cannot be implemented deterministically.
 
@@ -973,6 +1081,8 @@ IL treatment:
 
 ### Issue 11: queryState semantics for AMM and cancelAction no-op
 
+**Decision:** Approved. Interface methods must return explicit statuses and must not silently no-op.
+
 **Problem:** `queryState` for AMM has no post-submit state besides the receipt, and `cancelAction` is a no-op for on-chain. The unified interface should document these as explicit not-supported results rather than silent gaps.
 
 **Proposed solution: Explicit not-supported results + clear queryState semantics.**
@@ -986,10 +1096,10 @@ type ConnectorActionResult = {
 // EvmDexConnector:
 async cancelAction(intent): Promise<ConnectorActionResult> {
   // On-chain tx cannot be cancelled after submission
-  // If tx still in mempool (unconfirmed), can attempt replacement cancel
+  // Replacement cancel is deferred until Issue 9 is resolved
   const execution = await this.evmExecutionService.findByIntentId(intent.intentId);
-  if (execution?.status === 'submitted' && execution.nonce != null) {
-    return await this.attemptReplacementCancel(execution); // best-effort
+  if (execution?.status === 'submitted') {
+    return { status: 'not_supported', details: { reason: 'replacement_cancel_deferred_issue_9' } };
   }
   return { status: 'not_supported', details: { reason: 'on_chain_tx_cannot_be_cancelled' } };
 }
@@ -1009,6 +1119,8 @@ async queryState(intent): Promise<ConnectorState> {
 ```
 
 ### Issue 12: EVM and Solana on-chain execution should not be mixed
+
+**Decision:** Approved. EVM and Solana execution models are separate. The main plan now uses EVM-specific execution names.
 
 **Problem:** The original plan used a generic `OnchainExecution` entity with `nonce?` as a nullable field, implying EVM and Solana could share the same execution model. EVM and Solana have fundamentally different transaction models (EVM: sequential nonce; Solana: recent_blockhash + signature, optional durable nonce). Mixing them leads to nullable fields and if-else branches that violate the project principle of keeping architecture 100% perfect at present.
 
@@ -1032,7 +1144,7 @@ Correspondingly, `OnchainDexConnector` is renamed to `EvmDexConnector`. Future `
 
 ### Entity and naming updates from Issue 12
 
-The following renames apply throughout the plan body (to be merged upon approval):
+The following renames are approved and apply throughout the plan body:
 
 | Original plan term | Updated term | Scope |
 |---|---|---|
