@@ -53,17 +53,26 @@ The map is based on the root wiring in `server/src/app.module.ts` and each `*.mo
 ### connector
 
 - `modules/market-making/connector/connector.module.ts`
-  - Depends on: `ExecutionModule`.
+  - Depends on: `ExecutionModule`, `TradingAccountModule`, `TokenRegistryModule`, `EvmExecutionModule`.
   - Main role: connector abstraction, CLOB connector dispatch, and EVM DEX adapter providers.
   - Internal structure:
     - `connector.types.ts` - Connector interface, exchange type, capabilities, and result contracts.
     - `connector-registry.ts` - ConnectorRegistry for connector lookup.
     - `clob-connector.ts` - CLOB connector wrapper around exchange adapter mutations.
+    - `evm-dex-connector.ts` - AMM/CLMM connector shell backed by EVM execution accounts and token registry.
     - `adapters/evm-dex-adapter-registry.ts` - EvmDexAdapterRegistry for EVM adapter lookup.
     - `adapters/` - EVM DEX adapter implementations (uniswap-v3.adapter.ts, pancake-v3.adapter.ts).
     - `adapters/abis.ts` - Contract ABI definitions.
     - `common/constants/connector-addresses.ts` - Connector contract addresses by chain.
     - `adapters/utils/` - EVM DEX utility functions.
+- `modules/market-making/evm-execution/evm-execution.module.ts`
+  - Depends on: TypeORM `EvmExecution`, `TradingAccountModule`, global config.
+  - Main role: durable EVM transaction lifecycle records, nonce allocation, gas quoting, receipt confirmation, stuck-pending routing, and reorg manual-review detection.
+  - Internal structure:
+    - `evm-execution.service.ts` - CRUD and state transitions for EVM execution records.
+    - `nonce-allocator.service.ts` - serialized nonce preallocation per `tradingAccountId + chainId`.
+    - `gas-price-oracle.service.ts` - per-chain gas price quote cache and multiplier handling.
+    - `evm-receipt-confirmer.service.ts` - confirmation policy, receipt status, reverted tx, stuck-pending, and reorg checks.
 
 ### infrastructure
 
@@ -273,9 +282,15 @@ This section explains each module with three questions:
 
 #### `market-making/connector/connector.module.ts`
 
-- What: registers the unified connector contracts, ClobConnector, ConnectorRegistry, and EVM DEX adapters.
+- What: registers the unified connector contracts, ClobConnector, ConnectorRegistry, EvmDexConnector, EVM execution services, and EVM DEX adapters.
 - Why: CLOB and on-chain execution need a connector-neutral dispatch boundary while preserving connector-family-specific lower layers.
 - Where: used by market-making intent execution and AMM strategy services.
+
+#### `market-making/evm-execution/evm-execution.module.ts`
+
+- What: owns EVM transaction state from nonce preallocation through receipt confirmation and manual review.
+- Why: on-chain mutation cannot rely on synchronous exchange-order acknowledgements or generic submit retries.
+- Where: used by EVM connectors before AMM/CLMM settlement and by future EVM reconciliation workers.
 
 ### infrastructure domain
 

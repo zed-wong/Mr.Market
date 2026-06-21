@@ -36,6 +36,7 @@ import { RewardAllocation } from './common/entities/ledger/reward-allocation.ent
 import { RewardLedger } from './common/entities/ledger/reward-ledger.entity';
 import { ShareLedgerEntry } from './common/entities/ledger/share-ledger-entry.entity';
 import { ExchangeOrderMapping } from './common/entities/market-making/exchange-order-mapping.entity';
+import { EvmExecution } from './common/entities/market-making/evm-execution.entity';
 import { MarketMakingLifecycleEvent } from './common/entities/market-making/market-making-lifecycle-event.entity';
 import { MarketMakingOrderIntent } from './common/entities/market-making/market-making-order-intent.entity';
 import { Performance } from './common/entities/market-making/performance.entity';
@@ -178,6 +179,7 @@ function buildRedisConfig(configService: ConfigService) {
         StrategyOrderIntentEntity,
         ExchangeOrderMapping,
         TrackedOrderEntity,
+        EvmExecution,
         TradingAccount,
         TokenRegistryEntry,
         Web3FundingRequest,
