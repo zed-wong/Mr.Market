@@ -35,7 +35,7 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
     userId: 'user-1',
     clientId: 'client-1',
     pricePushRate: 0,
-    executionCategory: 'clob_cex',
+    executionCategory: 'clob',
     executionVenue: 'cex',
     makerAccountLabel: 'account-a',
     takerAccountLabel: 'account-b',

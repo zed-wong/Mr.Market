@@ -36,7 +36,7 @@ describe('StrategyRuntimeDispatcherService', () => {
               config.clientId ?? '',
               config.pricePushRate ?? 0,
               config.postOnlySide,
-              config.executionCategory === 'amm_dex' ||
+              config.executionCategory === 'amm' ||
                 config.executionVenue === 'dex'
                 ? 'dex'
                 : 'cex',
@@ -48,7 +48,7 @@ describe('StrategyRuntimeDispatcherService', () => {
               config.slippageBps,
               config.recipient,
               config.executionCategory ||
-                (config.executionVenue === 'dex' ? 'amm_dex' : 'clob_cex'),
+                (config.executionVenue === 'dex' ? 'amm' : 'clob'),
             ),
         };
       }
@@ -131,7 +131,7 @@ describe('StrategyRuntimeDispatcherService', () => {
       3000,
       undefined,
       undefined,
-      'amm_dex',
+      'amm',
     );
   });
 

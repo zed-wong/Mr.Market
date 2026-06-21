@@ -1,5 +1,11 @@
 # Execution Flow Changelog
 
+## 2026-06-22
+
+- Start Phase 1 of `docs/plans/2026-06-21-connector-based-dex-clob-architecture-plan.md`: add the unified Connector contract, ConnectorRegistry, and ClobConnector; route CLOB create/cancel exchange mutations through `connector.submitAction` / `cancelAction`; persist optional `connectorId` on strategy intents; keep Hyperliquid/Binance/MEXC on the CLOB connector path; add focused connector and intent-execution regression coverage.
+- Continue Phase 1 connector naming cleanup: move `server/src/modules/defi/` into `server/src/modules/market-making/connector/adapters/`, rename the adapter registry/interface to `EvmDexAdapterRegistry` / `EvmDexAdapter`, rename `defi-addresses.ts` to `connector-addresses.ts`, make `ConnectorModule` own the EVM DEX adapter providers, and update server module-map documentation.
+- Complete the Phase 1 execution-category rename: replace active `clob_cex` / `amm_dex` usage with connector taxonomy `clob` / `amm`, keep `clob_dex` explicitly rejected, update the volume strategy seed and migration path for persisted strategy definitions, and verify with focused strategy/intent specs plus server build.
+
 ## 2026-06-15
 
 - Archive the completed ledger order/user order identity plan from `docs/plans/` to `docs/archive/plans/`, keeping only the active venue design and admin direct editable volume config plans in current planning.

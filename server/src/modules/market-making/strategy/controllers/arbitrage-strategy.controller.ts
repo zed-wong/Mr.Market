@@ -93,7 +93,7 @@ export class ArbitrageStrategyController implements StrategyController {
           .executionCategory || '',
       ).toLowerCase() === 'clob_dex'
         ? 'clob_dex'
-        : 'clob_cex';
+        : 'clob';
 
     if (vwapB.minus(vwapA).dividedBy(vwapA).isGreaterThanOrEqualTo(threshold)) {
       actions.push(

@@ -24,7 +24,7 @@ import { ExchangeOrderTrackerService } from '../trackers/exchange-order-tracker.
 import { ExecutorAction } from './config/executor-action.types';
 import {
   ArbitrageStrategyDto,
-  DexAdapterId,
+  ConnectorId,
   ExecuteEfficientDualAccountVolumeStrategyDto,
   PureMarketMakingStrategyDto,
   VolumeExecutionVenue,
@@ -411,7 +411,7 @@ export class StrategyService
     pricePushRate: number,
     postOnlySide?: 'buy' | 'sell',
     executionVenue: VolumeExecutionVenue = 'cex',
-    dexId?: DexAdapterId,
+    dexId?: ConnectorId,
     chainId?: number,
     tokenIn?: string,
     tokenOut?: string,

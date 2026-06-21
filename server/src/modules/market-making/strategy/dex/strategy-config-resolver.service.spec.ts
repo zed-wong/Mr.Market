@@ -185,7 +185,7 @@ describe('StrategyConfigResolverService', () => {
     );
 
     expect(result.strategyType).toBe('volume');
-    expect(result.mergedConfig.executionCategory).toBe('amm_dex');
+    expect(result.mergedConfig.executionCategory).toBe('amm');
     expect(result.mergedConfig.executionVenue).toBe('dex');
   });
 
@@ -221,7 +221,7 @@ describe('StrategyConfigResolverService', () => {
         },
       ),
     ).toThrow(
-      'executionCategory clob_dex is not implemented yet. Use clob_cex or amm_dex',
+      'executionCategory clob_dex is not implemented yet. Use clob or amm',
     );
   });
 

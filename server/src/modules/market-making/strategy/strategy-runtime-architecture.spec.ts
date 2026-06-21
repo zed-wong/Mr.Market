@@ -10,6 +10,7 @@ import { FillRoutingService } from '../execution/fill-routing.service';
 import { ExchangeOrderTrackerService } from '../trackers/exchange-order-tracker.service';
 import { UserStreamTrackerService } from '../trackers/user-stream-tracker.service';
 import { PureMarketMakingStrategyDto } from './config/strategy.dto';
+import { StrategyOrderIntent } from './config/strategy-intent.types';
 import { PureMarketMakingStrategyController } from './controllers/pure-market-making-strategy.controller';
 import { StrategyControllerRegistry } from './controllers/strategy-controller.registry';
 import { ExecutorRegistry } from './execution/executor-registry';
@@ -326,6 +327,41 @@ const createFixture = () => {
   const exchangeOrderMappingService = new ExchangeOrderMappingService(
     createMappingRepository(mappingRows) as any,
   );
+  const connectorRegistry = {
+    resolve: jest.fn(() => ({
+      submitAction: jest.fn(async (intent: StrategyOrderIntent) => {
+        const metadata = intent.metadata || {};
+        const result = await exchangeConnectorAdapterService.placeLimitOrder(
+          intent.exchange,
+          intent.pair,
+          intent.side,
+          intent.qty,
+          intent.price,
+          String(metadata.submittedClientOrderId || ''),
+        );
+
+        return {
+          status: 'submitted',
+          exchangeOrderId: result.id,
+          details: result,
+        };
+      }),
+      cancelAction: jest.fn(async (intent: StrategyOrderIntent) => {
+        const result = await exchangeConnectorAdapterService.cancelOrder(
+          intent.exchange,
+          intent.pair,
+          String(intent.mixinOrderId || ''),
+          intent.accountLabel,
+        );
+
+        return {
+          status: 'submitted',
+          exchangeOrderId: result.id,
+          details: result,
+        };
+      }),
+    })),
+  };
   const strategyIntentExecutionService = new StrategyIntentExecutionService(
     configService,
     exchangeConnectorAdapterService as any,
@@ -335,6 +371,14 @@ const createFixture = () => {
     strategyIntentStoreService,
     exchangeOrderTrackerService,
     exchangeOrderMappingService,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    connectorRegistry as any,
   );
   const executorOrchestratorService = new ExecutorOrchestratorService(
     strategyIntentStoreService,

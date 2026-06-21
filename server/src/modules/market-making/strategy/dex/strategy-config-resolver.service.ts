@@ -157,11 +157,11 @@ export class StrategyConfigResolverService {
       );
       if (normalizedConfig.executionCategory === 'clob_dex') {
         throw new BadRequestException(
-          'executionCategory clob_dex is not implemented yet. Use clob_cex or amm_dex',
+          'executionCategory clob_dex is not implemented yet. Use clob or amm',
         );
       }
       normalizedConfig.executionVenue =
-        normalizedConfig.executionCategory === 'amm_dex' ? 'dex' : 'cex';
+        normalizedConfig.executionCategory === 'amm' ? 'dex' : 'cex';
     }
 
     if (strategyType === 'efficientDualAccountVolume') {

@@ -290,7 +290,7 @@ export class TimeIndicatorStrategyController implements StrategyController {
         side,
         price: String(entryPrice),
         qty: String(amountBase),
-        executionCategory: 'clob_cex',
+        executionCategory: 'clob',
         metadata: {
           emaFast: lastEmaF,
           emaSlow: lastEmaS,

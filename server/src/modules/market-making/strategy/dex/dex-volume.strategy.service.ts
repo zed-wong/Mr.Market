@@ -1,14 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import BigNumber from 'bignumber.js';
 import { BigNumber as EthersBigNumber, ethers } from 'ethers';
-import type { DexId } from 'src/common/constants/defi-addresses';
-import { DexAdapterRegistry } from 'src/modules/defi/adapter-registry';
-import { ensureAllowance, readDecimals } from 'src/modules/defi/utils/erc20';
+import type { ConnectorId } from 'src/common/constants/connector-addresses';
+import { EvmDexAdapterRegistry } from 'src/modules/market-making/connector/adapters/evm-dex-adapter-registry';
+import { ensureAllowance, readDecimals } from 'src/modules/market-making/connector/adapters/utils/erc20';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Web3Service } from 'src/modules/web3/web3.service';
 
 type DexVolumeExecutionRequest = {
-  dexId: DexId;
+  dexId: ConnectorId;
   chainId: number;
   tokenIn: string;
   tokenOut: string;
@@ -38,14 +38,14 @@ export class DexVolumeStrategyService {
   private readonly logger = new CustomLogger(DexVolumeStrategyService.name);
 
   constructor(
-    private readonly dexAdapterRegistry: DexAdapterRegistry,
+    private readonly evmDexAdapterRegistry: EvmDexAdapterRegistry,
     private readonly web3Service: Web3Service,
   ) {}
 
   async executeCycle(
     req: DexVolumeExecutionRequest,
   ): Promise<DexVolumeExecutionResult> {
-    const adapter = this.dexAdapterRegistry.get(req.dexId);
+    const adapter = this.evmDexAdapterRegistry.get(req.dexId);
 
     if (!adapter.supportsChain(req.chainId)) {
       throw new Error(

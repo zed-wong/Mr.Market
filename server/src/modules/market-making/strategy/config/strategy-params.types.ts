@@ -26,11 +26,11 @@ export type BaseVolumeStrategyParams = {
 };
 
 export type CexVolumeStrategyParams = BaseVolumeStrategyParams & {
-  executionCategory: 'clob_cex' | 'clob_dex';
+  executionCategory: 'clob' | 'clob_dex';
 };
 
 export type AmmDexVolumeStrategyParams = BaseVolumeStrategyParams & {
-  executionCategory: 'amm_dex';
+  executionCategory: 'amm';
   executionVenue: 'dex';
   dexId: string;
   chainId: number;
@@ -46,7 +46,7 @@ export type VolumeStrategyParams =
   | AmmDexVolumeStrategyParams;
 
 export type DualAccountVolumeStrategyParams = CexVolumeStrategyParams & {
-  executionCategory: 'clob_cex';
+  executionCategory: 'clob';
   executionVenue: 'cex';
   maxOrderAmount?: number;
   interval?: number;

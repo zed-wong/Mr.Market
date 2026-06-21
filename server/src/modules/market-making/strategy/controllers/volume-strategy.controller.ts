@@ -7,7 +7,7 @@ import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
 
 import { ExecutorAction } from '../config/executor-action.types';
-import { DexAdapterId } from '../config/strategy.dto';
+import { ConnectorId } from '../config/strategy.dto';
 import type {
   StrategyController,
   StrategyControllerFacade,
@@ -121,7 +121,7 @@ export class VolumeStrategyController implements StrategyController {
       this.readNumber(config.pricePushRate) ?? 0,
       this.readSide(config.postOnlySide),
       executionVenue,
-      this.readDexAdapterId(config.dexId),
+      this.readConnectorId(config.dexId),
       this.readNumber(config.chainId),
       this.readString(config.tokenIn),
       this.readString(config.tokenOut),
@@ -155,7 +155,7 @@ export class VolumeStrategyController implements StrategyController {
       ];
     }
 
-    if (params.executionCategory === 'amm_dex') {
+    if (params.executionCategory === 'amm') {
       const side = this.resolveVolumeSide(params.postOnlySide, executedTrades);
       const amountIn = this.computeAmmAmountIn(params, executedTrades);
 
@@ -172,7 +172,7 @@ export class VolumeStrategyController implements StrategyController {
           side,
           price: '0',
           qty: amountIn,
-          executionCategory: 'amm_dex',
+          executionCategory: 'amm',
           metadata: {
             dexId: params.dexId,
             chainId: params.chainId,
@@ -370,7 +370,7 @@ export class VolumeStrategyController implements StrategyController {
   }
 
   buildClobVolumeParams(input: {
-    executionCategory: 'clob_cex' | 'clob_dex';
+    executionCategory: 'clob' | 'clob_dex';
     exchangeName: string | undefined;
     symbol: string | undefined;
     baseIncrementPercentage: number;
@@ -420,7 +420,7 @@ export class VolumeStrategyController implements StrategyController {
     clientId: string;
     pricePushRate: number;
     postOnlySide?: 'buy' | 'sell';
-    dexId?: DexAdapterId;
+    dexId?: ConnectorId;
     chainId?: number;
     tokenIn?: string;
     tokenOut?: string;
@@ -455,7 +455,7 @@ export class VolumeStrategyController implements StrategyController {
       String(input.symbol || '').trim() || `${tokenIn}/${tokenOut}`;
 
     return {
-      executionCategory: 'amm_dex',
+      executionCategory: 'amm',
       executionVenue: 'dex',
       exchangeName: String(input.exchangeName || input.dexId),
       symbol: syntheticSymbol,
@@ -562,7 +562,7 @@ export class VolumeStrategyController implements StrategyController {
     return value === 'buy' || value === 'sell' ? value : undefined;
   }
 
-  private readDexAdapterId(value: unknown): DexAdapterId | undefined {
+  private readConnectorId(value: unknown): ConnectorId | undefined {
     return value === 'uniswapV3' || value === 'pancakeV3' ? value : undefined;
   }
 

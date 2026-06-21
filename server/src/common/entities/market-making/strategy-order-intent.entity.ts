@@ -29,6 +29,9 @@ export class StrategyOrderIntentEntity {
   exchange: string;
 
   @Column({ nullable: true })
+  connectorId?: string;
+
+  @Column({ nullable: true })
   accountLabel?: string;
 
   @Column()

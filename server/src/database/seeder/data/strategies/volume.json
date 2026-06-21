@@ -14,7 +14,7 @@
       "clientId": { "type": "string" },
       "executionCategory": {
         "type": "string",
-        "enum": ["clob_cex", "amm_dex"]
+        "enum": ["clob", "amm"]
       },
       "executionVenue": {
         "type": "string",
@@ -44,7 +44,7 @@
     "additionalProperties": false
   },
   "defaultConfig": {
-    "executionCategory": "clob_cex",
+    "executionCategory": "clob",
     "symbol": "BTC/USDT",
     "incrementPercentage": 0.5,
     "intervalTime": 30,

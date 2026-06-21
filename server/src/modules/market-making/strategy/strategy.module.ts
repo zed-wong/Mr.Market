@@ -14,6 +14,7 @@ import { MarketdataModule } from '../../data/market-data/market-data.module';
 import { LoggerModule } from '../../infrastructure/logger/logger.module';
 import { Web3Module } from '../../web3/web3.module';
 import { OrderScopedBalanceQueryService } from '../balance-state/order-scoped-balance-query.service';
+import { ConnectorModule } from '../connector/connector.module';
 import { DurabilityModule } from '../durability/durability.module';
 import { ExchangeApiKeyModule } from '../exchange-api-key/exchange-api-key.module';
 import { ExecutionModule } from '../execution/execution.module';
@@ -74,6 +75,7 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
     TickModule,
     DurabilityModule,
     ExecutionModule,
+    ConnectorModule,
     TrackersModule,
     MarketdataModule,
     forwardRef(() => DexModule),

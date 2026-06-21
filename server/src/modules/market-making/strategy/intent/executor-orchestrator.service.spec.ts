@@ -20,7 +20,7 @@ describe('ExecutorOrchestratorService', () => {
     side: 'buy',
     price: '100',
     qty: '1',
-    executionCategory: 'clob_cex',
+    executionCategory: 'clob',
     metadata: { source: 'test' },
     createdAt: '2026-03-04T00:00:00.000Z',
   };
@@ -43,7 +43,7 @@ describe('ExecutorOrchestratorService', () => {
         expect.objectContaining({
           intentId: 'intent-1',
           status: 'NEW',
-          executionCategory: 'clob_cex',
+          executionCategory: 'clob',
           metadata: expect.objectContaining({ source: 'test' }),
         }),
       ]),

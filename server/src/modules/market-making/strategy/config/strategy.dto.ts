@@ -24,7 +24,7 @@ import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import { STRATEGY_EXECUTION_CATEGORIES } from './strategy-execution-category';
 
 export type VolumeExecutionVenue = 'cex' | 'dex';
-export type DexAdapterId = 'uniswapV3' | 'pancakeV3';
+export type ConnectorId = 'uniswapV3' | 'pancakeV3';
 
 export class DualAccountBehaviorProfileDto {
   @ApiPropertyOptional({ example: 0.95 })
@@ -553,12 +553,12 @@ export class ExecuteVolumeStrategyDto {
   @ApiPropertyOptional({
     description:
       'Execution category for volume strategy. Preferred over executionVenue.',
-    example: 'clob_cex',
+    example: 'clob',
     enum: STRATEGY_EXECUTION_CATEGORIES,
   })
   @IsOptional()
   @IsIn(STRATEGY_EXECUTION_CATEGORIES)
-  executionCategory?: 'clob_cex' | 'clob_dex' | 'amm_dex';
+  executionCategory?: 'clob' | 'clob_dex' | 'amm';
 
   @ApiPropertyOptional({
     description:
@@ -595,10 +595,10 @@ export class ExecuteVolumeStrategyDto {
   })
   @ValidateIf(
     (o: ExecuteVolumeStrategyDto) =>
-      (o.executionCategory || '') === 'amm_dex' || o.executionVenue === 'dex',
+      (o.executionCategory || '') === 'amm' || o.executionVenue === 'dex',
   )
   @IsIn(['uniswapV3', 'pancakeV3'])
-  dexId?: DexAdapterId;
+  dexId?: ConnectorId;
 
   @ApiPropertyOptional({
     description: 'EVM chain id used for DEX execution (required for dex venue)',
@@ -606,7 +606,7 @@ export class ExecuteVolumeStrategyDto {
   })
   @ValidateIf(
     (o: ExecuteVolumeStrategyDto) =>
-      (o.executionCategory || '') === 'amm_dex' || o.executionVenue === 'dex',
+      (o.executionCategory || '') === 'amm' || o.executionVenue === 'dex',
   )
   @IsInt()
   @IsPositive()
@@ -619,7 +619,7 @@ export class ExecuteVolumeStrategyDto {
   })
   @ValidateIf(
     (o: ExecuteVolumeStrategyDto) =>
-      (o.executionCategory || '') === 'amm_dex' || o.executionVenue === 'dex',
+      (o.executionCategory || '') === 'amm' || o.executionVenue === 'dex',
   )
   @IsEthereumAddress()
   tokenIn?: string;
@@ -631,7 +631,7 @@ export class ExecuteVolumeStrategyDto {
   })
   @ValidateIf(
     (o: ExecuteVolumeStrategyDto) =>
-      (o.executionCategory || '') === 'amm_dex' || o.executionVenue === 'dex',
+      (o.executionCategory || '') === 'amm' || o.executionVenue === 'dex',
   )
   @IsEthereumAddress()
   tokenOut?: string;
@@ -642,7 +642,7 @@ export class ExecuteVolumeStrategyDto {
   })
   @ValidateIf(
     (o: ExecuteVolumeStrategyDto) =>
-      (o.executionCategory || '') === 'amm_dex' || o.executionVenue === 'dex',
+      (o.executionCategory || '') === 'amm' || o.executionVenue === 'dex',
   )
   @IsInt()
   @IsPositive()

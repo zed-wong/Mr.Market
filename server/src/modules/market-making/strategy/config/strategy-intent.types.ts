@@ -24,6 +24,7 @@ export type StrategyOrderIntent = {
   userId: string;
   clientId: string;
   exchange: string;
+  connectorId?: string;
   accountLabel?: string;
   pair: string;
   side: 'buy' | 'sell';

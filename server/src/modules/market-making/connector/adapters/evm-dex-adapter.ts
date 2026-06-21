@@ -1,5 +1,5 @@
 import { BigNumber, ethers } from 'ethers';
-import type { DexId } from 'src/common/constants/defi-addresses';
+import type { ConnectorId } from 'src/common/constants/connector-addresses';
 
 export type QuoteSingleParams = {
   tokenIn: string;
@@ -20,8 +20,8 @@ export type ExactInputSingleParams = {
   sqrtPriceLimitX96?: BigNumber | string;
 };
 
-export interface DexAdapter {
-  readonly id: DexId;
+export interface EvmDexAdapter {
+  readonly id: ConnectorId;
   supportsChain(chainId: number): boolean;
 
   getAddresses(chainId: number): {

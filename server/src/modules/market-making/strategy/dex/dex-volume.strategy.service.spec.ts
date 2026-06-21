@@ -1,12 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BigNumber, ethers } from 'ethers';
-import { DexAdapterRegistry } from 'src/modules/defi/adapter-registry';
-import { ensureAllowance, readDecimals } from 'src/modules/defi/utils/erc20';
+import { EvmDexAdapterRegistry } from 'src/modules/market-making/connector/adapters/evm-dex-adapter-registry';
+import { ensureAllowance, readDecimals } from 'src/modules/market-making/connector/adapters/utils/erc20';
 import { Web3Service } from 'src/modules/web3/web3.service';
 
 import { DexVolumeStrategyService } from './dex-volume.strategy.service';
 
-jest.mock('src/modules/defi/utils/erc20', () => ({
+jest.mock('src/modules/market-making/connector/adapters/utils/erc20', () => ({
   ensureAllowance: jest.fn().mockResolvedValue(undefined),
   readDecimals: jest.fn().mockResolvedValue(6),
 }));
@@ -52,7 +52,7 @@ describe('DexVolumeStrategyService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DexVolumeStrategyService,
-        { provide: DexAdapterRegistry, useValue: mockRegistry },
+        { provide: EvmDexAdapterRegistry, useValue: mockRegistry },
         { provide: Web3Service, useValue: mockWeb3 },
       ],
     }).compile();

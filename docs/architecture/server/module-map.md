@@ -50,17 +50,20 @@ The map is based on the root wiring in `server/src/app.module.ts` and each `*.mo
   - Depends on: `CacheModule`, `MarketdataModule`, TypeORM spot pair entity.
   - Main role: spot pair metadata and APIs.
 
-### defi
+### connector
 
-- `modules/defi/defi.module.ts`
-  - Depends on: none.
-  - Main role: DEX adapter registry and adapter providers.
+- `modules/market-making/connector/connector.module.ts`
+  - Depends on: `ExecutionModule`.
+  - Main role: connector abstraction, CLOB connector dispatch, and EVM DEX adapter providers.
   - Internal structure:
-    - `adapter-registry.ts` - DexAdapterRegistry for adapter lookup.
-    - `adapters/` - DEX adapter implementations (uniswapV3.adapter.ts, pancakeV3.adapter.ts).
-    - `abis.ts` - Contract ABI definitions.
-    - `common/constants/defi-addresses.ts` - Contract addresses by chain.
-    - `utils/` - DEX-related utility functions.
+    - `connector.types.ts` - Connector interface, exchange type, capabilities, and result contracts.
+    - `connector-registry.ts` - ConnectorRegistry for connector lookup.
+    - `clob-connector.ts` - CLOB connector wrapper around exchange adapter mutations.
+    - `adapters/evm-dex-adapter-registry.ts` - EvmDexAdapterRegistry for EVM adapter lookup.
+    - `adapters/` - EVM DEX adapter implementations (uniswap-v3.adapter.ts, pancake-v3.adapter.ts).
+    - `adapters/abis.ts` - Contract ABI definitions.
+    - `common/constants/connector-addresses.ts` - Connector contract addresses by chain.
+    - `adapters/utils/` - EVM DEX utility functions.
 
 ### infrastructure
 
@@ -95,10 +98,10 @@ The map is based on the root wiring in `server/src/app.module.ts` and each `*.mo
     - `dual-account/` - DualAccountPlannerService plus pure config helpers for dual-account normalization, capacity/tradeability planning, rebalance actions, published-cycle state, and fill progress.
     - `settlement/` - FillSettlementService for order-scoped fill and actual-fee ledger settlement plus runtime fill handling; runtime callers pass only unsettled cumulative fill deltas.
     - `observation/` - RuntimeObservationService and PMM markout evaluation for runtime pressure, PnL counters, traded-volume accounting, and adverse markout observations.
-    - `dex/` - AlpacaStratService, DexModule, StrategyConfigResolverService.
+    - `dex/` - DexVolumeStrategyService, DexModule, StrategyConfigResolverService.
 - `modules/market-making/strategy/dex/dex.module.ts`
-  - Depends on: `Web3Module`, `DefiModule`.
-  - Main role: DEX strategy execution support.
+  - Depends on: `Web3Module`, `ConnectorModule`.
+  - Main role: AMM strategy execution support using connector-owned adapters.
 - `modules/market-making/user-orders/user-orders.module.ts`
   - Depends on: `ConfigModule`, `StrategyModule`, `FeeModule`, `GrowdataModule`, `SnapshotsModule`, `TransactionModule`, `WithdrawalModule`, `ExchangeModule`, `NetworkMappingModule`, `CampaignModule`, `MixinClientModule`, `LedgerModule`, TypeORM order/intent/strategy entities, queue `market-making`.
   - Main role: market-making user order lifecycle.
@@ -266,13 +269,13 @@ This section explains each module with three questions:
 - Why: spot features need a dedicated data boundary separate from market-making strategies.
 - Where: used by spot pages and admin spot management.
 
-### defi domain
+### connector domain
 
-#### `defi/defi.module.ts`
+#### `market-making/connector/connector.module.ts`
 
-- What: registers DEX adapters (UniswapV3Adapter, PancakeV3Adapter) and DexAdapterRegistry.
-- Why: strategy runtime supports DEX execution categories and needs a provider abstraction.
-- Where: used by market-making dex strategy services.
+- What: registers the unified connector contracts, ClobConnector, ConnectorRegistry, and EVM DEX adapters.
+- Why: CLOB and on-chain execution need a connector-neutral dispatch boundary while preserving connector-family-specific lower layers.
+- Where: used by market-making intent execution and AMM strategy services.
 
 ### infrastructure domain
 
@@ -376,9 +379,9 @@ This section explains each module with three questions:
 
 #### `market-making/connector/*`
 
-- What: connector-scoped runtime grouping via `ExchangeConnectorRuntime` and `ExchangeConnectorRegistry`.
-- Why: multi-connector strategies need one place to look up the order tracker, user stream tracker, reconciliation runner, balance cache, balance refresh scheduler, and order book tracker for a given exchange.
-- Where: used as the architectural bridge toward future multi-leg / cross-connector strategies.
+- What: connector-scoped runtime grouping plus high-level connector dispatch via `ConnectorRegistry`; CLOB still also exposes `ExchangeConnectorRuntime` / `ExchangeConnectorRegistry` for tracker and cache grouping.
+- Why: strategies and workers need one place to resolve trading destinations without mixing CLOB, AMM, and CLMM settlement semantics.
+- Where: used by intent execution and as the bridge toward AMM/CLMM execution phases.
 
 #### `market-making/rewards/rewards.module.ts`
 

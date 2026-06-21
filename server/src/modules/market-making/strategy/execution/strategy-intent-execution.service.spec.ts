@@ -106,6 +106,47 @@ describe('StrategyIntentExecutionService', () => {
     }),
   } as unknown as DexVolumeStrategyService;
 
+  const connectorRegistry = {
+    resolve: jest.fn(() => ({
+      submitAction: jest.fn(async (intent: StrategyOrderIntent) => {
+        const metadata = intent.metadata || {};
+        const result = await exchangeConnectorAdapterService.placeLimitOrder(
+          intent.exchange,
+          intent.pair,
+          intent.side,
+          intent.qty,
+          intent.price,
+          String(metadata.submittedClientOrderId || ''),
+          {
+            postOnly: Boolean(intent.postOnly),
+            timeInForce: intent.timeInForce,
+          },
+          intent.accountLabel,
+        );
+
+        return {
+          status: 'submitted',
+          exchangeOrderId: result.id,
+          details: result,
+        };
+      }),
+      cancelAction: jest.fn(async (intent: StrategyOrderIntent) => {
+        const result = await exchangeConnectorAdapterService.cancelOrder(
+          intent.exchange,
+          intent.pair,
+          String(intent.mixinOrderId || ''),
+          intent.accountLabel,
+        );
+
+        return {
+          status: 'submitted',
+          exchangeOrderId: result.id,
+          details: result,
+        };
+      }),
+    })),
+  };
+
   const orderReservationService = {
     reserveForLimitOrder: jest.fn().mockResolvedValue({
       orderId: 'c1',
@@ -239,6 +280,7 @@ describe('StrategyIntentExecutionService', () => {
       apiKeyService as any,
       runtimeObservationService as any,
       fillSettlementService as any,
+      connectorRegistry as any,
     );
 
   beforeEach(() => {
@@ -273,6 +315,7 @@ describe('StrategyIntentExecutionService', () => {
           price,
         }),
       );
+    connectorRegistry.resolve.mockClear();
     exchangeOrderTrackerService.upsertOrder.mockClear();
     exchangeOrderTrackerService.upsertOrder.mockImplementation(
       (order: Record<string, unknown>) => {
@@ -2310,7 +2353,7 @@ describe('StrategyIntentExecutionService', () => {
         ...baseIntent,
         intentId: 'amm-intent-1',
         type: 'EXECUTE_AMM_SWAP',
-        executionCategory: 'amm_dex',
+        executionCategory: 'amm',
         metadata: {
           dexId: 'uniswapV3',
           chainId: 1,
@@ -2348,7 +2391,7 @@ describe('StrategyIntentExecutionService', () => {
           ...baseIntent,
           intentId: 'amm-intent-bad',
           type: 'EXECUTE_AMM_SWAP',
-          executionCategory: 'amm_dex',
+          executionCategory: 'amm',
           metadata: {
             dexId: 'uniswapV3',
             chainId: 1,

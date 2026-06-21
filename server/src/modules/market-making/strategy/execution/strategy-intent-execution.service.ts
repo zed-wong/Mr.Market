@@ -12,6 +12,8 @@ import {
 } from 'src/common/helpers/ledger-order-scope';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+import { ConnectorRegistry } from 'src/modules/market-making/connector/connector-registry';
+import { ConnectorActionResult } from 'src/modules/market-making/connector/connector.types';
 import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
 import { Repository } from 'typeorm';
 
@@ -28,7 +30,7 @@ import {
 } from '../../ledger/order-reservation.service';
 import type { TrackedOrder } from '../../trackers/exchange-order-tracker.service';
 import { ExchangeOrderTrackerService } from '../../trackers/exchange-order-tracker.service';
-import { DexAdapterId } from '../config/strategy.dto';
+import { ConnectorId } from '../config/strategy.dto';
 import type { StrategyRuntimeSession } from '../config/strategy-controller.types';
 import { StrategyOrderIntent } from '../config/strategy-intent.types';
 import { StrategyMarketDataProviderService } from '../data/strategy-market-data-provider.service';
@@ -179,6 +181,8 @@ export class StrategyIntentExecutionService {
     private readonly runtimeObservationService?: RuntimeObservationService,
     @Optional()
     private readonly fillSettlementService?: FillSettlementService,
+    @Optional()
+    private readonly connectorRegistry?: ConnectorRegistry,
   ) {
     this.executeIntents = this.toBoolean(
       this.configService.get('strategy.execute_intents', false),
@@ -427,19 +431,7 @@ export class StrategyIntentExecutionService {
 
         try {
           result = await this.runWithRetries(intent, () =>
-            this.exchangeConnectorAdapterService.placeLimitOrder(
-              intent.exchange,
-              intent.pair,
-              intent.side,
-              intent.qty,
-              intent.price,
-              clientOrderId,
-              {
-                postOnly: Boolean(intent.postOnly),
-                timeInForce: intent.timeInForce,
-              },
-              intent.accountLabel,
-            ),
+            this.submitClobCreateIntent(intent, clientOrderId),
           );
         } catch (error) {
           if (isAmbiguousPlacementError(error)) {
@@ -575,12 +567,10 @@ export class StrategyIntentExecutionService {
         }
 
         const result = await this.runWithRetries(intent, () =>
-          this.exchangeConnectorAdapterService.cancelOrder(
-            intent.exchange,
-            intent.pair,
-            intent.mixinOrderId,
-            trackedOrder?.accountLabel || intent.accountLabel,
-          ),
+          this.cancelClobIntent({
+            ...intent,
+            accountLabel: trackedOrder?.accountLabel || intent.accountLabel,
+          }),
         );
 
         const orderId = this.resolveOrderIdForClientOrderId(intent);
@@ -651,7 +641,7 @@ export class StrategyIntentExecutionService {
             : {};
         const dexId = String(
           (metadata as Record<string, unknown>).dexId || '',
-        ) as DexAdapterId;
+        ) as ConnectorId;
         const chainId = Number(
           (metadata as Record<string, unknown>).chainId || 0,
         );
@@ -974,6 +964,7 @@ export class StrategyIntentExecutionService {
         clientId: intent.clientId,
         exchange: order.exchange,
         accountLabel: order.accountLabel,
+        connectorId: intent.connectorId || order.exchange,
         pair: order.pair,
         side: order.side,
         price: order.price,
@@ -1057,6 +1048,75 @@ export class StrategyIntentExecutionService {
         : undefined;
 
     return metadataOrderId || intent.clientId;
+  }
+
+  private async submitClobCreateIntent(
+    intent: StrategyOrderIntent,
+    clientOrderId: string,
+  ): Promise<Record<string, unknown>> {
+    const result = await this.resolveConnector(intent).submitAction({
+      ...intent,
+      connectorId: this.resolveConnectorId(intent),
+      metadata: {
+        ...(intent.metadata || {}),
+        submittedClientOrderId: clientOrderId,
+      },
+    });
+
+    return this.toExchangeMutationResult(result);
+  }
+
+  private async cancelClobIntent(
+    intent: StrategyOrderIntent,
+  ): Promise<Record<string, unknown>> {
+    const result = await this.resolveConnector(intent).cancelAction({
+      ...intent,
+      connectorId: this.resolveConnectorId(intent),
+    });
+
+    return this.toExchangeMutationResult(result);
+  }
+
+  private resolveConnector(intent: StrategyOrderIntent) {
+    if (!this.connectorRegistry) {
+      throw new Error('ConnectorRegistry is required for intent execution');
+    }
+
+    return this.connectorRegistry.resolve(this.resolveConnectorId(intent));
+  }
+
+  private resolveConnectorId(intent: StrategyOrderIntent): string {
+    return intent.connectorId || intent.exchange;
+  }
+
+  private toExchangeMutationResult(
+    result: ConnectorActionResult,
+  ): Record<string, unknown> {
+    const raw =
+      result.details && typeof result.details === 'object'
+        ? { ...result.details }
+        : {};
+
+    if (result.exchangeOrderId && raw.id === undefined) {
+      raw.id = result.exchangeOrderId;
+    }
+
+    if (result.status === 'not_supported') {
+      throw new Error(
+        `connector action not supported: ${JSON.stringify(result.details || {})}`,
+      );
+    }
+
+    if (raw.status === undefined) {
+      raw.status =
+        result.status === 'failed'
+          ? 'failed'
+          : result.status === 'confirmed'
+          ? 'closed'
+          : 'open';
+    }
+
+    return raw;
   }
 
   private resolveIntentOrderScope(intent: StrategyOrderIntent): {
@@ -2020,12 +2080,11 @@ export class StrategyIntentExecutionService {
     );
 
     const result = await this.runWithRetries(intent, () =>
-      this.exchangeConnectorAdapterService.cancelOrder(
-        intent.exchange,
-        intent.pair,
-        makerExchangeOrderId,
-        intent.accountLabel,
-      ),
+      this.cancelClobIntent({
+        ...intent,
+        type: 'CANCEL_ORDER',
+        mixinOrderId: makerExchangeOrderId,
+      }),
     );
 
     return this.isCancelResultFinal(
@@ -2142,12 +2201,11 @@ export class StrategyIntentExecutionService {
 
     try {
       const result = await this.runWithRetries(intent, () =>
-        this.exchangeConnectorAdapterService.cancelOrder(
-          intent.exchange,
-          intent.pair,
-          makerExchangeOrderId,
-          intent.accountLabel,
-        ),
+        this.cancelClobIntent({
+          ...intent,
+          type: 'CANCEL_ORDER',
+          mixinOrderId: makerExchangeOrderId,
+        }),
       );
       const existingTrackedOrder =
         this.exchangeOrderTrackerService?.getByExchangeOrderId(

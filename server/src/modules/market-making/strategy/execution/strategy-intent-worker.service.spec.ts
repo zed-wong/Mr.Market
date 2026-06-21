@@ -52,7 +52,7 @@ const createHeadIntent = (
   side: 'buy',
   price: '100',
   qty: '1',
-  executionCategory: 'clob_cex',
+  executionCategory: 'clob',
   metadata: null,
   status,
   createdAt: '2026-02-11T00:00:00.000Z',
@@ -523,7 +523,7 @@ describe('StrategyIntentWorkerService', () => {
       getNextNewIntent: jest.fn().mockResolvedValue({
         ...createHeadIntent('s1', 's1-amm', 'uniswapV3'),
         type: 'EXECUTE_AMM_SWAP',
-        executionCategory: 'amm_dex',
+        executionCategory: 'amm',
         metadata: { dexId: 'uniswapV3', chainId: 1 },
       }),
       cancelPendingIntents: jest.fn().mockResolvedValue(0),
@@ -553,7 +553,7 @@ describe('StrategyIntentWorkerService', () => {
     expect(strategyIntentExecutionService.consumeIntents).toHaveBeenCalledWith([
       expect.objectContaining({
         type: 'EXECUTE_AMM_SWAP',
-        executionCategory: 'amm_dex',
+        executionCategory: 'amm',
         metadata: expect.objectContaining({ dexId: 'uniswapV3', chainId: 1 }),
       }),
     ]);

@@ -237,7 +237,7 @@ export function normalizeEfficientDualAccountVolumeStrategyParams(
     clientId: normalized.clientId,
     marketMakingOrderId: normalized.marketMakingOrderId || normalized.clientId,
     pricePushRate: 0,
-    executionCategory: 'clob_cex',
+    executionCategory: 'clob',
     executionVenue: 'cex',
     makerAccountLabel: String(normalized.makerAccountLabel || '').trim(),
     takerAccountLabel: String(normalized.takerAccountLabel || '').trim(),

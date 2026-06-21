@@ -3,7 +3,7 @@ import { StrategyInstance } from 'src/common/entities/market-making/strategy-ins
 import type { ExecutorAction } from './executor-action.types';
 import type {
   ArbitrageStrategyDto,
-  DexAdapterId,
+  ConnectorId,
   ExecuteEfficientDualAccountVolumeStrategyDto,
   PureMarketMakingStrategyDto,
   VolumeExecutionVenue,
@@ -61,7 +61,7 @@ export type StrategyControllerFacade = {
     pricePushRate: number,
     postOnlySide?: 'buy' | 'sell',
     executionVenue?: VolumeExecutionVenue,
-    dexId?: DexAdapterId,
+    dexId?: ConnectorId,
     chainId?: number,
     tokenIn?: string,
     tokenOut?: string,

@@ -21,7 +21,7 @@ import { TrackedOrderShutdownService } from '../../trackers/tracked-order-shutdo
 import { ExecutorAction } from '../config/executor-action.types';
 import {
   ArbitrageStrategyDto,
-  DexAdapterId,
+  ConnectorId,
   ExecuteEfficientDualAccountVolumeStrategyDto,
   PureMarketMakingStrategyDto,
   VolumeExecutionVenue,
@@ -392,7 +392,7 @@ export class StrategyInstanceLifecycleService {
     pricePushRate: number,
     postOnlySide: 'buy' | 'sell' | undefined,
     executionVenue: VolumeExecutionVenue,
-    dexId: DexAdapterId | undefined,
+    dexId: ConnectorId | undefined,
     chainId: number | undefined,
     tokenIn: string | undefined,
     tokenOut: string | undefined,
@@ -413,13 +413,13 @@ export class StrategyInstanceLifecycleService {
 
     if (executionCategory === 'clob_dex') {
       throw new Error(
-        'executionCategory clob_dex is not implemented yet. Use clob_cex or amm_dex',
+        'executionCategory clob_dex is not implemented yet. Use clob or amm',
       );
     }
 
     const controller = this.getVolumeStrategyController();
     const params: VolumeStrategyParams =
-      executionCategory === 'amm_dex'
+      executionCategory === 'amm'
         ? controller.buildAmmDexVolumeParams({
             exchangeName,
             symbol,
@@ -628,7 +628,7 @@ export class StrategyInstanceLifecycleService {
       const venue = String(parameters.executionVenue || '').toLowerCase();
       const category = String(parameters.executionCategory || '').toLowerCase();
 
-      if (venue === 'dex' || category === 'amm_dex') {
+      if (venue === 'dex' || category === 'amm') {
         return 0;
       }
 

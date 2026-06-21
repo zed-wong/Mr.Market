@@ -657,9 +657,9 @@ export class MarketMakingSingleTickHelper {
         qty: intent.qty,
         mixinOrderId: intent.mixinOrderId,
         executionCategory: intent.executionCategory as
-          | 'clob_cex'
+          | 'clob'
           | 'clob_dex'
-          | 'amm_dex'
+          | 'amm'
           | undefined,
         postOnly:
           typeof intent.postOnly === 'boolean' ? intent.postOnly : undefined,

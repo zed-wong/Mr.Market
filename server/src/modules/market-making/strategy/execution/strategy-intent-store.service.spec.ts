@@ -17,7 +17,7 @@ const createIntent = (
   side: 'buy',
   price: '100',
   qty: '1',
-  executionCategory: 'clob_cex',
+  executionCategory: 'clob',
   metadata: { source: 'spec' },
   status: 'NEW',
   errorReason: undefined,

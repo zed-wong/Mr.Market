@@ -251,6 +251,7 @@ export class StrategyIntentWorkerService
       userId: intentEntity.userId,
       clientId: intentEntity.clientId,
       exchange: intentEntity.exchange,
+      connectorId: intentEntity.connectorId || undefined,
       accountLabel: intentEntity.accountLabel || undefined,
       pair: intentEntity.pair,
       side: intentEntity.side as StrategyOrderIntent['side'],

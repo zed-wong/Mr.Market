@@ -694,7 +694,7 @@ export class PureMarketMakingStrategyController implements StrategyController {
           quantized.qty,
           ts,
           `mm-${slotKey}`,
-          'clob_cex',
+          'clob',
           undefined,
           true,
           params.accountLabel,

@@ -1,13 +1,16 @@
-export type DexId = 'uniswapV3' | 'pancakeV3';
+export type ConnectorId = 'uniswapV3' | 'pancakeV3';
 
-export type DexAddresses = {
+export type ConnectorAddresses = {
   factory: string;
   router: string;
   quoterV2: string;
   weth: string;
 };
 
-export const DEFI_ADDRESSES: Record<DexId, Record<number, DexAddresses>> = {
+export const CONNECTOR_ADDRESSES: Record<
+  ConnectorId,
+  Record<number, ConnectorAddresses>
+> = {
   uniswapV3: {
     1: {
       factory: '0x1F98431c8aD98523631AE4a59f267346ea31F984',
