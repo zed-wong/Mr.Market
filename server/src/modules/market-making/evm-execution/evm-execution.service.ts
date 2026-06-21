@@ -13,6 +13,7 @@ export type CreateEvmExecutionCommand = {
   parentExecutionId?: string;
   executionType: EvmExecutionType;
   userOrderId: string;
+  userId: string;
   ledgerOrderId: string;
   accountLabel?: string;
   intentId: string;
@@ -51,6 +52,7 @@ export class EvmExecutionService {
       parentExecutionId: command.parentExecutionId,
       executionType: command.executionType,
       userOrderId: command.userOrderId,
+      userId: command.userId,
       ledgerOrderId: command.ledgerOrderId,
       accountLabel: command.accountLabel || 'default',
       intentId: command.intentId,

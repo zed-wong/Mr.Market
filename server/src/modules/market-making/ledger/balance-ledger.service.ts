@@ -113,8 +113,18 @@ export class BalanceLedgerService {
     return await this.applyMutation('fee_debit', command);
   }
 
+  async debitGas(command: BalanceLedgerCommand): Promise<BalanceLedgerResult> {
+    return await this.applyMutation('gas_debit', command);
+  }
+
   async adjust(command: BalanceLedgerCommand): Promise<BalanceLedgerResult> {
     return await this.applyMutation('fill_settle', command);
+  }
+
+  async settleSwap(
+    command: BalanceLedgerCommand,
+  ): Promise<BalanceLedgerResult> {
+    return await this.applyMutation('swap_settle', command);
   }
 
   async reverse(command: BalanceLedgerCommand): Promise<BalanceLedgerResult> {
@@ -166,6 +176,16 @@ export class BalanceLedgerService {
   ): Promise<MarketMakingOrderBalance[]> {
     return await this.orderBalanceRepository.find({
       where: { userOrderId },
+      order: { orderId: 'ASC', assetId: 'ASC' },
+    });
+  }
+
+  async findBalancesByTradingAccount(
+    tradingAccountId: string,
+    chainId: number,
+  ): Promise<MarketMakingOrderBalance[]> {
+    return await this.orderBalanceRepository.find({
+      where: { tradingAccountId, chainId },
       order: { orderId: 'ASC', assetId: 'ASC' },
     });
   }
@@ -411,6 +431,7 @@ export class BalanceLedgerService {
 
     if (
       type !== 'fill_settle' &&
+      type !== 'swap_settle' &&
       type !== 'reward_credit' &&
       type !== 'reversal' &&
       amountBn.isLessThanOrEqualTo(0)
@@ -472,6 +493,16 @@ export class BalanceLedgerService {
       signedEntryAmount = amountBn.negated();
     }
 
+    if (type === 'gas_debit') {
+      if (lockedBn.isLessThan(amountBn)) {
+        throw new BadRequestException(
+          'insufficient locked balance for gas debit',
+        );
+      }
+      nextLocked = lockedBn.minus(amountBn);
+      signedEntryAmount = amountBn.negated();
+    }
+
     if (type === 'reserve_lock') {
       if (availableBn.isLessThan(amountBn)) {
         throw new BadRequestException(
@@ -492,7 +523,7 @@ export class BalanceLedgerService {
       signedEntryAmount = amountBn;
     }
 
-    if (type === 'fill_settle') {
+    if (type === 'fill_settle' || type === 'swap_settle') {
       if (amountBn.isNegative()) {
         const fillDebit = amountBn.abs();
 
@@ -575,6 +606,7 @@ export class BalanceLedgerService {
         : balance.initialDeposit;
     balance.realizedDelta =
       type === 'fill_settle' ||
+      type === 'swap_settle' ||
       type === 'reward_credit' ||
       this.shouldReversalAffectRealizedDelta(reversedEntry)
         ? new BigNumber(balance.realizedDelta).plus(signedEntryAmount).toFixed()
@@ -603,11 +635,15 @@ export class BalanceLedgerService {
   ): string {
     const feePaid = new BigNumber(currentFeePaid);
 
-    if (type === 'fee_debit') {
+    if (type === 'fee_debit' || type === 'gas_debit') {
       return feePaid.plus(amount).toFixed();
     }
 
-    if (type === 'reversal' && reversedEntry?.type === 'fee_debit') {
+    if (
+      type === 'reversal' &&
+      (reversedEntry?.type === 'fee_debit' ||
+        reversedEntry?.type === 'gas_debit')
+    ) {
       return BigNumber.maximum(feePaid.minus(amount.abs()), 0).toFixed();
     }
 
@@ -623,6 +659,7 @@ export class BalanceLedgerService {
 
     return (
       reversedEntry.type === 'fill_settle' ||
+      reversedEntry.type === 'swap_settle' ||
       reversedEntry.type === 'reward_credit' ||
       reversedEntry.type === 'reversal'
     );

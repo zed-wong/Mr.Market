@@ -4,6 +4,8 @@ const CONTROLLER_TYPE_ALIASES: Record<string, string> = {
   pure_market_making: 'pureMarketMaking',
   efficient_dual_account_volume: 'efficientDualAccountVolume',
   'efficient-dual-account-volume': 'efficientDualAccountVolume',
+  amm_volume: 'ammVolume',
+  'amm-volume': 'ammVolume',
   time_indicator: 'timeIndicator',
 };
 

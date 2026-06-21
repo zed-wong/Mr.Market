@@ -30,7 +30,6 @@ import {
 } from '../../ledger/order-reservation.service';
 import type { TrackedOrder } from '../../trackers/exchange-order-tracker.service';
 import { ExchangeOrderTrackerService } from '../../trackers/exchange-order-tracker.service';
-import { ConnectorId } from '../config/strategy.dto';
 import type { StrategyRuntimeSession } from '../config/strategy-controller.types';
 import { StrategyOrderIntent } from '../config/strategy-intent.types';
 import { StrategyMarketDataProviderService } from '../data/strategy-market-data-provider.service';
@@ -631,68 +630,7 @@ export class StrategyIntentExecutionService {
       }
 
       if (intent.type === 'EXECUTE_AMM_SWAP') {
-        if (!this.dexVolumeStrategyService) {
-          throw new Error('Dex volume strategy service is not available');
-        }
-
-        const metadata =
-          intent.metadata && typeof intent.metadata === 'object'
-            ? intent.metadata
-            : {};
-        const dexId = String(
-          (metadata as Record<string, unknown>).dexId || '',
-        ) as ConnectorId;
-        const chainId = Number(
-          (metadata as Record<string, unknown>).chainId || 0,
-        );
-        const tokenIn = String(
-          (metadata as Record<string, unknown>).tokenIn || '',
-        );
-        const tokenOut = String(
-          (metadata as Record<string, unknown>).tokenOut || '',
-        );
-        const feeTier = Number(
-          (metadata as Record<string, unknown>).feeTier || 0,
-        );
-
-        if (!dexId || !chainId || !tokenIn || !tokenOut || !feeTier) {
-          throw new Error('EXECUTE_AMM_SWAP intent metadata is incomplete');
-        }
-
-        const executedTradesRaw = Number(
-          (metadata as Record<string, unknown>).executedTrades,
-        );
-        const side = intent.side;
-
-        const result = await this.runWithRetries(intent, () =>
-          this.dexVolumeStrategyService!.executeCycle({
-            dexId,
-            chainId,
-            tokenIn,
-            tokenOut,
-            feeTier,
-            baseTradeAmount: Number(
-              (metadata as Record<string, unknown>).baseTradeAmount || 0,
-            ),
-            baseIncrementPercentage: Number(
-              (metadata as Record<string, unknown>).baseIncrementPercentage ||
-                0,
-            ),
-            pricePushRate: Number(
-              (metadata as Record<string, unknown>).pricePushRate || 0,
-            ),
-            executedTrades: Number.isFinite(executedTradesRaw)
-              ? executedTradesRaw
-              : 0,
-            side,
-            slippageBps: Number(
-              (metadata as Record<string, unknown>).slippageBps || 0,
-            ),
-            recipient:
-              String((metadata as Record<string, unknown>).recipient || '') ||
-              undefined,
-          }),
-        );
+        const result = await this.submitAmmSwapIntent(intent);
 
         await this.strategyExecutionHistoryRepository?.save(
           this.strategyExecutionHistoryRepository.create({
@@ -705,13 +643,14 @@ export class StrategyIntentExecutionService {
             price: intent.price,
             strategyType: this.extractStrategyType(intent.strategyKey),
             runtimeInstanceKey: intent.runtimeInstanceKey,
-            orderId: result.txHash,
-            status: 'filled',
+            orderId: String(result.txHash || result.evmExecutionId || ''),
+            status: 'submitted',
             metadata: {
               intentId: intent.intentId,
               intentType: intent.type,
               executionCategory: intent.executionCategory,
               txHash: result.txHash,
+              evmExecutionId: result.evmExecutionId,
             },
           }),
         );
@@ -1075,6 +1014,28 @@ export class StrategyIntentExecutionService {
     });
 
     return this.toExchangeMutationResult(result);
+  }
+
+  private async submitAmmSwapIntent(
+    intent: StrategyOrderIntent,
+  ): Promise<Record<string, unknown>> {
+    const result = await this.resolveConnector(intent).submitAction({
+      ...intent,
+      connectorId: this.resolveConnectorId(intent),
+    });
+
+    if (result.status === 'not_supported') {
+      throw new Error(
+        `connector action not supported: ${JSON.stringify(result.details || {})}`,
+      );
+    }
+
+    return {
+      ...(result.details || {}),
+      status: result.status,
+      txHash: result.txHash,
+      evmExecutionId: result.evmExecutionId,
+    };
   }
 
   private resolveConnector(intent: StrategyOrderIntent) {

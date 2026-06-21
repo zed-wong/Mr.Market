@@ -37,6 +37,10 @@ export class EvmExecution {
 
   @Column()
   @Index()
+  userId: string;
+
+  @Column()
+  @Index()
   ledgerOrderId: string;
 
   @Column({ default: 'default' })

@@ -179,6 +179,103 @@ describe('BalanceLedgerService', () => {
     expect(balance.total).toBe('100');
   });
 
+  it('settles AMM swap debits from locked funds and credits received assets', async () => {
+    const repos = createInMemoryRepos();
+    const service = new BalanceLedgerService(
+      repos.ledgerEntryRepository as any,
+      repos.balanceReadModelRepository as any,
+    );
+
+    await service.creditDeposit({
+      orderId: 'order-1',
+      userId: 'u1',
+      assetId: 'asset-usdc',
+      amount: '100',
+      idempotencyKey: 'dep-usdc',
+    });
+    await service.lockFunds({
+      orderId: 'order-1',
+      userId: 'u1',
+      assetId: 'asset-usdc',
+      amount: '25',
+      idempotencyKey: 'lock-usdc',
+    });
+    await service.settleSwap({
+      orderId: 'order-1',
+      userId: 'u1',
+      assetId: 'asset-usdc',
+      amount: '-25',
+      idempotencyKey: 'swap-debit',
+      refType: 'evm_execution',
+      refId: 'execution-1',
+    });
+    await service.settleSwap({
+      orderId: 'order-1',
+      userId: 'u1',
+      assetId: 'asset-weth',
+      amount: '1',
+      idempotencyKey: 'swap-credit',
+      refType: 'evm_execution',
+      refId: 'execution-1',
+    });
+
+    const spent = await service.getBalance('order-1', 'asset-usdc');
+    const received = await service.getBalance('order-1', 'asset-weth');
+
+    expect(spent.available).toBe('75');
+    expect(spent.locked).toBe('0');
+    expect(spent.realizedDelta).toBe('-25');
+    expect(received.available).toBe('1');
+    expect(received.realizedDelta).toBe('1');
+    expect(repos.entries.map((entry) => entry.type)).toContain('swap_settle');
+  });
+
+  it('debits gas from the sponsor available balance', async () => {
+    const repos = createInMemoryRepos();
+    const service = new BalanceLedgerService(
+      repos.ledgerEntryRepository as any,
+      repos.balanceReadModelRepository as any,
+    );
+
+    await service.creditDeposit({
+      orderId: 'gas-sponsor',
+      userId: 'u1',
+      assetId: 'asset-eth',
+      amount: '1',
+      idempotencyKey: 'dep-eth',
+    });
+    await service.lockFunds({
+      orderId: 'gas-sponsor',
+      userId: 'u1',
+      assetId: 'asset-eth',
+      amount: '0.02',
+      idempotencyKey: 'gas-lock',
+    });
+    await service.debitGas({
+      orderId: 'gas-sponsor',
+      userOrderId: 'order-1',
+      accountLabel: 'funding_operator',
+      userId: 'u1',
+      assetId: 'asset-eth',
+      amount: '0.01',
+      idempotencyKey: 'gas-debit',
+      refType: 'evm_execution',
+      refId: 'execution-1',
+    });
+
+    const balance = await service.getBalance('gas-sponsor', 'asset-eth');
+
+    expect(balance.available).toBe('0.98');
+    expect(balance.locked).toBe('0.01');
+    expect(balance.feePaid).toBe('0.01');
+    expect(repos.entries[2]).toMatchObject({
+      type: 'gas_debit',
+      amount: '-0.01',
+      userOrderId: 'order-1',
+      accountLabel: 'funding_operator',
+    });
+  });
+
   it('releases admin-direct allocation without rewriting initial deposit', async () => {
     const repos = createInMemoryRepos();
     const service = new BalanceLedgerService(

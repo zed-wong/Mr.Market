@@ -18,6 +18,7 @@ export type ExactInputSingleParams = {
   amountIn: BigNumber;
   amountOutMinimum: BigNumber;
   sqrtPriceLimitX96?: BigNumber | string;
+  transaction?: ethers.providers.TransactionRequest;
 };
 
 export interface EvmDexAdapter {
@@ -55,5 +56,5 @@ export interface EvmDexAdapter {
     signer: ethers.Signer,
     chainId: number,
     p: ExactInputSingleParams,
-  ): Promise<ethers.providers.TransactionReceipt>;
+  ): Promise<ethers.providers.TransactionResponse>;
 }

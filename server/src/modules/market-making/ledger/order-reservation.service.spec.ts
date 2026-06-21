@@ -71,6 +71,125 @@ describe('OrderReservationService', () => {
     );
   });
 
+  it('reserves AMM swap tokenIn by resolved asset id', async () => {
+    const service = new OrderReservationService(balanceLedgerService as any);
+
+    const result = await service.reserveForAmmSwapTokenIn({
+      orderId: 'ledger-order-1',
+      userOrderId: 'user-order-1',
+      accountLabel: 'default',
+      userId: 'user-1',
+      intentId: 'intent-amm',
+      assetId: 'asset-usdc',
+      amount: '25.5',
+      tradingAccountId: 'account-1',
+      chainId: 1,
+    });
+
+    expect(balanceLedgerService.lockFunds).toHaveBeenCalledWith({
+      orderId: 'ledger-order-1',
+      userOrderId: 'user-order-1',
+      accountLabel: 'default',
+      userId: 'user-1',
+      assetId: 'asset-usdc',
+      tradingAccountId: 'account-1',
+      chainId: 1,
+      amount: '25.5',
+      idempotencyKey: 'amm-swap-reserve:intent-amm:asset-usdc',
+      refType: 'strategy_order_intent',
+      refId: 'intent-amm',
+    });
+    expect(result).toEqual({
+      orderId: 'ledger-order-1',
+      assetId: 'asset-usdc',
+      amount: '25.5',
+      applied: true,
+    });
+  });
+
+  it('reserves gas against the funding operator sponsor scope', async () => {
+    const service = new OrderReservationService(balanceLedgerService as any);
+
+    const result = await service.reserveForGasSponsor({
+      orderId: 'gas-sponsor-order',
+      userOrderId: 'user-order-1',
+      accountLabel: 'funding_operator',
+      userId: 'user-1',
+      intentId: 'intent-amm',
+      gasAssetId: 'asset-eth',
+      estimatedGasCost: '0.02',
+      tradingAccountId: 'gas-account',
+      chainId: 1,
+    });
+
+    expect(balanceLedgerService.lockFunds).toHaveBeenCalledWith({
+      orderId: 'gas-sponsor-order',
+      userOrderId: 'user-order-1',
+      accountLabel: 'funding_operator',
+      userId: 'user-1',
+      assetId: 'asset-eth',
+      tradingAccountId: 'gas-account',
+      chainId: 1,
+      amount: '0.02',
+      idempotencyKey: 'gas-reserve:intent-amm:asset-eth',
+      refType: 'strategy_order_intent',
+      refId: 'intent-amm',
+    });
+    expect(result).toEqual({
+      orderId: 'gas-sponsor-order',
+      assetId: 'asset-eth',
+      amount: '0.02',
+      applied: true,
+    });
+  });
+
+  it('releases remaining direct AMM and gas reservations from locked balances', async () => {
+    balanceLedgerService.getExistingBalance.mockResolvedValue({
+      locked: '0.5',
+    });
+    const service = new OrderReservationService(balanceLedgerService as any);
+
+    await service.releaseRemainingAmmSwapTokenInReservation({
+      orderId: 'ledger-order-1',
+      userOrderId: 'user-order-1',
+      accountLabel: 'default',
+      userId: 'user-1',
+      intentId: 'intent-amm',
+      assetId: 'asset-usdc',
+      amount: '25',
+      reason: 'amm_swap_settled',
+    });
+    await service.releaseRemainingGasSponsorReservation({
+      orderId: 'gas-sponsor-order',
+      userOrderId: 'user-order-1',
+      accountLabel: 'funding_operator',
+      userId: 'user-1',
+      intentId: 'intent-amm',
+      gasAssetId: 'asset-eth',
+      estimatedGasCost: '0.02',
+      reason: 'gas_debit_settled',
+    });
+
+    expect(balanceLedgerService.unlockFunds).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'ledger-order-1',
+        assetId: 'asset-usdc',
+        amount: '0.5',
+        idempotencyKey:
+          'amm-swap-reserve-release:intent-amm:asset-usdc:amm_swap_settled',
+      }),
+    );
+    expect(balanceLedgerService.unlockFunds).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'gas-sponsor-order',
+        assetId: 'asset-eth',
+        amount: '0.5',
+        idempotencyKey:
+          'gas-reserve-release:intent-amm:asset-eth:gas_debit_settled',
+      }),
+    );
+  });
+
   it('releases the same reservation amount for exchange create failure', async () => {
     const service = new OrderReservationService(balanceLedgerService as any);
 

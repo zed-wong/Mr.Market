@@ -90,18 +90,18 @@ export class PancakeV3Adapter implements EvmDexAdapter {
   ) {
     const { router } = this.getAddresses(chainId);
     const r = new ethers.Contract(router, UNISWAP_V3_ROUTER_ABI, signer);
-    const tx = await r.exactInputSingle({
-      tokenIn: p.tokenIn,
-      tokenOut: p.tokenOut,
-      fee: p.fee,
-      recipient: p.recipient,
-      deadline: p.deadline,
-      amountIn: p.amountIn,
-      amountOutMinimum: p.amountOutMinimum,
-      sqrtPriceLimitX96: p.sqrtPriceLimitX96 ?? 0,
-    });
-    const rcpt = await tx.wait();
-
-    return rcpt;
+    return await r.exactInputSingle(
+      {
+        tokenIn: p.tokenIn,
+        tokenOut: p.tokenOut,
+        fee: p.fee,
+        recipient: p.recipient,
+        deadline: p.deadline,
+        amountIn: p.amountIn,
+        amountOutMinimum: p.amountOutMinimum,
+        sqrtPriceLimitX96: p.sqrtPriceLimitX96 ?? 0,
+      },
+      p.transaction || {},
+    );
   }
 }

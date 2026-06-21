@@ -32,6 +32,9 @@ export class StrategyRuntimeDispatcherService {
     if (normalizedControllerType === 'efficientDualAccountVolume') {
       return 'efficientDualAccountVolume';
     }
+    if (normalizedControllerType === 'ammVolume') {
+      return 'ammVolume';
+    }
     if (normalizedControllerType === 'volume') {
       return 'volume';
     }

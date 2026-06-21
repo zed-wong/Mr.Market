@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { EvmExecutionModule } from '../evm-execution/evm-execution.module';
 import { ExecutionModule } from '../execution/execution.module';
+import { LedgerModule } from '../ledger/ledger.module';
 import { TokenRegistryModule } from '../token-registry/token-registry.module';
 import { TradingAccountModule } from '../trading-account/trading-account.module';
 import { EvmDexAdapterRegistry } from './adapters/evm-dex-adapter-registry';
@@ -17,6 +18,7 @@ import { EvmDexConnector } from './evm-dex-connector';
     TradingAccountModule,
     TokenRegistryModule,
     EvmExecutionModule,
+    LedgerModule,
   ],
   providers: [
     ClobConnector,

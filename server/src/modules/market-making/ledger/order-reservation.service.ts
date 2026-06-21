@@ -22,6 +22,30 @@ type LimitOrderReservationCommand = {
   qty: string;
 };
 
+type AmmSwapReservationCommand = {
+  orderId: string;
+  userOrderId?: string;
+  accountLabel?: string;
+  userId: string;
+  intentId: string;
+  assetId: string;
+  amount: string;
+  tradingAccountId?: string;
+  chainId?: number;
+};
+
+type GasReservationCommand = {
+  orderId: string;
+  userOrderId?: string;
+  accountLabel?: string;
+  userId: string;
+  intentId: string;
+  gasAssetId: string;
+  estimatedGasCost: string;
+  tradingAccountId?: string;
+  chainId?: number;
+};
+
 export type OrderReservationResult = {
   orderId: string;
   assetId: string;
@@ -63,6 +87,95 @@ export class OrderReservationService {
     });
 
     return { ...reservation, applied: result.applied };
+  }
+
+  async reserveForAmmSwapTokenIn(
+    command: AmmSwapReservationCommand,
+  ): Promise<OrderReservationResult> {
+    const amount = this.requirePositiveAmount(command.amount, 'tokenIn');
+    const result = await this.balanceLedgerService.lockFunds({
+      orderId: command.orderId,
+      userOrderId: command.userOrderId,
+      accountLabel: command.accountLabel,
+      userId: command.userId,
+      assetId: command.assetId,
+      tradingAccountId: command.tradingAccountId,
+      chainId: command.chainId,
+      amount,
+      idempotencyKey: `amm-swap-reserve:${command.intentId}:${command.assetId}`,
+      refType: 'strategy_order_intent',
+      refId: command.intentId,
+    });
+
+    return {
+      orderId: command.orderId,
+      assetId: command.assetId,
+      amount,
+      applied: result.applied,
+    };
+  }
+
+  async reserveForGasSponsor(
+    command: GasReservationCommand,
+  ): Promise<OrderReservationResult> {
+    const amount = this.requirePositiveAmount(
+      command.estimatedGasCost,
+      'estimatedGasCost',
+    );
+    const result = await this.balanceLedgerService.lockFunds({
+      orderId: command.orderId,
+      userOrderId: command.userOrderId,
+      accountLabel: command.accountLabel,
+      userId: command.userId,
+      assetId: command.gasAssetId,
+      tradingAccountId: command.tradingAccountId,
+      chainId: command.chainId,
+      amount,
+      idempotencyKey: `gas-reserve:${command.intentId}:${command.gasAssetId}`,
+      refType: 'strategy_order_intent',
+      refId: command.intentId,
+    });
+
+    return {
+      orderId: command.orderId,
+      assetId: command.gasAssetId,
+      amount,
+      applied: result.applied,
+    };
+  }
+
+  async releaseRemainingAmmSwapTokenInReservation(
+    command: AmmSwapReservationCommand & { reason: string },
+  ): Promise<OrderReservationResult> {
+    return await this.releaseRemainingDirectReservation({
+      orderId: command.orderId,
+      userOrderId: command.userOrderId,
+      accountLabel: command.accountLabel,
+      userId: command.userId,
+      intentId: command.intentId,
+      assetId: command.assetId,
+      tradingAccountId: command.tradingAccountId,
+      chainId: command.chainId,
+      reason: command.reason,
+      releasePrefix: 'amm-swap-reserve-release',
+    });
+  }
+
+  async releaseRemainingGasSponsorReservation(
+    command: GasReservationCommand & { reason: string },
+  ): Promise<OrderReservationResult> {
+    return await this.releaseRemainingDirectReservation({
+      orderId: command.orderId,
+      userOrderId: command.userOrderId,
+      accountLabel: command.accountLabel,
+      userId: command.userId,
+      intentId: command.intentId,
+      assetId: command.gasAssetId,
+      tradingAccountId: command.tradingAccountId,
+      chainId: command.chainId,
+      reason: command.reason,
+      releasePrefix: 'gas-reserve-release',
+    });
   }
 
   isReservationPausedForLimitOrder(
@@ -397,6 +510,65 @@ export class OrderReservationService {
       orderId: command.orderId,
       assetId: reservationAsset.assetId,
       amount: remainingQty.multipliedBy(price).toFixed(),
+    };
+  }
+
+  private requirePositiveAmount(amount: string, label: string): string {
+    const parsed = new BigNumber(amount);
+
+    if (!parsed.isFinite() || parsed.isLessThanOrEqualTo(0)) {
+      throw new Error(`Cannot reserve funds for invalid ${label} amount`);
+    }
+
+    return parsed.toFixed();
+  }
+
+  private async releaseRemainingDirectReservation(command: {
+    orderId: string;
+    userOrderId?: string;
+    accountLabel?: string;
+    userId: string;
+    intentId: string;
+    assetId: string;
+    tradingAccountId?: string;
+    chainId?: number;
+    reason: string;
+    releasePrefix: string;
+  }): Promise<OrderReservationResult> {
+    const existingBalance = await this.balanceLedgerService.getExistingBalance(
+      command.orderId,
+      command.assetId,
+    );
+    const lockedAmount = new BigNumber(existingBalance?.locked || 0);
+
+    if (!lockedAmount.isFinite() || lockedAmount.isLessThanOrEqualTo(0)) {
+      return {
+        orderId: command.orderId,
+        assetId: command.assetId,
+        amount: '0',
+        applied: false,
+      };
+    }
+
+    const result = await this.balanceLedgerService.unlockFunds({
+      orderId: command.orderId,
+      userOrderId: command.userOrderId,
+      accountLabel: command.accountLabel,
+      userId: command.userId,
+      assetId: command.assetId,
+      tradingAccountId: command.tradingAccountId,
+      chainId: command.chainId,
+      amount: lockedAmount.toFixed(),
+      idempotencyKey: `${command.releasePrefix}:${command.intentId}:${command.assetId}:${command.reason}`,
+      refType: command.reason,
+      refId: command.intentId,
+    });
+
+    return {
+      orderId: command.orderId,
+      assetId: command.assetId,
+      amount: lockedAmount.toFixed(),
+      applied: result.applied,
     };
   }
 

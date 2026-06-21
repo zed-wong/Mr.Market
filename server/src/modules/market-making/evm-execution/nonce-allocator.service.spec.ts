@@ -22,6 +22,7 @@ describe('NonceAllocatorService', () => {
     const execution = await service.preAllocate({
       executionType: 'swap',
       userOrderId: 'user-order-1',
+      userId: 'user-1',
       ledgerOrderId: 'ledger-order-1',
       intentId: 'intent-1',
       connectorId: 'uniswapV3',

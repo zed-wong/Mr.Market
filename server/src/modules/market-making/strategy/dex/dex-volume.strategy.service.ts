@@ -165,7 +165,7 @@ export class DexVolumeStrategyService {
 
     await ensureAllowance(signer, effectiveTokenIn, owner, router, amountIn);
 
-    const receipt = await adapter.exactInputSingle(signer, req.chainId, {
+    const tx = await adapter.exactInputSingle(signer, req.chainId, {
       tokenIn: effectiveTokenIn,
       tokenOut: effectiveTokenOut,
       fee: req.feeTier,
@@ -175,12 +175,22 @@ export class DexVolumeStrategyService {
       amountOutMinimum: minAmountOut,
     });
 
+    const txHash =
+      tx.hash ||
+      (tx as ethers.providers.TransactionResponse & {
+        transactionHash?: string;
+      }).transactionHash;
+
+    if (!txHash) {
+      throw new Error('DEX adapter did not return a transaction hash');
+    }
+
     this.logger.log(
-      `Executed dex volume swap side=${side} dex=${req.dexId} chain=${req.chainId} txHash=${receipt.transactionHash}`,
+      `Submitted dex volume swap side=${side} dex=${req.dexId} chain=${req.chainId} txHash=${txHash}`,
     );
 
     return {
-      txHash: receipt.transactionHash,
+      txHash,
       side,
       tokenIn: effectiveTokenIn,
       tokenOut: effectiveTokenOut,

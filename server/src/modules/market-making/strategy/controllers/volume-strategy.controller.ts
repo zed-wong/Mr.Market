@@ -12,6 +12,7 @@ import type {
   StrategyController,
   StrategyControllerFacade,
   StrategyRuntimeSession,
+  StrategyType,
   StrategyTickContext,
 } from '../config/strategy-controller.types';
 import {
@@ -34,7 +35,7 @@ import {
 
 @Injectable()
 export class VolumeStrategyController implements StrategyController {
-  readonly strategyType = 'volume' as const;
+  readonly strategyType: StrategyType = 'volume';
 
   private readonly logger = new CustomLogger(VolumeStrategyController.name);
 
@@ -168,6 +169,7 @@ export class VolumeStrategyController implements StrategyController {
           userId: session.userId,
           clientId: session.clientId,
           exchange: params.exchangeName,
+          connectorId: params.dexId,
           pair: params.symbol,
           side,
           price: '0',

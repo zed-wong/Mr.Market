@@ -109,6 +109,28 @@ describe('StrategyIntentExecutionService', () => {
   const connectorRegistry = {
     resolve: jest.fn(() => ({
       submitAction: jest.fn(async (intent: StrategyOrderIntent) => {
+        if (intent.type === 'EXECUTE_AMM_SWAP') {
+          const metadata = intent.metadata || {};
+
+          if (!metadata.chainId || !metadata.tokenIn || !metadata.tokenOut) {
+            throw new Error('EVM DEX intent metadata missing required fields');
+          }
+
+          return {
+            status: 'submitted',
+            txHash: '0xamm',
+            evmExecutionId: 'evm-execution-1',
+            details: {
+              connectorId: intent.connectorId || intent.exchange,
+              chainId: metadata.chainId,
+              amountIn: '100',
+              quotedAmountOut: '99',
+              amountOutMinimum: '95',
+              slippageBps: 100,
+            },
+          };
+        }
+
         const metadata = intent.metadata || {};
         const result = await exchangeConnectorAdapterService.placeLimitOrder(
           intent.exchange,
@@ -2345,8 +2367,13 @@ describe('StrategyIntentExecutionService', () => {
     );
   });
 
-  it('executes EXECUTE_AMM_SWAP through dex volume strategy service', async () => {
-    const service = createService(true);
+  it('executes EXECUTE_AMM_SWAP through the connector without generic submit retry', async () => {
+    const executionHistoryRepository = createExecutionHistoryRepository();
+    const service = createService(
+      true,
+      createConfigService(true),
+      executionHistoryRepository,
+    );
 
     await service.consumeIntents([
       {
@@ -2354,6 +2381,7 @@ describe('StrategyIntentExecutionService', () => {
         intentId: 'amm-intent-1',
         type: 'EXECUTE_AMM_SWAP',
         executionCategory: 'amm',
+        connectorId: 'uniswapV3',
         metadata: {
           dexId: 'uniswapV3',
           chainId: 1,
@@ -2369,11 +2397,16 @@ describe('StrategyIntentExecutionService', () => {
       },
     ]);
 
-    expect(dexVolumeStrategyService.executeCycle).toHaveBeenCalledWith(
+    expect(connectorRegistry.resolve).toHaveBeenCalledWith('uniswapV3');
+    expect(dexVolumeStrategyService.executeCycle).not.toHaveBeenCalled();
+    expect(executionHistoryRepository.save).toHaveBeenCalledWith(
       expect.objectContaining({
-        dexId: 'uniswapV3',
-        chainId: 1,
-        side: 'buy',
+        orderId: '0xamm',
+        status: 'submitted',
+        metadata: expect.objectContaining({
+          txHash: '0xamm',
+          evmExecutionId: 'evm-execution-1',
+        }),
       }),
     );
     expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
@@ -2392,13 +2425,14 @@ describe('StrategyIntentExecutionService', () => {
           intentId: 'amm-intent-bad',
           type: 'EXECUTE_AMM_SWAP',
           executionCategory: 'amm',
+          connectorId: 'uniswapV3',
           metadata: {
             dexId: 'uniswapV3',
             chainId: 1,
           },
         },
       ]),
-    ).rejects.toThrow('EXECUTE_AMM_SWAP intent metadata is incomplete');
+    ).rejects.toThrow('EVM DEX intent metadata missing required fields');
   });
 
   it('increments clientOrderId sequence per order and honors metadata.orderId', async () => {

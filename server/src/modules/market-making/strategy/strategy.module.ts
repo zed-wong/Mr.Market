@@ -25,6 +25,7 @@ import { KillSwitchService } from '../risk/kill-switch.service';
 import { TickModule } from '../tick/tick.module';
 import { TrackersModule } from '../trackers/trackers.module';
 import type { StrategyController as StrategyRuntimeController } from './config/strategy-controller.types';
+import { AmmVolumeStrategyController } from './controllers/amm-volume-strategy.controller';
 import { ArbitrageStrategyController } from './controllers/arbitrage-strategy.controller';
 import { EfficientDualAccountVolumeStrategyController } from './controllers/efficient-dual-account-volume-strategy.controller';
 import { PureMarketMakingStrategyController } from './controllers/pure-market-making-strategy.controller';
@@ -106,6 +107,7 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
     DualAccountPlannerService,
     EfficientDualAccountRuntimeService,
     ArbitrageStrategyController,
+    AmmVolumeStrategyController,
     PureMarketMakingStrategyController,
     EfficientDualAccountVolumeStrategyController,
     VolumeStrategyController,
@@ -114,12 +116,14 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
       provide: STRATEGY_CONTROLLERS,
       useFactory: (
         arbitrage: ArbitrageStrategyController,
+        ammVolume: AmmVolumeStrategyController,
         pureMarketMaking: PureMarketMakingStrategyController,
         efficientDualAccountVolume: EfficientDualAccountVolumeStrategyController,
         volume: VolumeStrategyController,
         timeIndicator: TimeIndicatorStrategyController,
       ): StrategyRuntimeController[] => [
         arbitrage,
+        ammVolume,
         pureMarketMaking,
         efficientDualAccountVolume,
         volume,
@@ -127,6 +131,7 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
       ],
       inject: [
         ArbitrageStrategyController,
+        AmmVolumeStrategyController,
         PureMarketMakingStrategyController,
         EfficientDualAccountVolumeStrategyController,
         VolumeStrategyController,

@@ -48,6 +48,7 @@ describe('EvmExecutionService', () => {
     const execution = await service.createCreated({
       executionType: 'swap',
       userOrderId: 'user-order-1',
+      userId: 'user-1',
       ledgerOrderId: 'ledger-order-1',
       intentId: 'intent-1',
       connectorId: 'uniswapV3',
@@ -92,6 +93,7 @@ describe('EvmExecutionService', () => {
     const execution = await service.createCreated({
       executionType: 'swap',
       userOrderId: 'user-order-1',
+      userId: 'user-1',
       ledgerOrderId: 'ledger-order-1',
       intentId: 'intent-1',
       connectorId: 'uniswapV3',
