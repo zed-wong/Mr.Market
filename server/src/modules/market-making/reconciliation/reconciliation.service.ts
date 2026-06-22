@@ -13,17 +13,55 @@ import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { In, Repository } from 'typeorm';
 
 import { MarketMakingEventBus } from '../events/market-making-event-bus.service';
+import { EvmExecutionReconciliationRunner } from '../evm-execution/evm-execution-reconciliation-runner.service';
+import { WalletBalanceReconciliationRunner } from '../evm-execution/wallet-balance-reconciliation-runner.service';
 import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
 import { BalanceLedgerService } from '../ledger/balance-ledger.service';
+import {
+  LpPositionReconciliationRunner,
+  LpPositionReconciliationResult,
+} from '../lp/lp-position-reconciliation-runner.service';
+import type { OnchainLpPositionState } from '../lp/lp.types';
 import {
   ExchangeOrderTrackerService,
   TrackedOrder,
 } from '../trackers/exchange-order-tracker.service';
+import { ExchangeOrderReconciliationRunner } from './exchange-order-reconciliation-runner';
 
 type ReconciliationReport = {
   checked: number;
   violations: number;
   corrected?: number;
+};
+
+export type OperationalReconciliationTarget = {
+  clob?: { ts?: string };
+  evmExecutionIds?: string[];
+  wallets?: Array<{
+    tradingAccountId: string;
+    chainId: number;
+    assetIds: string[];
+  }>;
+  lpPositions?: Array<{
+    positionId: string;
+    onchain: OnchainLpPositionState;
+  }>;
+};
+
+export type OperationalReconciliationFamilyReport = {
+  family: 'clob' | 'evm_execution' | 'wallet_balance' | 'lp_position';
+  checked: number;
+  violations: number;
+  manualReview: number;
+  paused: number;
+};
+
+export type OperationalReconciliationReport = {
+  checked: number;
+  violations: number;
+  manualReview: number;
+  paused: number;
+  families: OperationalReconciliationFamilyReport[];
 };
 
 const ESTIMATED_FEE_MAX_AGE_MS = 15 * 60 * 1000;
@@ -57,6 +95,14 @@ export class ReconciliationService {
     @Optional()
     @InjectRepository(MarketMakingOrder)
     private readonly marketMakingOrderRepository?: Repository<MarketMakingOrder>,
+    @Optional()
+    private readonly exchangeOrderReconciliationRunner?: ExchangeOrderReconciliationRunner,
+    @Optional()
+    private readonly evmExecutionReconciliationRunner?: EvmExecutionReconciliationRunner,
+    @Optional()
+    private readonly walletBalanceReconciliationRunner?: WalletBalanceReconciliationRunner,
+    @Optional()
+    private readonly lpPositionReconciliationRunner?: LpPositionReconciliationRunner,
   ) {}
 
   @Cron(CronExpression.EVERY_5_MINUTES)
@@ -144,6 +190,154 @@ export class ReconciliationService {
 
   getOpenOrdersForStrategy(strategyKey: string) {
     return this.exchangeOrderTrackerService.getLiveOrders(strategyKey);
+  }
+
+  async runOperationalSafetyReconciliation(
+    target: OperationalReconciliationTarget = {},
+  ): Promise<OperationalReconciliationReport> {
+    const families: OperationalReconciliationFamilyReport[] = [];
+
+    if (target.clob && this.exchangeOrderReconciliationRunner) {
+      const checked = await this.exchangeOrderReconciliationRunner.runNow(
+        target.clob.ts,
+      );
+
+      families.push({
+        family: 'clob',
+        checked,
+        violations: 0,
+        manualReview: 0,
+        paused: 0,
+      });
+    }
+
+    if (
+      target.evmExecutionIds?.length &&
+      this.evmExecutionReconciliationRunner
+    ) {
+      const family = this.emptyOperationalFamily('evm_execution');
+
+      for (const executionId of target.evmExecutionIds) {
+        const result =
+          await this.evmExecutionReconciliationRunner.reconcileExecution(
+            executionId,
+          );
+
+        family.checked += 1;
+
+        if (!result.matches) {
+          family.violations += 1;
+          family.manualReview += 1;
+          family.paused += await this.pauseOrderBalances(
+            result.ledgerOrderId,
+            {
+              source: 'reconciliation',
+              reason: `evm_execution_reconciliation_missing:${result.missingTypes.join(
+                ',',
+              )}`,
+              refType: 'evm_execution',
+              refId: result.executionId,
+            },
+          );
+          this.marketMakingEventBus?.emitReconciliationAudit({
+            correctionType: 'manual_review',
+            orderId: result.ledgerOrderId,
+            userOrderId: result.userOrderId,
+            accountLabel: result.accountLabel,
+            refType: 'evm_execution',
+            refId: result.executionId,
+            reason: `evm_execution_reconciliation_missing:${result.missingTypes.join(
+              ',',
+            )}`,
+            observedAt: getRFC3339Timestamp(),
+          });
+        }
+      }
+
+      families.push(family);
+    }
+
+    if (target.wallets?.length && this.walletBalanceReconciliationRunner) {
+      const family = this.emptyOperationalFamily('wallet_balance');
+
+      for (const wallet of target.wallets) {
+        const result =
+          await this.walletBalanceReconciliationRunner.reconcileWallet(wallet);
+
+        family.checked += wallet.assetIds.length;
+
+        for (const mismatch of result.mismatches) {
+          family.violations += 1;
+          family.manualReview += 1;
+          family.paused += await this.pauseWalletBalances({
+            tradingAccountId: result.tradingAccountId,
+            chainId: result.chainId,
+            assetId: mismatch.assetId,
+            reason: 'wallet_balance_mismatch',
+          });
+          this.marketMakingEventBus?.emitReconciliationAudit({
+            correctionType: 'manual_review',
+            assetId: mismatch.assetId,
+            amount: mismatch.ledgerAmount,
+            refType: 'wallet_balance',
+            refId: `${result.tradingAccountId}:${result.chainId}:${mismatch.assetId}`,
+            reason: 'wallet_balance_mismatch',
+            observedAt: getRFC3339Timestamp(),
+          });
+        }
+      }
+
+      families.push(family);
+    }
+
+    if (target.lpPositions?.length && this.lpPositionReconciliationRunner) {
+      const family = this.emptyOperationalFamily('lp_position');
+
+      for (const lpPosition of target.lpPositions) {
+        const result =
+          await this.lpPositionReconciliationRunner.reconcilePosition(
+            lpPosition.positionId,
+            lpPosition.onchain,
+          );
+
+        family.checked += 1;
+
+        if (!result.matches) {
+          family.violations += 1;
+          family.manualReview += 1;
+          family.paused += await this.pauseLpPositionBalances(result);
+          this.marketMakingEventBus?.emitReconciliationAudit({
+            correctionType: 'manual_review',
+            orderId: result.ledgerOrderId,
+            userOrderId: result.userOrderId,
+            accountLabel: result.accountLabel,
+            refType: 'lp_position',
+            refId: result.positionId,
+            reason: `lp_position_mismatch:${result.mismatches.join(',')}`,
+            observedAt: getRFC3339Timestamp(),
+          });
+        }
+      }
+
+      families.push(family);
+    }
+
+    return families.reduce(
+      (summary, family) => ({
+        checked: summary.checked + family.checked,
+        violations: summary.violations + family.violations,
+        manualReview: summary.manualReview + family.manualReview,
+        paused: summary.paused + family.paused,
+        families: summary.families,
+      }),
+      {
+        checked: 0,
+        violations: 0,
+        manualReview: 0,
+        paused: 0,
+        families,
+      },
+    );
   }
 
   async reconcileRewardConsistency(): Promise<ReconciliationReport> {
@@ -482,6 +676,92 @@ export class ReconciliationService {
     }
 
     return `${orderId}:${assetId}:${refId}`;
+  }
+
+  private emptyOperationalFamily(
+    family: OperationalReconciliationFamilyReport['family'],
+  ): OperationalReconciliationFamilyReport {
+    return {
+      family,
+      checked: 0,
+      violations: 0,
+      manualReview: 0,
+      paused: 0,
+    };
+  }
+
+  private async pauseOrderBalances(
+    orderId: string,
+    metadata: {
+      source: string;
+      reason: string;
+      refType: string;
+      refId: string;
+    },
+  ): Promise<number> {
+    if (!this.balanceLedgerService || !orderId) {
+      return 0;
+    }
+
+    const balances = await this.orderBalanceRepository.find({
+      where: { orderId },
+    });
+
+    for (const balance of balances) {
+      this.balanceLedgerService.pauseReservations(
+        balance.orderId,
+        balance.assetId,
+        metadata,
+      );
+    }
+
+    return balances.length;
+  }
+
+  private async pauseWalletBalances(params: {
+    tradingAccountId: string;
+    chainId: number;
+    assetId: string;
+    reason: string;
+  }): Promise<number> {
+    if (!this.balanceLedgerService) {
+      return 0;
+    }
+
+    const balances =
+      await this.balanceLedgerService.findBalancesByTradingAccount(
+        params.tradingAccountId,
+        params.chainId,
+      );
+    const affected = balances.filter(
+      (balance) => balance.assetId === params.assetId,
+    );
+
+    for (const balance of affected) {
+      this.balanceLedgerService.pauseReservations(
+        balance.orderId,
+        balance.assetId,
+        {
+          source: 'reconciliation',
+          reason: params.reason,
+          refType: 'wallet_balance',
+          refId: `${params.tradingAccountId}:${params.chainId}:${params.assetId}`,
+        },
+      );
+    }
+
+    return affected.length;
+  }
+
+  private async pauseLpPositionBalances(
+    result: LpPositionReconciliationResult,
+  ): Promise<number> {
+    return await this.pauseOrderBalances(result.ledgerOrderId, {
+      source: 'reconciliation',
+      reason: `lp_position_mismatch:${result.mismatches.join(',')}`,
+      refType: 'lp_position',
+      refId: result.positionId,
+    });
   }
 
   private buildFillEvidenceGroupKey(

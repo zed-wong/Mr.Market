@@ -400,9 +400,9 @@ This section explains each module with three questions:
 
 #### `market-making/reconciliation/reconciliation.module.ts`
 
-- What: periodic consistency checks for ledger/intents plus the off-tick `ExchangeOrderReconciliationRunner`.
-- Why: long-running async systems need reconciliation against drift, and tracked orders need REST recovery that no longer stretches the shared strategy tick.
-- Where: used in scheduled maintenance checks, anomaly detection, runtime order-state recovery, and estimated-fee correction.
+- What: periodic ledger/intent consistency checks plus operational reconciliation coordination for CLOB orders, EVM executions, wallet balances, and LP positions.
+- Why: long-running async systems need drift detection, manual-review evidence, and reservation pauses before any risk-increasing follow-up when connector state diverges from the ledger.
+- Where: used in scheduled maintenance checks, anomaly detection, runtime order-state recovery, estimated-fee correction, and connector-family reconciliation runners.
 
 #### `market-making/connector/*`
 

@@ -9,8 +9,10 @@ import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity
 
 import { ExchangeConnectorRegistry } from '../connector/exchange-connector-registry';
 import { MarketMakingEventsModule } from '../events/market-making-events.module';
+import { EvmExecutionModule } from '../evm-execution/evm-execution.module';
 import { ExecutionModule } from '../execution/execution.module';
 import { LedgerModule } from '../ledger/ledger.module';
+import { LpModule } from '../lp/lp.module';
 import { TrackersModule } from '../trackers/trackers.module';
 import { ExchangeOrderReconciliationRunner } from './exchange-order-reconciliation-runner';
 import { ReconciliationService } from './reconciliation.service';
@@ -26,8 +28,10 @@ import { ReconciliationService } from './reconciliation.service';
       MarketMakingOrder,
     ]),
     MarketMakingEventsModule,
+    EvmExecutionModule,
     ExecutionModule,
     LedgerModule,
+    LpModule,
     TrackersModule,
   ],
   providers: [

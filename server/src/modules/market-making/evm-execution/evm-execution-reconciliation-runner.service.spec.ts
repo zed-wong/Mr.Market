@@ -6,7 +6,9 @@ describe('EvmExecutionReconciliationRunner', () => {
       id: 'execution-1',
       status: 'confirmed',
       executionType: 'swap',
+      userOrderId: 'user-order-1',
       ledgerOrderId: 'ledger-order-1',
+      accountLabel: 'default',
       gasSponsorLedgerOrderId: 'gas-order-1',
       effectiveGasCost: '100',
     };
@@ -39,6 +41,9 @@ describe('EvmExecutionReconciliationRunner', () => {
 
     expect(result).toEqual({
       executionId: 'execution-1',
+      userOrderId: 'user-order-1',
+      ledgerOrderId: 'ledger-order-1',
+      accountLabel: 'default',
       matches: false,
       missingTypes: ['swap_settle_credit', 'gas_debit'],
     });

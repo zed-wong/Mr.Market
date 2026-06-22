@@ -888,4 +888,160 @@ describe('ReconciliationService', () => {
       }),
     );
   });
+
+  it('coordinates CLOB, EVM, wallet, and LP reconciliation runners with reservation pauses', async () => {
+    const orderBalanceRepository = {
+      find: jest.fn(async ({ where }: any = {}) => {
+        if (where?.orderId === 'ledger-order-1') {
+          return [{ orderId: 'ledger-order-1', assetId: 'USDC' }];
+        }
+
+        if (where?.orderId === 'lp-ledger-order-1') {
+          return [{ orderId: 'lp-ledger-order-1', assetId: 'asset-token0' }];
+        }
+
+        return [];
+      }),
+    };
+    const balanceLedgerService = {
+      findBalancesByTradingAccount: jest.fn().mockResolvedValue([
+        {
+          orderId: 'wallet-ledger-order-1',
+          assetId: 'asset-eth',
+        },
+        {
+          orderId: 'wallet-ledger-order-2',
+          assetId: 'asset-usdc',
+        },
+      ]),
+      pauseReservations: jest.fn(),
+    };
+    const marketMakingEventBus = {
+      emitReconciliationAudit: jest.fn(),
+    };
+    const exchangeOrderReconciliationRunner = {
+      runNow: jest.fn().mockResolvedValue(2),
+    };
+    const evmExecutionReconciliationRunner = {
+      reconcileExecution: jest.fn().mockResolvedValue({
+        executionId: 'execution-1',
+        userOrderId: 'user-order-1',
+        ledgerOrderId: 'ledger-order-1',
+        accountLabel: 'default',
+        matches: false,
+        missingTypes: ['swap_settle_credit'],
+      }),
+    };
+    const walletBalanceReconciliationRunner = {
+      reconcileWallet: jest.fn().mockResolvedValue({
+        tradingAccountId: 'trading-account-1',
+        chainId: 1,
+        matches: false,
+        mismatches: [
+          {
+            assetId: 'asset-eth',
+            ledgerAmount: '1',
+            walletAmount: '0.9',
+          },
+        ],
+      }),
+    };
+    const lpPositionReconciliationRunner = {
+      reconcilePosition: jest.fn().mockResolvedValue({
+        positionId: 'position-1',
+        userOrderId: 'lp-user-order-1',
+        ledgerOrderId: 'lp-ledger-order-1',
+        accountLabel: 'default',
+        matches: false,
+        mismatches: ['liquidity'],
+      }),
+    };
+    const service = new ReconciliationService(
+      orderBalanceRepository as any,
+      { getOpenOrders: jest.fn().mockReturnValue([]) } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      undefined,
+      balanceLedgerService as any,
+      marketMakingEventBus as any,
+      undefined,
+      undefined,
+      exchangeOrderReconciliationRunner as any,
+      evmExecutionReconciliationRunner as any,
+      walletBalanceReconciliationRunner as any,
+      lpPositionReconciliationRunner as any,
+    );
+
+    const report = await service.runOperationalSafetyReconciliation({
+      clob: { ts: '2026-06-22T00:00:00.000Z' },
+      evmExecutionIds: ['execution-1'],
+      wallets: [
+        {
+          tradingAccountId: 'trading-account-1',
+          chainId: 1,
+          assetIds: ['asset-eth'],
+        },
+      ],
+      lpPositions: [
+        {
+          positionId: 'position-1',
+          onchain: {
+            owner: '0xwallet',
+            liquidity: '99',
+            tickLower: -120,
+            tickUpper: 120,
+          },
+        },
+      ],
+    });
+
+    expect(report).toMatchObject({
+      checked: 5,
+      violations: 3,
+      manualReview: 3,
+      paused: 3,
+    });
+    expect(exchangeOrderReconciliationRunner.runNow).toHaveBeenCalledWith(
+      '2026-06-22T00:00:00.000Z',
+    );
+    expect(evmExecutionReconciliationRunner.reconcileExecution).toHaveBeenCalledWith(
+      'execution-1',
+    );
+    expect(walletBalanceReconciliationRunner.reconcileWallet).toHaveBeenCalledWith(
+      {
+        tradingAccountId: 'trading-account-1',
+        chainId: 1,
+        assetIds: ['asset-eth'],
+      },
+    );
+    expect(lpPositionReconciliationRunner.reconcilePosition).toHaveBeenCalledWith(
+      'position-1',
+      expect.objectContaining({ liquidity: '99' }),
+    );
+    expect(balanceLedgerService.pauseReservations).toHaveBeenCalledWith(
+      'ledger-order-1',
+      'USDC',
+      expect.objectContaining({
+        reason: 'evm_execution_reconciliation_missing:swap_settle_credit',
+      }),
+    );
+    expect(balanceLedgerService.pauseReservations).toHaveBeenCalledWith(
+      'wallet-ledger-order-1',
+      'asset-eth',
+      expect.objectContaining({
+        reason: 'wallet_balance_mismatch',
+      }),
+    );
+    expect(balanceLedgerService.pauseReservations).toHaveBeenCalledWith(
+      'lp-ledger-order-1',
+      'asset-token0',
+      expect.objectContaining({
+        reason: 'lp_position_mismatch:liquidity',
+      }),
+    );
+    expect(marketMakingEventBus.emitReconciliationAudit).toHaveBeenCalledTimes(
+      3,
+    );
+  });
 });

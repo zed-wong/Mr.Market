@@ -5,6 +5,9 @@ import { EvmExecutionService } from './evm-execution.service';
 
 export type EvmExecutionReconciliationResult = {
   executionId: string;
+  userOrderId: string;
+  ledgerOrderId: string;
+  accountLabel: string;
   matches: boolean;
   missingTypes: string[];
 };
@@ -22,7 +25,14 @@ export class EvmExecutionReconciliationRunner {
     const execution = await this.evmExecutionService.requireById(executionId);
 
     if (execution.status !== 'confirmed' || execution.executionType !== 'swap') {
-      return { executionId, matches: true, missingTypes: [] };
+      return {
+        executionId,
+        userOrderId: execution.userOrderId,
+        ledgerOrderId: execution.ledgerOrderId,
+        accountLabel: execution.accountLabel,
+        matches: true,
+        missingTypes: [],
+      };
     }
 
     const entries = await this.balanceLedgerService.findByOrderId(
@@ -71,6 +81,9 @@ export class EvmExecutionReconciliationRunner {
 
     return {
       executionId,
+      userOrderId: execution.userOrderId,
+      ledgerOrderId: execution.ledgerOrderId,
+      accountLabel: execution.accountLabel,
       matches: missingTypes.length === 0,
       missingTypes,
     };

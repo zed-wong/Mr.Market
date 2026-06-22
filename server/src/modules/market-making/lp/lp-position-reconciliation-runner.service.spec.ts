@@ -5,6 +5,9 @@ describe('LpPositionReconciliationRunner', () => {
     const lpPositionService = {
       requireById: jest.fn().mockResolvedValue({
         id: 'position-1',
+        userOrderId: 'user-order-1',
+        ledgerOrderId: 'ledger-order-1',
+        accountLabel: 'default',
         liquidity: '100',
         tickLower: -120,
         tickUpper: 120,
@@ -24,6 +27,9 @@ describe('LpPositionReconciliationRunner', () => {
 
     expect(result).toEqual({
       positionId: 'position-1',
+      userOrderId: 'user-order-1',
+      ledgerOrderId: 'ledger-order-1',
+      accountLabel: 'default',
       matches: false,
       mismatches: ['liquidity'],
     });

@@ -5,6 +5,9 @@ import type { OnchainLpPositionState } from './lp.types';
 
 export type LpPositionReconciliationResult = {
   positionId: string;
+  userOrderId: string;
+  ledgerOrderId: string;
+  accountLabel: string;
   matches: boolean;
   mismatches: string[];
 };
@@ -38,6 +41,9 @@ export class LpPositionReconciliationRunner {
 
     return {
       positionId,
+      userOrderId: position.userOrderId,
+      ledgerOrderId: position.ledgerOrderId,
+      accountLabel: position.accountLabel,
       matches: mismatches.length === 0,
       mismatches,
     };
