@@ -2,6 +2,7 @@
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
+import { TradingAccountService } from 'src/modules/market-making/trading-account/trading-account.service';
 
 import { ExchangeInitService } from './exchange-init.service';
 
@@ -10,6 +11,9 @@ describe('ExchangeinitService', () => {
   let exchangeService: {
     readSupportedExchanges: jest.Mock;
     readDecryptedAPIKeys: jest.Mock;
+  };
+  let tradingAccountService: {
+    listValidWalletCredentialsByPurpose: jest.Mock;
   };
   let initializeExchangeConfigsSpy: jest.SpyInstance;
 
@@ -30,6 +34,9 @@ describe('ExchangeinitService', () => {
           },
         ]),
     };
+    tradingAccountService = {
+      listValidWalletCredentialsByPurpose: jest.fn().mockResolvedValue([]),
+    };
 
     initializeExchangeConfigsSpy = jest
       .spyOn(ExchangeInitService.prototype as any, 'initializeExchangeConfigs')
@@ -45,6 +52,10 @@ describe('ExchangeinitService', () => {
         {
           provide: ExchangeApiKeyService,
           useValue: exchangeService,
+        },
+        {
+          provide: TradingAccountService,
+          useValue: tradingAccountService,
         },
       ],
     }).compile();
@@ -115,6 +126,45 @@ describe('ExchangeinitService', () => {
     ]);
   });
 
+  it('adds valid clob_trading TradingAccounts as Hyperliquid wallet accounts', () => {
+    const exchangeConfigs = (service as any).buildExchangeConfigsFromDb(
+      [],
+      [
+        {
+          id: 'hl-wallet-1',
+          label: 'HL Wallet',
+          purpose: 'clob_trading',
+          walletAddress: '0xwallet',
+          privateKey: 'private-key',
+        },
+      ],
+    );
+
+    expect(exchangeConfigs).toEqual([
+      expect.objectContaining({
+        name: 'hyperliquid',
+        accounts: [
+          expect.objectContaining({
+            label: 'hl-wallet-1',
+            apiKey: '0xwallet',
+            secret: 'private-key',
+            walletAddress: '0xwallet',
+          }),
+        ],
+      }),
+    ]);
+  });
+
+  it('skips CLOB TradingAccount preload when migrations have not created the table', async () => {
+    tradingAccountService.listValidWalletCredentialsByPurpose.mockRejectedValueOnce(
+      new Error('SQLITE_ERROR: no such table: trading_accounts'),
+    );
+
+    await expect((service as any).readClobTradingAccounts()).resolves.toEqual(
+      [],
+    );
+  });
+
   it('passes walletAddress to exchange initialization when configured', async () => {
     class HyperliquidExchange {
       has = {};
@@ -153,8 +203,7 @@ describe('ExchangeinitService', () => {
     await Promise.resolve();
     expect(initializeExchangeConfigsSpy).toHaveBeenCalledTimes(1);
 
-    jest.advanceTimersByTime(10 * 1000);
-    await Promise.resolve();
+    await jest.advanceTimersByTimeAsync(10 * 1000);
 
     expect(initializeExchangeConfigsSpy).toHaveBeenCalledTimes(2);
   });
@@ -226,6 +275,10 @@ describe('ExchangeinitService', () => {
         {
           provide: ExchangeApiKeyService,
           useValue: exchangeService,
+        },
+        {
+          provide: TradingAccountService,
+          useValue: tradingAccountService,
         },
       ],
     }).compile();

@@ -87,6 +87,41 @@ describe('TradingAccountService', () => {
     ).toBe('http://localhost:8545');
   });
 
+  it('lists valid clob trading wallet credentials for connector initialization', async () => {
+    const service = new TradingAccountService(repository as any, configService);
+
+    await service.create({
+      id: 'hl-valid',
+      label: 'Hyperliquid wallet',
+      purpose: 'clob_trading',
+      chainIds: [1],
+      walletAddress: wallet.address,
+      encryptedPrivateKey: encrypt(wallet.privateKey, keyPair.publicKey),
+      validationStatus: 'valid',
+    });
+    await service.create({
+      id: 'hl-pending',
+      label: 'Pending Hyperliquid wallet',
+      purpose: 'clob_trading',
+      chainIds: [1],
+      walletAddress: wallet.address,
+      encryptedPrivateKey: encrypt(wallet.privateKey, keyPair.publicKey),
+      validationStatus: 'pending',
+    });
+
+    await expect(
+      service.listValidWalletCredentialsByPurpose('clob_trading'),
+    ).resolves.toEqual([
+      {
+        id: 'hl-valid',
+        label: 'Hyperliquid wallet',
+        purpose: 'clob_trading',
+        walletAddress: wallet.address,
+        privateKey: wallet.privateKey,
+      },
+    ]);
+  });
+
   it('rejects a decrypted key that does not match the stored wallet address', async () => {
     const service = new TradingAccountService(repository as any, configService);
 

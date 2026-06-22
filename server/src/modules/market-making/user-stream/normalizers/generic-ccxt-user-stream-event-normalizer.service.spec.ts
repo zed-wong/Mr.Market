@@ -60,4 +60,39 @@ describe('GenericCcxtUserStreamEventNormalizerService', () => {
       }),
     );
   });
+
+  it('normalizes Hyperliquid trade fees into fill fee fields', () => {
+    const service = new GenericCcxtUserStreamEventNormalizerService();
+
+    const event = service.normalizeTrade(
+      'hyperliquid',
+      'hl-wallet-1',
+      {
+        symbol: 'BTC/USDC',
+        order: 'hl-ex-1',
+        id: 'hl-fill-1',
+        side: 'sell',
+        amount: '0.25',
+        price: '100',
+        fee: {
+          cost: '0.0125',
+          currency: 'USDC',
+        },
+      },
+      '2026-04-18T10:28:55.000Z',
+    );
+
+    expect(event).toEqual(
+      expect.objectContaining({
+        exchange: 'hyperliquid',
+        accountLabel: 'hl-wallet-1',
+        payload: expect.objectContaining({
+          exchangeOrderId: 'hl-ex-1',
+          fillId: 'hl-fill-1',
+          feeAmount: '0.0125',
+          feeAsset: 'USDC',
+        }),
+      }),
+    );
+  });
 });

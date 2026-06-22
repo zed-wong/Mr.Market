@@ -13,6 +13,10 @@ import * as ccxt from 'ccxt';
 import { APIKeysConfig } from 'src/common/entities/admin/api-keys.entity';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
+import {
+  TradingAccountService,
+  TradingAccountWalletCredentials,
+} from 'src/modules/market-making/trading-account/trading-account.service';
 
 type ExchangeAccountConfig = {
   label: string;
@@ -56,6 +60,7 @@ export class ExchangeInitService {
   constructor(
     @Inject(CACHE_MANAGER) private cacheService: Cache,
     private exchangeService: ExchangeApiKeyService,
+    private tradingAccountService: TradingAccountService,
   ) {
     this.initializeExchanges()
       .then(() => {
@@ -123,6 +128,7 @@ export class ExchangeInitService {
 
   private buildExchangeConfigsFromDb(
     apiKeys: APIKeysConfig[],
+    clobTradingAccounts: TradingAccountWalletCredentials[] = [],
   ): ExchangeConfig[] {
     const grouped = new Map<string, APIKeysConfig[]>();
 
@@ -160,13 +166,65 @@ export class ExchangeInitService {
       });
     }
 
+    const hyperliquidWalletAccounts = clobTradingAccounts.map((account) => ({
+      label: account.id,
+      apiKey: account.walletAddress,
+      secret: account.privateKey,
+      walletAddress: account.walletAddress,
+    }));
+
+    if (hyperliquidWalletAccounts.length > 0) {
+      const exchangeClass = this.resolveExchangeClass('hyperliquid');
+
+      if (!exchangeClass) {
+        this.logger.warn('Exchange hyperliquid is not supported by CCXT.');
+      } else {
+        const existing = exchangeConfigs.find(
+          (config) => config.name === 'hyperliquid',
+        );
+
+        if (existing) {
+          const existingLabels = new Set(
+            existing.accounts.map((account) => account.label),
+          );
+          existing.accounts.push(
+            ...hyperliquidWalletAccounts.filter(
+              (account) => !existingLabels.has(account.label),
+            ),
+          );
+        } else {
+          exchangeConfigs.push({
+            name: 'hyperliquid',
+            accounts: hyperliquidWalletAccounts,
+            class: exchangeClass,
+          });
+        }
+      }
+    }
+
     return exchangeConfigs;
   }
 
-  private computeApiKeysSignature(apiKeys: APIKeysConfig[]): string {
-    const entries = apiKeys.map((key) =>
-      [key.key_id, key.exchange, key.api_key, key.api_secret].join('::'),
-    );
+  private computeCredentialsSignature(
+    apiKeys: APIKeysConfig[],
+    clobTradingAccounts: TradingAccountWalletCredentials[] = [],
+  ): string {
+    const entries = [
+      ...apiKeys.map((key) =>
+        ['api_key', key.key_id, key.exchange, key.api_key, key.api_secret].join(
+          '::',
+        ),
+      ),
+      ...clobTradingAccounts.map((account) =>
+        [
+          'trading_account',
+          account.id,
+          'hyperliquid',
+          account.walletAddress,
+          account.privateKey,
+        ].join('::'),
+      ),
+    ];
 
     entries.sort();
 
@@ -177,6 +235,28 @@ export class ExchangeInitService {
     return [...this.exchangeInitializationStates.values()].filter(
       (state) => state === 'failed',
     ).length;
+  }
+
+  private async readClobTradingAccounts(): Promise<
+    TradingAccountWalletCredentials[]
+  > {
+    try {
+      return await this.tradingAccountService.listValidWalletCredentialsByPurpose(
+        'clob_trading',
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      if (message.includes('no such table: trading_accounts')) {
+        this.logger.warn(
+          'trading_accounts table is missing. Skipping CLOB trading account preload until migrations complete.',
+        );
+
+        return [];
+      }
+
+      throw error;
+    }
   }
 
   private getExchangeAccountKey(exchangeName: string, label: string): string {
@@ -360,11 +440,16 @@ export class ExchangeInitService {
 
   private async initializeExchanges() {
     const apiKeys = await this.exchangeService.readDecryptedAPIKeys();
-    const exchangeConfigs = this.buildExchangeConfigsFromDb(apiKeys);
+    const clobTradingAccounts = await this.readClobTradingAccounts();
+    const exchangeConfigs = this.buildExchangeConfigsFromDb(
+      apiKeys,
+      clobTradingAccounts,
+    );
 
-    this.apiKeysSignature = apiKeys.length
-      ? this.computeApiKeysSignature(apiKeys)
-      : null;
+    this.apiKeysSignature =
+      apiKeys.length || clobTradingAccounts.length
+        ? this.computeCredentialsSignature(apiKeys, clobTradingAccounts)
+        : null;
 
     await this.initializeExchangeConfigs(exchangeConfigs);
   }
@@ -373,15 +458,20 @@ export class ExchangeInitService {
     const refreshTimer = setInterval(async () => {
       try {
         const apiKeys = await this.exchangeService.readDecryptedAPIKeys();
-        const signature = apiKeys.length
-          ? this.computeApiKeysSignature(apiKeys)
-          : null;
+        const clobTradingAccounts = await this.readClobTradingAccounts();
+        const signature =
+          apiKeys.length || clobTradingAccounts.length
+            ? this.computeCredentialsSignature(apiKeys, clobTradingAccounts)
+            : null;
 
         if (signature === this.apiKeysSignature) {
           return;
         }
 
-        const exchangeConfigs = this.buildExchangeConfigsFromDb(apiKeys);
+        const exchangeConfigs = this.buildExchangeConfigsFromDb(
+          apiKeys,
+          clobTradingAccounts,
+        );
 
         this.apiKeysSignature = signature;
         await this.initializeExchangeConfigs(exchangeConfigs);

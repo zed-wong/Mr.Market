@@ -21,6 +21,14 @@ export type CreateTradingAccountCommand = {
   validationStatus?: TradingAccountValidationStatus;
 };
 
+export type TradingAccountWalletCredentials = {
+  id: string;
+  label: string;
+  purpose: TradingAccountPurpose;
+  walletAddress: string;
+  privateKey: string;
+};
+
 @Injectable()
 export class TradingAccountService {
   constructor(
@@ -97,6 +105,22 @@ export class TradingAccountService {
     }
 
     return this.buildSigner(account, chainId);
+  }
+
+  async listValidWalletCredentialsByPurpose(
+    purpose: TradingAccountPurpose,
+  ): Promise<TradingAccountWalletCredentials[]> {
+    const accounts = await this.listByPurpose(purpose);
+
+    return accounts
+      .filter((account) => account.validationStatus === 'valid')
+      .map((account) => ({
+        id: account.id,
+        label: account.label,
+        purpose: account.purpose,
+        walletAddress: account.walletAddress,
+        privateKey: this.decryptPrivateKey(account),
+      }));
   }
 
   private buildSigner(

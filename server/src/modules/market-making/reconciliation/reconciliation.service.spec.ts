@@ -814,4 +814,78 @@ describe('ReconciliationService', () => {
       }),
     );
   });
+
+  it('pauses Hyperliquid CLOB reservations when fill evidence mismatches', async () => {
+    const ledgerEntryRepository = {
+      find: jest.fn().mockResolvedValue([
+        {
+          entryId: 'hl-quote-fill-mismatch',
+          orderId: 'order-hl',
+          userOrderId: 'order-hl',
+          accountLabel: 'default',
+          userId: 'user-1',
+          assetId: 'USDC',
+          amount: '-25',
+          type: 'fill_settle',
+          refType: 'market_making_fill',
+          refId: 'hl-ex-1',
+        },
+      ]),
+    };
+    const exchangeConnectorAdapterService = {
+      fetchMyTrades: jest.fn().mockResolvedValue([
+        {
+          id: 'hl-trade-1',
+          order: 'hl-ex-1',
+          amount: '0.1',
+          cost: '10',
+        },
+      ]),
+    };
+    const balanceLedgerService = {
+      pauseReservations: jest.fn(),
+    };
+    const service = new ReconciliationService(
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      {
+        getOpenOrders: jest.fn().mockReturnValue([]),
+        getAllTrackedOrders: jest.fn().mockReturnValue([
+          {
+            orderId: 'order-hl',
+            exchange: 'hyperliquid',
+            accountLabel: 'default',
+            pair: 'BTC/USDC',
+            exchangeOrderId: 'hl-ex-1',
+          },
+        ]),
+      } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      ledgerEntryRepository as any,
+      balanceLedgerService as any,
+      { emitReconciliationAudit: jest.fn() } as any,
+      exchangeConnectorAdapterService as any,
+    );
+
+    const report = await service.reconcileFillsAgainstExchangeTrades();
+
+    expect(report).toEqual({ checked: 1, violations: 1 });
+    expect(exchangeConnectorAdapterService.fetchMyTrades).toHaveBeenCalledWith(
+      'hyperliquid',
+      'BTC/USDC',
+      undefined,
+      1000,
+      'default',
+    );
+    expect(balanceLedgerService.pauseReservations).toHaveBeenCalledWith(
+      'order-hl',
+      'USDC',
+      expect.objectContaining({
+        source: 'reconciliation',
+        reason: 'fill_amount_mismatch',
+        refId: 'hl-ex-1',
+      }),
+    );
+  });
 });

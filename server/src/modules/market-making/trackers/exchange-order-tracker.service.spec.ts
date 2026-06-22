@@ -762,6 +762,67 @@ describe('ExchangeOrderTrackerService', () => {
     ).not.toHaveBeenCalled();
   });
 
+  it('recovers Hyperliquid pending_create orders after restart by 128-bit clientOrderId', async () => {
+    const clientOrderId = '0x78b03881f575d18f8a3c345fdd99afc5';
+    const adapter = {
+      fetchOrderByClientOrderId: jest.fn().mockResolvedValue({
+        id: 'hl-ex-recovered',
+        status: 'open',
+        filled: '0',
+      }),
+      fetchOpenOrders: jest.fn().mockResolvedValue([
+        { id: 'hl-ex-recovered' },
+      ]),
+    };
+    const orderReservationService = {
+      releaseLimitOrderReservation: jest.fn(),
+    };
+    const service = new ExchangeOrderTrackerService(
+      adapter as any,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      orderReservationService as any,
+    );
+
+    service.upsertOrder({
+      orderId: 'order-hl',
+      strategyKey: 'order-hl-pureMarketMaking',
+      exchange: 'hyperliquid',
+      accountLabel: 'hl-wallet-1',
+      pair: 'BTC/USDC',
+      exchangeOrderId: '',
+      clientOrderId,
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      status: 'pending_create',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:00.000Z',
+    });
+
+    await service.pollDueOrders('2026-02-11T00:00:01.000Z');
+
+    expect(adapter.fetchOrderByClientOrderId).toHaveBeenCalledWith(
+      'hyperliquid',
+      'BTC/USDC',
+      clientOrderId,
+      'hl-wallet-1',
+    );
+    expect(
+      service.getByExchangeOrderId(
+        'hyperliquid',
+        'hl-ex-recovered',
+        'hl-wallet-1',
+      )?.status,
+    ).toBe('open');
+    expect(
+      orderReservationService.releaseLimitOrderReservation,
+    ).not.toHaveBeenCalled();
+  });
+
   it('reconciles open-order snapshots during off-tick polling when available', async () => {
     const adapter = {
       fetchOrder: jest.fn().mockResolvedValue({ id: 'ex-1', status: 'open' }),

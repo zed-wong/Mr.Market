@@ -1,4 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { buildSubmittedClientOrderId } from 'src/common/helpers/client-order-id';
+
 import { ClobConnector } from './clob-connector';
 
 describe('ClobConnector', () => {
@@ -59,6 +61,72 @@ describe('ClobConnector', () => {
       exchangeOrderId: 'ex-1',
       details: { id: 'ex-1', status: 'open' },
     });
+  });
+
+  it('runs a Hyperliquid CLOB lifecycle with 128-bit submitted client order id', async () => {
+    const connector = new ClobConnector(adapter as any);
+    const submittedClientOrderId = buildSubmittedClientOrderId(
+      'order-1',
+      7,
+      'hyperliquid',
+    );
+
+    const submitted = await connector.submitAction({
+      ...baseIntent,
+      metadata: { submittedClientOrderId },
+    });
+    const queried = await connector.queryState({
+      ...baseIntent,
+      mixinOrderId: 'ex-1',
+      metadata: { submittedClientOrderId },
+    });
+    const cancelled = await connector.cancelAction({
+      ...baseIntent,
+      type: 'CANCEL_ORDER',
+      mixinOrderId: 'ex-1',
+    });
+
+    expect(submittedClientOrderId).toMatch(/^0x[a-f0-9]{32}$/);
+    expect(adapter.placeLimitOrder).toHaveBeenCalledWith(
+      'hyperliquid',
+      'BTC/USDC',
+      'buy',
+      '1',
+      '100',
+      submittedClientOrderId,
+      { postOnly: false, timeInForce: undefined },
+      'default',
+    );
+    expect(adapter.fetchOrder).toHaveBeenCalledWith(
+      'hyperliquid',
+      'BTC/USDC',
+      'ex-1',
+      'default',
+    );
+    expect(adapter.cancelOrder).toHaveBeenCalledWith(
+      'hyperliquid',
+      'BTC/USDC',
+      'ex-1',
+      'default',
+    );
+    expect(submitted).toEqual(
+      expect.objectContaining({
+        status: 'submitted',
+        exchangeOrderId: 'ex-1',
+      }),
+    );
+    expect(queried).toEqual(
+      expect.objectContaining({
+        status: 'open',
+        exchangeOrderId: 'ex-1',
+      }),
+    );
+    expect(cancelled).toEqual(
+      expect.objectContaining({
+        status: 'submitted',
+        exchangeOrderId: 'ex-1',
+      }),
+    );
   });
 
   it('returns explicit not_supported for non-CLOB submit types', async () => {
