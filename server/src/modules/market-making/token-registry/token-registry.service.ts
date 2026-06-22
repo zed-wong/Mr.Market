@@ -67,6 +67,12 @@ export class TokenRegistryService {
     return token;
   }
 
+  async list(): Promise<TokenRegistryEntry[]> {
+    return await this.tokenRegistryRepository.find({
+      order: { chainId: 'ASC', symbol: 'ASC', assetId: 'ASC' },
+    });
+  }
+
   async resolveNativeAssetId(chainId: number): Promise<string> {
     const token = await this.tokenRegistryRepository.findOneBy({
       chainId,

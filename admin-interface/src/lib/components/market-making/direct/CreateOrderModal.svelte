@@ -9,6 +9,7 @@
     import type { AdminSingleKey } from "$lib/types/hufi/admin";
     import type { MarketMakingStrategy } from "$lib/helpers/mrm/grow";
     import type {
+        DirectDexSetup,
         EfficientDualAccountVolumeMode,
     } from "$lib/types/hufi/admin-direct-market-making";
     import {
@@ -36,6 +37,11 @@
     export let prefillingFromOrderId: string | null = null;
     export let selectedStrategySchema: StrategySchema = {};
     export let genericConfig: Record<string, unknown> = {};
+    export let dexSetup: DirectDexSetup = {
+        connectors: [],
+        tradingAccounts: { dexExecution: [], fundingOperator: [] },
+        tokens: [],
+    };
 
     export let startExchangeName = "";
     export let startPair = "";
@@ -99,6 +105,32 @@
     );
     $: isPureMarketMakingStrategy =
         selectedControllerType === "pureMarketMaking";
+    $: isAmmVolumeStrategy = selectedControllerType === "ammVolume";
+    $: ammConnectorOptions = dexSetup.connectors.filter(
+        (connector) => connector.exchangeType === "amm",
+    );
+    $: selectedAmmConnector =
+        ammConnectorOptions.find(
+            (connector) => connector.connectorId === startExchangeName,
+        ) || null;
+    $: ammChainOptions = selectedAmmConnector?.supportedChainIds || [];
+    $: selectedAmmChainId = Number(genericConfig.chainId || 0);
+    $: ammDexAccounts = dexSetup.tradingAccounts.dexExecution.filter(
+        (account) =>
+            account.validationStatus === "valid" &&
+            (!selectedAmmChainId || account.chainIds.includes(selectedAmmChainId)),
+    );
+    $: ammFundingAccounts = dexSetup.tradingAccounts.fundingOperator.filter(
+        (account) =>
+            account.validationStatus === "valid" &&
+            (!selectedAmmChainId || account.chainIds.includes(selectedAmmChainId)),
+    );
+    $: ammTokens = dexSetup.tokens.filter(
+        (token) => !selectedAmmChainId || token.chainId === selectedAmmChainId,
+    );
+    $: if (isAmmVolumeStrategy && startExchangeName && genericConfig.dexId !== startExchangeName) {
+        genericConfig = { ...genericConfig, dexId: startExchangeName, executionCategory: "amm" };
+    }
 
     $: orderAmountError = orderAmount && isNaN(Number(orderAmount));
     $: orderAmountBelowMinimum =
@@ -126,7 +158,7 @@
         !isBestCapacityStrategy &&
         (!intervalTime || !numTrades || !pricePushRate);
     $: singleAccountSelectionMissing =
-        !isDualAccountStrategy && !startApiKeyId;
+        !isAmmVolumeStrategy && !isDualAccountStrategy && !startApiKeyId;
     $: dualAccountSelectionMissing =
         isDualAccountStrategy && (!startMakerApiKeyId || !startTakerApiKeyId);
     $: dualSameAccount =
@@ -139,6 +171,16 @@
     $: submitDisabled =
         isStarting ||
         !startStrategyDefinitionId ||
+        (isAmmVolumeStrategy &&
+            (!startExchangeName ||
+                !genericConfig.chainId ||
+                !genericConfig.tradingAccountId ||
+                !genericConfig.gasSponsorTradingAccountId ||
+                !genericConfig.tokenIn ||
+                !genericConfig.tokenOut ||
+                !genericConfig.feeTier ||
+                ammDexAccounts.length === 0 ||
+                ammFundingAccounts.length === 0)) ||
         singleAccountSelectionMissing ||
         orderAmountError ||
         orderAmountBelowMinimum ||
@@ -199,6 +241,43 @@
         startPair = symbol;
         pairSearch = "";
         pairDropdownOpen = false;
+    }
+
+    function setGenericValue(key: string, value: unknown) {
+        genericConfig = { ...genericConfig, [key]: value };
+    }
+
+    function tokenLabel(address: unknown): string {
+        const token = ammTokens.find(
+            (candidate) => candidate.contractAddress === String(address || ""),
+        );
+
+        return token ? `${token.symbol} (${token.assetId})` : String(address || "");
+    }
+
+    function refreshAmmPair() {
+        const tokenInLabel = tokenLabel(genericConfig.tokenIn).split(" ")[0];
+        const tokenOutLabel = tokenLabel(genericConfig.tokenOut).split(" ")[0];
+
+        if (tokenInLabel && tokenOutLabel) {
+            startPair = `${tokenInLabel}/${tokenOutLabel}`;
+        }
+    }
+
+    function strategyExchangeType(strategy: MarketMakingStrategy): "amm" | "clob" {
+        return strategy.controllerType === "ammVolume" ? "amm" : "clob";
+    }
+
+    function selectExchangeType(exchangeType: "amm" | "clob") {
+        const nextStrategy = strategies.find(
+            (strategy) => strategyExchangeType(strategy) === exchangeType,
+        );
+
+        if (nextStrategy) {
+            startStrategyDefinitionId = nextStrategy.id;
+            startExchangeName = "";
+            startPair = "";
+        }
     }
 
     function handlePairBlur() {
@@ -283,6 +362,24 @@
                 <div class="bg-base-200/40 rounded-xl p-4">
                     <span
                         class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
+                        >Exchange type</span
+                    >
+                    <select
+                        class="select select-bordered w-full h-10 min-h-10 bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300 mb-3"
+                        value={isAmmVolumeStrategy ? "amm" : "clob"}
+                        on:change={(event) =>
+                            selectExchangeType(
+                                (event.currentTarget as HTMLSelectElement)
+                                    .value === "amm"
+                                    ? "amm"
+                                    : "clob",
+                            )}
+                    >
+                        <option value="clob">CLOB</option>
+                        <option value="amm">AMM</option>
+                    </select>
+                    <span
+                        class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
                         >{$_("admin_direct_mm_strategy")}</span
                     >
                     <select
@@ -348,7 +445,131 @@
                     </select>
                 </div>
 
-                {#if startExchangeName}
+                {#if isAmmVolumeStrategy && startExchangeName}
+                    <div class="bg-base-200/40 rounded-xl p-4 flex flex-col gap-4">
+                        <span class="text-xs font-semibold text-base-content/50 tracking-wider block"
+                            >AMM execution</span
+                        >
+                        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            <label class="flex flex-col gap-1">
+                                <span class="text-xs font-semibold text-base-content/50 tracking-wider">Chain</span>
+                                <select
+                                    class="select select-bordered w-full h-10 min-h-10 bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
+                                    value={String(genericConfig.chainId || "")}
+                                    on:change={(event) => setGenericValue("chainId", Number((event.currentTarget as HTMLSelectElement).value))}
+                                >
+                                    <option value="" disabled>Select chain</option>
+                                    {#each ammChainOptions as chainId}
+                                        <option value={String(chainId)}>{chainId}</option>
+                                    {/each}
+                                </select>
+                            </label>
+                            <label class="flex flex-col gap-1">
+                                <span class="text-xs font-semibold text-base-content/50 tracking-wider">Fee tier</span>
+                                <select
+                                    class="select select-bordered w-full h-10 min-h-10 bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
+                                    value={String(genericConfig.feeTier || "")}
+                                    on:change={(event) => setGenericValue("feeTier", Number((event.currentTarget as HTMLSelectElement).value))}
+                                >
+                                    <option value="" disabled>Select fee tier</option>
+                                    <option value="500">500</option>
+                                    <option value="3000">3000</option>
+                                    <option value="10000">10000</option>
+                                </select>
+                            </label>
+                            <label class="flex flex-col gap-1">
+                                <span class="text-xs font-semibold text-base-content/50 tracking-wider">Slippage bps</span>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    class="input input-bordered w-full h-10 min-h-10 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300"
+                                    value={String(genericConfig.slippageBps || "")}
+                                    on:input={(event) => setGenericValue("slippageBps", Number((event.currentTarget as HTMLInputElement).value))}
+                                />
+                            </label>
+                            <label class="flex flex-col gap-1">
+                                <span class="text-xs font-semibold text-base-content/50 tracking-wider">Deadline seconds</span>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    class="input input-bordered w-full h-10 min-h-10 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300"
+                                    value={String(genericConfig.deadlineSeconds || "")}
+                                    on:input={(event) => setGenericValue("deadlineSeconds", Number((event.currentTarget as HTMLInputElement).value))}
+                                />
+                            </label>
+                            <label class="flex flex-col gap-1">
+                                <span class="text-xs font-semibold text-base-content/50 tracking-wider">Token in</span>
+                                <select
+                                    class="select select-bordered w-full h-10 min-h-10 bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
+                                    value={String(genericConfig.tokenIn || "")}
+                                    on:change={(event) => {
+                                        setGenericValue("tokenIn", (event.currentTarget as HTMLSelectElement).value);
+                                        setTimeout(refreshAmmPair, 0);
+                                    }}
+                                >
+                                    <option value="" disabled>Select token</option>
+                                    {#each ammTokens as token}
+                                        <option value={token.contractAddress}>{token.symbol} · {token.assetId}</option>
+                                    {/each}
+                                </select>
+                            </label>
+                            <label class="flex flex-col gap-1">
+                                <span class="text-xs font-semibold text-base-content/50 tracking-wider">Token out</span>
+                                <select
+                                    class="select select-bordered w-full h-10 min-h-10 bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
+                                    value={String(genericConfig.tokenOut || "")}
+                                    on:change={(event) => {
+                                        setGenericValue("tokenOut", (event.currentTarget as HTMLSelectElement).value);
+                                        setTimeout(refreshAmmPair, 0);
+                                    }}
+                                >
+                                    <option value="" disabled>Select token</option>
+                                    {#each ammTokens as token}
+                                        <option value={token.contractAddress}>{token.symbol} · {token.assetId}</option>
+                                    {/each}
+                                </select>
+                            </label>
+                        </div>
+                        <div class="grid grid-cols-1 gap-3">
+                            <label class="flex flex-col gap-1">
+                                <span class="text-xs font-semibold text-base-content/50 tracking-wider">DEX execution account</span>
+                                <select
+                                    class="select select-bordered w-full h-10 min-h-10 bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
+                                    value={String(genericConfig.tradingAccountId || "")}
+                                    on:change={(event) => setGenericValue("tradingAccountId", (event.currentTarget as HTMLSelectElement).value)}
+                                >
+                                    <option value="" disabled>Select account</option>
+                                    {#each ammDexAccounts as account}
+                                        <option value={account.id}>{account.label} · {account.walletAddress}</option>
+                                    {/each}
+                                </select>
+                            </label>
+                            <label class="flex flex-col gap-1">
+                                <span class="text-xs font-semibold text-base-content/50 tracking-wider">Funding operator account</span>
+                                <select
+                                    class="select select-bordered w-full h-10 min-h-10 bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
+                                    value={String(genericConfig.gasSponsorTradingAccountId || "")}
+                                    on:change={(event) => setGenericValue("gasSponsorTradingAccountId", (event.currentTarget as HTMLSelectElement).value)}
+                                >
+                                    <option value="">Optional</option>
+                                    {#each ammFundingAccounts as account}
+                                        <option value={account.id}>{account.label} · {account.walletAddress}</option>
+                                    {/each}
+                                </select>
+                            </label>
+                            <label class="flex flex-col gap-1">
+                                <span class="text-xs font-semibold text-base-content/50 tracking-wider">Gas sponsor ledger scope</span>
+                                <input
+                                    class="input input-bordered w-full h-10 min-h-10 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300"
+                                    value={String(genericConfig.gasSponsorLedgerOrderId || "")}
+                                    on:input={(event) => setGenericValue("gasSponsorLedgerOrderId", (event.currentTarget as HTMLInputElement).value)}
+                                />
+                            </label>
+                        </div>
+                    </div>
+                {/if}
+
+                {#if startExchangeName && !isAmmVolumeStrategy}
                     <div class="bg-base-200/40 rounded-xl p-4">
                         <span
                             class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
@@ -444,7 +665,7 @@
                             >
                         {/if}
                     </div>
-                    {#if isDualAccountStrategy}
+                    {#if isDualAccountStrategy || isAmmVolumeStrategy}
                         <div class="bg-base-200/40 rounded-xl p-4">
                             <span
                                 class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
@@ -500,6 +721,7 @@
                 {/if}
 
                 <!-- Trading Pair -->
+                {#if !isAmmVolumeStrategy}
                 <div class="bg-base-200/40 rounded-xl p-4">
                     <span
                         class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
@@ -576,6 +798,7 @@
                         {/if}
                     </div>
                 </div>
+                {/if}
 
                 {#if startStrategyDefinitionId}
                     <!-- Order Parameters -->

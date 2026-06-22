@@ -81,6 +81,14 @@ export class AdminDirectMarketMakingController {
     return this.adminDirectMarketMakingService.listDirectStrategyDefinitions();
   }
 
+  @Get('dex-setup')
+  @ApiOperation({
+    summary: 'List DEX connector, trading account, and token setup metadata',
+  })
+  async getDexSetup() {
+    return this.adminDirectMarketMakingService.getDexSetup();
+  }
+
   @Get('direct-orders/:id/status')
   @ApiOperation({ summary: 'Get runtime status for a direct admin order' })
   async getDirectOrderStatus(@Param('id') id: string) {

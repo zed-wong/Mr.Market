@@ -2,6 +2,41 @@ export type DirectOrderControllerType = string;
 
 export type StrategyDirectExecutionMode = 'single_account' | 'dual_account';
 
+export type DexSetupConnector = {
+  connectorId: string;
+  exchangeType: 'amm' | 'clmm' | string;
+  settlementDomain: 'evm_chain' | string;
+  supportedChainIds: number[];
+  supportedIntentTypes: string[];
+};
+
+export type DexSetupTradingAccount = {
+  id: string;
+  label: string;
+  purpose: 'dex_execution' | 'funding_operator' | string;
+  chainIds: number[];
+  walletAddress: string;
+  validationStatus: 'pending' | 'valid' | 'invalid' | string;
+};
+
+export type DexSetupToken = {
+  assetId: string;
+  chainId: number;
+  contractAddress: string;
+  symbol: string;
+  decimals: number;
+  isNative: boolean;
+};
+
+export type DirectDexSetup = {
+  connectors: DexSetupConnector[];
+  tradingAccounts: {
+    dexExecution: DexSetupTradingAccount[];
+    fundingOperator: DexSetupTradingAccount[];
+  };
+  tokens: DexSetupToken[];
+};
+
 export type EfficientDualAccountVolumeMode =
   | 'cheapest_capital'
   | 'balanced'
@@ -188,6 +223,88 @@ export interface DirectOrderStatus {
     lastEventAt?: string | null;
     lastBalanceRefreshAt?: string | null;
   }>;
+  dexRuntime?: {
+    connectorId: string | null;
+    chainId: number | null;
+    tradingAccountId: string | null;
+    gasSponsorTradingAccountId: string | null;
+    gasSponsorLedgerOrderId: string | null;
+    preflight: {
+      staticSetupValidated: boolean;
+      runtimeChecks: string[];
+    };
+    evmExecutions: Array<{
+      id: string;
+      parentExecutionId: string | null;
+      executionType: string;
+      status: string;
+      intentId: string;
+      ledgerOrderId: string;
+      accountLabel: string;
+      connectorId: string;
+      exchangeType: string;
+      chainId: number;
+      tradingAccountId: string;
+      nonce: number;
+      txHash: string | null;
+      submittedAt: string | null;
+      confirmedAt: string | null;
+      blockNumber: number | null;
+      confirmationCount: number | null;
+      requiredConfirmations: number;
+      gasUsed: string | null;
+      gasPrice: string | null;
+      effectiveGasCost: string | null;
+      gasSponsorLedgerOrderId: string | null;
+      manualReviewReason: string | null;
+      updatedAt: string;
+    }>;
+    lpPositions: Array<{
+      id: string;
+      ledgerOrderId: string;
+      accountLabel: string;
+      connectorId: string;
+      chainId: number;
+      tradingAccountId: string;
+      positionTokenId: string;
+      poolAddress: string;
+      token0: string;
+      token1: string;
+      feeTier: number;
+      tickLower: number;
+      tickUpper: number;
+      liquidity: string;
+      status: string;
+      openedByIntentId: string;
+      closedByIntentId: string | null;
+      lastConfirmedBlock: number | null;
+      uncollectedFees0: string | null;
+      uncollectedFees1: string | null;
+      updatedAt: string;
+    }>;
+    ledgerFacts: Array<{
+      entryId: string;
+      orderId: string;
+      userOrderId: string;
+      accountLabel: string;
+      assetId: string;
+      amount: string;
+      type: string;
+      refType: string | null;
+      refId: string | null;
+      tradingAccountId: string | null;
+      chainId: number | null;
+      createdAt: string;
+    }>;
+    reservationBlocks: Array<{
+      orderId: string;
+      userOrderId: string;
+      accountLabel: string;
+      assetId: string;
+      tradingAccountId: string | null;
+      chainId: number | null;
+    }>;
+  } | null;
   stale: boolean;
 }
 
@@ -289,6 +406,12 @@ export interface CampaignLeaderboard {
 }
 
 export type DirectStartPayload =
+  | {
+      exchangeName: string;
+      pair: string;
+      strategyDefinitionId: string;
+      configOverrides: Record<string, unknown>;
+    }
   | {
       exchangeName: string;
       pair: string;

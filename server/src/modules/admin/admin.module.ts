@@ -8,7 +8,9 @@ import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.ent
 import { SpotdataTradingPair } from 'src/common/entities/data/spot-data.entity';
 import { LedgerEntry } from 'src/common/entities/ledger/ledger-entry.entity';
 import { MarketMakingOrderBalance } from 'src/common/entities/ledger/market-making-order-balance.entity';
+import { EvmExecution } from 'src/common/entities/market-making/evm-execution.entity';
 import { ExchangeOrderMapping } from 'src/common/entities/market-making/exchange-order-mapping.entity';
+import { OrderLpPosition } from 'src/common/entities/market-making/order-lp-position.entity';
 import { Performance } from 'src/common/entities/market-making/performance.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
@@ -34,7 +36,9 @@ import { MetricsModule } from '../market-making/metrics/metrics.module';
 import { PerformanceModule } from '../market-making/performance/performance.module';
 import { ReconciliationModule } from '../market-making/reconciliation/reconciliation.module';
 import { StrategyModule } from '../market-making/strategy/strategy.module';
+import { TokenRegistryModule } from '../market-making/token-registry/token-registry.module';
 import { TrackersModule } from '../market-making/trackers/trackers.module';
+import { TradingAccountModule } from '../market-making/trading-account/trading-account.module';
 import { UserOrdersModule } from '../market-making/user-orders/user-orders.module';
 import { MixinClientModule } from '../mixin/client/mixin-client.module';
 import { Web3Module } from '../web3/web3.module';
@@ -84,6 +88,8 @@ import { AdminSystemHealthService } from './system/admin-system-health.service';
     PerformanceModule,
     HealthModule,
     ReconciliationModule,
+    TokenRegistryModule,
+    TradingAccountModule,
     TypeOrmModule.forFeature([
       StrategyExecutionHistory,
       ExchangeOrderMapping,
@@ -91,6 +97,8 @@ import { AdminSystemHealthService } from './system/admin-system-health.service';
       StrategyDefinition,
       StrategyOrderIntentEntity,
       TrackedOrderEntity,
+      EvmExecution,
+      OrderLpPosition,
       MarketMakingOrder,
       SimplyGrowOrder,
       LedgerEntry,

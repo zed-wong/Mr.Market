@@ -36,7 +36,11 @@ describe('AdminDirectMarketMakingService', () => {
     strategyOrderIntentRepository?: any;
     strategyExecutionHistoryRepository?: any;
     trackedOrderRepository?: any;
+    evmExecutionRepository?: any;
+    orderLpPositionRepository?: any;
     exchangeConnectorAdapterService?: any;
+    tradingAccountService?: any;
+    tokenRegistryService?: any;
   }) => {
     const marketMakingRepository = {
       create: jest.fn((payload) => payload),
@@ -73,6 +77,12 @@ describe('AdminDirectMarketMakingService', () => {
         find: jest.fn().mockResolvedValue([]),
       };
     const trackedOrderRepository = options?.trackedOrderRepository || {
+      find: jest.fn().mockResolvedValue([]),
+    };
+    const evmExecutionRepository = options?.evmExecutionRepository || {
+      find: jest.fn().mockResolvedValue([]),
+    };
+    const orderLpPositionRepository = options?.orderLpPositionRepository || {
       find: jest.fn().mockResolvedValue([]),
     };
     const userOrdersService = {
@@ -297,6 +307,13 @@ describe('AdminDirectMarketMakingService', () => {
           takerFee: 0.001,
         }),
       };
+    const tradingAccountService = options?.tradingAccountService || {
+      listByPurpose: jest.fn().mockResolvedValue([]),
+      findById: jest.fn().mockResolvedValue(null),
+    };
+    const tokenRegistryService = options?.tokenRegistryService || {
+      list: jest.fn().mockResolvedValue([]),
+    };
 
     const service = new AdminDirectMarketMakingService(
       marketMakingRepository as any,
@@ -329,6 +346,10 @@ describe('AdminDirectMarketMakingService', () => {
       strategyOrderIntentRepository as any,
       strategyExecutionHistoryRepository as any,
       trackedOrderRepository as any,
+      tradingAccountService as any,
+      tokenRegistryService as any,
+      evmExecutionRepository as any,
+      orderLpPositionRepository as any,
     );
 
     return {
@@ -365,8 +386,102 @@ describe('AdminDirectMarketMakingService', () => {
       strategyOrderIntentRepository,
       strategyExecutionHistoryRepository,
       trackedOrderRepository,
+      evmExecutionRepository,
+      orderLpPositionRepository,
+      tradingAccountService,
+      tokenRegistryService,
     };
   };
+
+  it('returns sanitized DEX setup metadata for admin AMM creation', async () => {
+    const tradingAccountService = {
+      listByPurpose: jest
+        .fn()
+        .mockResolvedValueOnce([
+          {
+            id: 'dex-account-1',
+            label: 'DEX execution',
+            purpose: 'dex_execution',
+            chainIds: [1, 137],
+            walletAddress: '0x0000000000000000000000000000000000000001',
+            encryptedPrivateKey: 'secret-ciphertext',
+            validationStatus: 'valid',
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: 'gas-account-1',
+            label: 'Gas sponsor',
+            purpose: 'funding_operator',
+            chainIds: [1],
+            walletAddress: '0x0000000000000000000000000000000000000002',
+            encryptedPrivateKey: 'gas-secret-ciphertext',
+            validationStatus: 'valid',
+          },
+        ]),
+    };
+    const tokenRegistryService = {
+      list: jest.fn().mockResolvedValue([
+        {
+          assetId: 'asset-usdc',
+          chainId: 1,
+          contractAddress: '0x0000000000000000000000000000000000000003',
+          symbol: 'USDC',
+          decimals: 6,
+          isNative: false,
+        },
+      ]),
+    };
+    const { service } = buildService({
+      tradingAccountService,
+      tokenRegistryService,
+    });
+
+    const setup = await service.getDexSetup();
+
+    expect(setup).toEqual({
+      connectors: expect.arrayContaining([
+        expect.objectContaining({
+          connectorId: 'uniswapV3',
+          exchangeType: 'amm',
+          supportedIntentTypes: ['EXECUTE_AMM_SWAP'],
+        }),
+      ]),
+      tradingAccounts: {
+        dexExecution: [
+          {
+            id: 'dex-account-1',
+            label: 'DEX execution',
+            purpose: 'dex_execution',
+            chainIds: [1, 137],
+            walletAddress: '0x0000000000000000000000000000000000000001',
+            validationStatus: 'valid',
+          },
+        ],
+        fundingOperator: [
+          {
+            id: 'gas-account-1',
+            label: 'Gas sponsor',
+            purpose: 'funding_operator',
+            chainIds: [1],
+            walletAddress: '0x0000000000000000000000000000000000000002',
+            validationStatus: 'valid',
+          },
+        ],
+      },
+      tokens: [
+        {
+          assetId: 'asset-usdc',
+          chainId: 1,
+          contractAddress: '0x0000000000000000000000000000000000000003',
+          symbol: 'USDC',
+          decimals: 6,
+          isNative: false,
+        },
+      ],
+    });
+    expect(JSON.stringify(setup)).not.toContain('secret-ciphertext');
+  });
 
   const buildServiceWithRealEfficientReadiness = (options?: {
     makerBalance?: Record<string, Record<string, number>>;
@@ -618,6 +733,126 @@ describe('AdminDirectMarketMakingService', () => {
     );
     expect(exchange.fetchBalance).toHaveBeenCalledTimes(1);
     expect(exchange.fetchTicker).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts an AMM volume direct order with DEX trading account metadata and no API key', async () => {
+    const tradingAccountService = {
+      listByPurpose: jest.fn().mockResolvedValue([]),
+      findById: jest.fn(async (id: string) => {
+        if (id === 'dex-account-1') {
+          return {
+            id,
+            purpose: 'dex_execution',
+            validationStatus: 'valid',
+            chainIds: [1],
+          };
+        }
+        if (id === 'gas-account-1') {
+          return {
+            id,
+            purpose: 'funding_operator',
+            validationStatus: 'valid',
+            chainIds: [1],
+          };
+        }
+
+        return null;
+      }),
+    };
+    const tokenRegistryService = {
+      list: jest.fn().mockResolvedValue([]),
+      resolveAssetId: jest
+        .fn()
+        .mockResolvedValueOnce('asset-token-in')
+        .mockResolvedValueOnce('asset-token-out'),
+    };
+    const {
+      service,
+      strategyDefinitionRepository,
+      strategyConfigResolver,
+      exchangeApiKeyService,
+      userOrdersService,
+      marketMakingRuntimeService,
+      balanceLedgerService,
+    } = buildService({
+      tradingAccountService,
+      tokenRegistryService,
+    });
+
+    strategyDefinitionRepository.findOne.mockResolvedValue({
+      id: 'strategy-amm',
+      enabled: true,
+      controllerType: 'ammVolume',
+      capabilities: singleAccountLaunchConfig,
+      configSchema: {},
+    });
+    strategyConfigResolver.getDefinitionControllerType.mockReturnValue(
+      'ammVolume',
+    );
+    strategyConfigResolver.resolveForOrderSnapshot.mockResolvedValue({
+      controllerType: 'ammVolume',
+      definitionKey: 'amm-volume',
+      definitionName: 'AMM Volume',
+      resolvedConfig: {
+        executionCategory: 'amm',
+        executionVenue: 'dex',
+        dexId: 'uniswapV3',
+        exchangeName: 'uniswapV3',
+        symbol: 'USDC/WETH',
+        pair: 'USDC/WETH',
+        chainId: 1,
+        tokenIn: '0x0000000000000000000000000000000000000001',
+        tokenOut: '0x0000000000000000000000000000000000000002',
+        feeTier: 3000,
+        tradingAccountId: 'dex-account-1',
+        gasSponsorTradingAccountId: 'gas-account-1',
+        gasSponsorLedgerOrderId: 'gas-ledger-order-1',
+        baseTradeAmount: 1,
+        baseIntervalTime: 30,
+        numTrades: 10,
+        baseIncrementPercentage: 0.1,
+        pricePushRate: 0,
+      },
+    });
+
+    const result = await service.directStart(
+      {
+        exchangeName: 'uniswapV3',
+        pair: 'USDC/WETH',
+        strategyDefinitionId: 'strategy-amm',
+        configOverrides: {
+          executionCategory: 'amm',
+          executionVenue: 'dex',
+          dexId: 'uniswapV3',
+          chainId: 1,
+          tokenIn: '0x0000000000000000000000000000000000000001',
+          tokenOut: '0x0000000000000000000000000000000000000002',
+          feeTier: 3000,
+          tradingAccountId: 'dex-account-1',
+          gasSponsorTradingAccountId: 'gas-account-1',
+          gasSponsorLedgerOrderId: 'gas-ledger-order-1',
+        },
+      },
+      'admin-user',
+    );
+
+    expect(result).toEqual({
+      orderId: expect.any(String),
+      state: 'running',
+      warnings: [],
+    });
+    expect(exchangeApiKeyService.readAPIKey).not.toHaveBeenCalled();
+    expect(tokenRegistryService.resolveAssetId).toHaveBeenCalledTimes(2);
+    expect(userOrdersService.createMarketMaking).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: 'admin_direct',
+        apiKeyId: null,
+        exchangeName: 'uniswapV3',
+        pair: 'USDC/WETH',
+      }),
+    );
+    expect(marketMakingRuntimeService.startOrder).toHaveBeenCalled();
+    expect(balanceLedgerService.creditDeposit).not.toHaveBeenCalled();
   });
 
   it('skips admin-direct ledger seed for assets that already have deposits', async () => {
@@ -1775,6 +2010,180 @@ describe('AdminDirectMarketMakingService', () => {
       }),
     );
     expect(exchange.fetchBalance).not.toHaveBeenCalled();
+  });
+
+  it('exposes on-chain executions, LP positions, ledger facts, and reconciliation blocks in AMM direct status', async () => {
+    const evmExecutionRepository = {
+      find: jest.fn().mockResolvedValue([
+        {
+          id: 'evm-1',
+          parentExecutionId: null,
+          executionType: 'swap',
+          status: 'manual_review',
+          intentId: 'intent-1',
+          ledgerOrderId: 'order-amm',
+          accountLabel: 'default',
+          connectorId: 'uniswapV3',
+          exchangeType: 'amm',
+          chainId: 1,
+          tradingAccountId: 'dex-account-1',
+          nonce: 7,
+          txHash: '0x1234567890abcdef',
+          submittedAt: '2026-04-01T00:00:01.000Z',
+          confirmedAt: null,
+          blockNumber: null,
+          confirmationCount: null,
+          requiredConfirmations: 2,
+          gasUsed: null,
+          gasPrice: null,
+          effectiveGasCost: null,
+          gasSponsorLedgerOrderId: 'gas-ledger-order-1',
+          manualReviewReason: 'evm_execution_reconciliation_missing:gas_debit',
+          updatedAt: '2026-04-01T00:00:02.000Z',
+        },
+      ]),
+    };
+    const orderLpPositionRepository = {
+      find: jest.fn().mockResolvedValue([
+        {
+          id: 'lp-1',
+          ledgerOrderId: 'order-amm',
+          accountLabel: 'default',
+          connectorId: 'uniswapV3',
+          chainId: 1,
+          tradingAccountId: 'dex-account-1',
+          positionTokenId: '42',
+          poolAddress: '0xpool',
+          token0: '0xtoken0',
+          token1: '0xtoken1',
+          feeTier: 3000,
+          tickLower: -600,
+          tickUpper: 600,
+          liquidity: '1000',
+          status: 'manual_review',
+          openedByIntentId: 'intent-lp',
+          closedByIntentId: null,
+          lastConfirmedBlock: 123,
+          uncollectedFees0: '1',
+          uncollectedFees1: '2',
+          updatedAt: '2026-04-01T00:00:03.000Z',
+        },
+      ]),
+    };
+    const balanceLedgerService = {
+      hasDepositCredit: jest.fn().mockResolvedValue(false),
+      findByOrderId: jest.fn().mockResolvedValue([]),
+      creditDeposit: jest.fn().mockResolvedValue({ applied: true }),
+      releaseAllocation: jest.fn().mockResolvedValue({ applied: true }),
+      getExistingBalance: jest.fn().mockResolvedValue(null),
+      unlockFunds: jest.fn().mockResolvedValue({ applied: true }),
+      findEntriesByUserOrderId: jest.fn().mockResolvedValue([
+        {
+          entryId: 'ledger-1',
+          orderId: 'gas-ledger-order-1',
+          userOrderId: 'order-amm',
+          accountLabel: 'default',
+          assetId: 'asset-eth',
+          amount: '-0.001',
+          type: 'gas_debit',
+          refType: 'evm_execution',
+          refId: 'evm-1',
+          tradingAccountId: 'dex-account-1',
+          chainId: 1,
+          createdAt: '2026-04-01T00:00:04.000Z',
+        },
+      ]),
+      findBalancesByUserOrderId: jest.fn().mockResolvedValue([
+        {
+          orderId: 'order-amm',
+          userOrderId: 'order-amm',
+          accountLabel: 'default',
+          assetId: 'asset-usdc',
+          tradingAccountId: 'dex-account-1',
+          chainId: 1,
+        },
+      ]),
+      isReservationPaused: jest
+        .fn()
+        .mockImplementation((orderId, assetId) => {
+          return orderId === 'order-amm' && assetId === 'asset-usdc';
+        }),
+    };
+    const { service, marketMakingRepository } = buildService({
+      balanceLedgerService,
+      evmExecutionRepository,
+      orderLpPositionRepository,
+    });
+
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'order-amm',
+      exchangeName: 'uniswapV3',
+      pair: 'USDC/WETH',
+      state: 'running',
+      source: 'admin_direct',
+      createdAt: '2026-04-01T00:00:00.000Z',
+      apiKeyId: null,
+      strategySnapshot: buildStrategySnapshot(
+        {
+          executionCategory: 'amm',
+          executionVenue: 'dex',
+          dexId: 'uniswapV3',
+          exchangeName: 'uniswapV3',
+          chainId: 1,
+          tokenIn: '0xtoken0',
+          tokenOut: '0xtoken1',
+          feeTier: 3000,
+          tradingAccountId: 'dex-account-1',
+          gasSponsorLedgerOrderId: 'gas-ledger-order-1',
+          gasSponsorTradingAccountId: 'gas-account-1',
+          baseTradeAmount: '10',
+        },
+        'ammVolume',
+      ),
+    });
+
+    const result = await service.getDirectOrderStatus('order-amm');
+
+    expect(result.dexRuntime).toMatchObject({
+      connectorId: 'uniswapV3',
+      chainId: 1,
+      tradingAccountId: 'dex-account-1',
+      gasSponsorLedgerOrderId: 'gas-ledger-order-1',
+      preflight: {
+        staticSetupValidated: true,
+        runtimeChecks: expect.arrayContaining([
+          'wallet_balance_reservation',
+          'allowance_or_wrap_child_execution',
+        ]),
+      },
+      evmExecutions: [
+        expect.objectContaining({
+          id: 'evm-1',
+          status: 'manual_review',
+          txHash: '0x1234567890abcdef',
+        }),
+      ],
+      lpPositions: [
+        expect.objectContaining({
+          id: 'lp-1',
+          status: 'manual_review',
+          liquidity: '1000',
+        }),
+      ],
+      ledgerFacts: [
+        expect.objectContaining({
+          entryId: 'ledger-1',
+          type: 'gas_debit',
+          amount: '-0.001',
+        }),
+      ],
+      reservationBlocks: [
+        expect.objectContaining({
+          orderId: 'order-amm',
+          assetId: 'asset-usdc',
+        }),
+      ],
+    });
   });
 
   it('keeps persisted efficient status readiness bound to order-scoped ledger balances', async () => {

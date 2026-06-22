@@ -7,6 +7,7 @@ import type {
   CampaignJoinPayload,
   DirectOrderStatus,
   DirectOrderSummary,
+  DirectDexSetup,
   DirectStartPayload,
   DirectWalletStatus,
 } from "$lib/types/hufi/admin-direct-market-making";
@@ -32,6 +33,20 @@ export const listDirectStrategies = async (
 ): Promise<StrategyDefinition[]> => {
   const response = await fetch(
     `${MRM_BACKEND_URL}/admin/market-making/direct-strategies`,
+    {
+      method: "GET",
+      headers: getHeaders(token),
+    },
+  );
+
+  return handleApiResponse(response);
+};
+
+export const getDirectDexSetup = async (
+  token: string,
+): Promise<DirectDexSetup> => {
+  const response = await fetch(
+    `${MRM_BACKEND_URL}/admin/market-making/dex-setup`,
     {
       method: "GET",
       headers: getHeaders(token),

@@ -12,6 +12,7 @@
 
     import { getAllAPIKeys } from "$lib/helpers/mrm/admin/exchanges";
     import {
+        getDirectDexSetup,
         getDirectWalletStatus,
         getDirectOrderStatus,
         getMarketMakingOrderPerformance,
@@ -32,6 +33,7 @@
         AdminCampaign,
         DirectOrderStatus,
         DirectOrderSummary,
+        DirectDexSetup,
         DirectStartPayload,
         EfficientDualAccountVolumeMode,
         DirectWalletStatus,
@@ -107,6 +109,11 @@
     let initialOrders: DirectOrderSummary[] = [];
     let initialCampaigns: AdminCampaign[] = [];
     let walletStatus: DirectWalletStatus = { configured: false, address: null };
+    let dexSetup: DirectDexSetup = {
+        connectors: [],
+        tradingAccounts: { dexExecution: [], fundingOperator: [] },
+        tokens: [],
+    };
     let pageLoading = true;
     let pageLoadError: AdminErrorState | null = null;
     let supportingLoadErrors: string[] = [];
@@ -138,6 +145,11 @@
         initialOrders = [];
         initialCampaigns = [];
         walletStatus = { configured: false, address: null };
+        dexSetup = {
+            connectors: [],
+            tradingAccounts: { dexExecution: [], fundingOperator: [] },
+            tokens: [],
+        };
         pageLoadError = null;
         supportingLoadErrors = [];
     }
@@ -166,7 +178,7 @@
         }
 
         try {
-            const [gInfo, strats, keys, orders, camps, wallet] = await Promise.all([
+            const [gInfo, strats, keys, orders, camps, wallet, dex] = await Promise.all([
                 settle(getGrowBasicInfoStrict(token), null),
                 settle(listDirectStrategies(token), []),
                 settle(getAllAPIKeys(token), []),
@@ -175,6 +187,11 @@
                 settle(getDirectWalletStatus(token), {
                     configured: false,
                     address: null,
+                }),
+                settle(getDirectDexSetup(token), {
+                    connectors: [],
+                    tradingAccounts: { dexExecution: [], fundingOperator: [] },
+                    tokens: [],
                 }),
             ]);
 
@@ -188,6 +205,11 @@
             initialOrders = orders.value || [];
             initialCampaigns = camps.value || [];
             walletStatus = wallet.value || { configured: false, address: null };
+            dexSetup = dex.value || {
+                connectors: [],
+                tradingAccounts: { dexExecution: [], fundingOperator: [] },
+                tokens: [],
+            };
             pageLoadError = orders.error
                 ? classifyAdminError(
                       new Error(String(orders.error)),
@@ -200,6 +222,7 @@
                 keys.error ? `${$_("admin_direct_mm_api_keys")}: ${keys.error}` : "",
                 camps.error ? `${$_("admin_direct_mm_campaigns")}: ${camps.error}` : "",
                 wallet.error ? `${$_("admin_direct_mm_wallet")}: ${wallet.error}` : "",
+                dex.error ? `DEX setup: ${dex.error}` : "",
             ].filter(Boolean);
         } finally {
             if (requestId === pageLoadRequestId) {
@@ -343,6 +366,12 @@
         (o) => getDirectOrderDisplayState(o) === "stopped",
     ).length;
     $: exchangeOptions = buildDirectOrderExchangeOptions(growInfo, apiKeys);
+    $: startFormExchangeOptions =
+        selectedControllerType === "ammVolume"
+            ? dexSetup.connectors
+                  .filter((connector) => connector.exchangeType === "amm")
+                  .map((connector) => connector.connectorId)
+            : exchangeOptions;
     $: filteredPairs = pairs.filter(
         (pair) => !startExchangeName || pair.exchange_id === startExchangeName,
     );
@@ -513,7 +542,11 @@
         }
     }
 
-    $: if (showStartForm && startExchangeName) {
+    $: if (
+        showStartForm &&
+        selectedControllerType !== "ammVolume" &&
+        startExchangeName
+    ) {
         void ensureExchangeMarketsLoaded(startExchangeName);
     }
 
@@ -577,6 +610,25 @@
     }
 
     function buildDirectConfigOverrides(): Record<string, unknown> {
+        if (selectedControllerType === "ammVolume") {
+            return {
+                ...buildGenericSchemaConfigOverrides(
+                    selectedStrategySchema,
+                    genericConfig,
+                ),
+                executionCategory: "amm",
+                executionVenue: "dex",
+                dexId: startExchangeName,
+                exchangeName: startExchangeName,
+                symbol: startPair,
+                baseTradeAmount: orderAmount ? Number(orderAmount) : genericConfig.baseTradeAmount,
+                baseIntervalTime: intervalTime ? Number(intervalTime) : genericConfig.baseIntervalTime,
+                numTrades: numTrades ? Number(numTrades) : genericConfig.numTrades,
+                baseIncrementPercentage: orderSpread ? Number(orderSpread) : genericConfig.baseIncrementPercentage,
+                pricePushRate: pricePushRate ? Number(pricePushRate) : 0,
+            };
+        }
+
         const baseConfigOverrides = normalizeConfigOverrides(
             selectedControllerType,
             configRows,
@@ -624,7 +676,14 @@
 
         const configOverrides = buildDirectConfigOverrides();
 
-        return isDualAccountStrategy
+        return selectedControllerType === "ammVolume"
+            ? {
+                  exchangeName: startExchangeName,
+                  pair: startPair,
+                  strategyDefinitionId: startStrategyDefinitionId,
+                  configOverrides,
+              }
+            : isDualAccountStrategy
             ? selectedMakerApiKey && selectedTakerApiKey
                 ? {
                       exchangeName: startExchangeName,
@@ -649,7 +708,9 @@
     async function handleStartOrder() {
         if (isStarting || startCooldown) return;
         const token = getToken();
-        const missingSingleAccount = !isDualAccountStrategy && !selectedApiKey;
+        const isAmmStart = selectedControllerType === "ammVolume";
+        const missingSingleAccount =
+            !isAmmStart && !isDualAccountStrategy && !selectedApiKey;
         const missingDualAccount =
             isDualAccountStrategy &&
             (!selectedMakerApiKey || !selectedTakerApiKey);
@@ -662,7 +723,14 @@
             !startPair ||
             !startStrategyDefinitionId ||
             missingSingleAccount ||
-            missingDualAccount
+            missingDualAccount ||
+            (isAmmStart &&
+                (!genericConfig.chainId ||
+                    !genericConfig.tokenIn ||
+                    !genericConfig.tokenOut ||
+                    !genericConfig.feeTier ||
+                    !genericConfig.tradingAccountId ||
+                    !genericConfig.gasSponsorLedgerOrderId))
         ) {
             const missing: string[] = [];
             if (!token) missing.push("token");
@@ -671,6 +739,12 @@
             if (!startStrategyDefinitionId) missing.push("strategy");
             if (missingSingleAccount) missing.push($_("admin_direct_mm_api_key"));
             if (missingDualAccount) missing.push($_("admin_direct_mm_maker_taker_api_keys"));
+            if (isAmmStart && !genericConfig.chainId) missing.push("chain");
+            if (isAmmStart && !genericConfig.tokenIn) missing.push("tokenIn");
+            if (isAmmStart && !genericConfig.tokenOut) missing.push("tokenOut");
+            if (isAmmStart && !genericConfig.feeTier) missing.push("feeTier");
+            if (isAmmStart && !genericConfig.tradingAccountId) missing.push("DEX account");
+            if (isAmmStart && !genericConfig.gasSponsorLedgerOrderId) missing.push("gas ledger scope");
             toast.error($_("admin_direct_mm_error_missing_fields"), {
                 description: `${$_("admin_direct_mm_recovery_required_fields")} (${missing.join(", ")})`,
             });
@@ -1203,13 +1277,14 @@
 <CreateOrderModal
     show={showStartForm}
     {isStarting}
-    {exchangeOptions}
+    exchangeOptions={startFormExchangeOptions}
     {filteredPairs}
     {filteredApiKeys}
     blockedApiKeyViews={blockedStartApiKeyViews}
     strategies={directCreateStrategies}
     {prefillingFromOrderId}
     {selectedStrategySchema}
+    {dexSetup}
     bind:genericConfig
     bind:startExchangeName
     bind:startPair

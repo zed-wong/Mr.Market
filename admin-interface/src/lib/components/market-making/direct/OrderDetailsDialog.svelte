@@ -7,6 +7,7 @@
     import OrderRoutingDialog from "$lib/components/market-making/direct/OrderRoutingDialog.svelte";
     import OrderExchangeOrdersDialog from "$lib/components/market-making/direct/OrderExchangeOrdersDialog.svelte";
     import OrderErrorsDialog from "$lib/components/market-making/direct/OrderErrorsDialog.svelte";
+    import OrderOnchainStatusDialog from "$lib/components/market-making/direct/OrderOnchainStatusDialog.svelte";
     import type { AdminErrorState } from "$lib/helpers/admin/common-states";
     import type {
         DirectOrderSummary,
@@ -45,6 +46,7 @@
         | "config"
         | "routing"
         | "exchangeOrders"
+        | "onchain"
         | "errors";
 
     let activeView: DetailView = "overview";
@@ -157,6 +159,11 @@
                 show: Boolean(data),
             },
             {
+                key: "onchain",
+                label: $_("admin_direct_mm_onchain_status"),
+                show: Boolean(data?.dexRuntime),
+            },
+            {
                 key: "exchangeOrders",
                 label: $_("admin_direct_mm_exchange_orders"),
                 show: Boolean(data),
@@ -222,6 +229,12 @@
                 strategyKey={data?.strategyKey}
                 pair={order.pair}
                 {isDualAccountStrategy}
+                onBack={backToOverview}
+                {onClose}
+            />
+        {:else if activeView === "onchain" && data}
+            <OrderOnchainStatusDialog
+                {data}
                 onBack={backToOverview}
                 {onClose}
             />

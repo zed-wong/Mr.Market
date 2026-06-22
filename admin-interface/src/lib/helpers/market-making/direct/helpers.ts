@@ -489,7 +489,8 @@ export function filterDirectCreateStrategies<T extends DirectStrategyOptionLike>
   return strategies.filter(
     (strategy) =>
       isPureMarketMakingStrategy(strategy) ||
-      isEfficientDualAccountStrategy(strategy),
+      isEfficientDualAccountStrategy(strategy) ||
+      strategy.controllerType === "ammVolume",
   );
 }
 
@@ -1185,7 +1186,8 @@ export function isSchemaDrivenDirectOrderControllerType(
   if (!controllerType) return false;
   return !(
     controllerType === "pureMarketMaking" ||
-    isDualDirectOrderControllerType(controllerType)
+    isDualDirectOrderControllerType(controllerType) ||
+    controllerType === "ammVolume"
   );
 }
 

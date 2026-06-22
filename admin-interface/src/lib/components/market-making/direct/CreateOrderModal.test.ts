@@ -104,4 +104,84 @@ describe('CreateOrderModal direct strategy rendering', () => {
     expect(body).toContain('Pure Market Making');
     expect(body).toContain('Efficient Dual Account Volume');
   });
+
+  it('renders AMM volume connector and trading account controls', () => {
+    const strategies = filterDirectCreateStrategies([
+      {
+        id: 'def-amm',
+        key: 'amm_volume',
+        name: 'AMM Volume',
+        controllerType: 'ammVolume',
+        directExecutionMode: 'single_account' as const,
+        defaultConfig: {},
+        configSchema: {},
+      },
+    ]);
+
+    const { body } = render(CreateOrderModal, {
+      props: {
+        ...baseProps,
+        exchangeOptions: ['uniswapV3'],
+        filteredApiKeys: [],
+        strategies,
+        selectedControllerType: 'ammVolume',
+        directExecutionMode: 'single_account' as const,
+        startExchangeName: 'uniswapV3',
+        startPair: 'USDC/WETH',
+        startStrategyDefinitionId: 'def-amm',
+        startApiKeyId: '',
+        selectedStrategySchema: {},
+        genericConfig: { chainId: 1 },
+        dexSetup: {
+          connectors: [
+            {
+              connectorId: 'uniswapV3',
+              exchangeType: 'amm',
+              settlementDomain: 'evm_chain',
+              supportedChainIds: [1],
+              supportedIntentTypes: ['EXECUTE_AMM_SWAP'],
+            },
+          ],
+          tradingAccounts: {
+            dexExecution: [
+              {
+                id: 'dex-account-1',
+                label: 'DEX execution',
+                purpose: 'dex_execution',
+                chainIds: [1],
+                walletAddress: '0x0000000000000000000000000000000000000001',
+                validationStatus: 'valid',
+              },
+            ],
+            fundingOperator: [
+              {
+                id: 'gas-account-1',
+                label: 'Gas sponsor',
+                purpose: 'funding_operator',
+                chainIds: [1],
+                walletAddress: '0x0000000000000000000000000000000000000002',
+                validationStatus: 'valid',
+              },
+            ],
+          },
+          tokens: [
+            {
+              assetId: 'asset-usdc',
+              chainId: 1,
+              contractAddress: '0x0000000000000000000000000000000000000003',
+              symbol: 'USDC',
+              decimals: 6,
+              isNative: false,
+            },
+          ],
+        },
+      },
+    });
+
+    expect(body).toContain('AMM Volume');
+    expect(body).toContain('AMM execution');
+    expect(body).toContain('DEX execution account');
+    expect(body).toContain('Gas sponsor ledger scope');
+    expect(body).not.toContain('No executable API key');
+  });
 });

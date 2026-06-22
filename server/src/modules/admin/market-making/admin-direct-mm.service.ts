@@ -14,7 +14,10 @@ import { Wallet } from 'ethers';
 import { APIKeysConfig } from 'src/common/entities/admin/api-keys.entity';
 import { CampaignJoin } from 'src/common/entities/campaign/campaign-join.entity';
 import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.entity';
+import { LedgerEntry } from 'src/common/entities/ledger/ledger-entry.entity';
 import { MarketMakingOrderBalance } from 'src/common/entities/ledger/market-making-order-balance.entity';
+import { EvmExecution } from 'src/common/entities/market-making/evm-execution.entity';
+import { OrderLpPosition } from 'src/common/entities/market-making/order-lp-position.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
@@ -64,6 +67,8 @@ import {
   type TrackedOrder,
 } from 'src/modules/market-making/trackers/exchange-order-tracker.service';
 import { OrderBookTrackerService } from 'src/modules/market-making/trackers/order-book-tracker.service';
+import { TokenRegistryService } from 'src/modules/market-making/token-registry/token-registry.service';
+import { TradingAccountService } from 'src/modules/market-making/trading-account/trading-account.service';
 import { UserStreamIngestionService } from 'src/modules/market-making/trackers/user-stream-ingestion.service';
 import { UserStreamTrackerService } from 'src/modules/market-making/trackers/user-stream-tracker.service';
 import { mapStrategySnapshotToMarketMakingOrderFields } from 'src/modules/market-making/user-orders/market-making-order-snapshot.utils';
@@ -115,6 +120,7 @@ const EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE = 'efficientDualAccountVolume';
 const SUPPORTED_DIRECT_STRATEGY_CONTROLLERS = new Set([
   'pureMarketMaking',
   EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE,
+  'ammVolume',
 ]);
 
 type RuntimeSessionLike = {
@@ -129,10 +135,10 @@ type DirectOrderControllerType = string;
 type AdminCampaign = Record<string, unknown> & { joined: boolean };
 
 type DirectExecutionAccount = {
-  apiKeyId: string;
+  apiKeyId: string | null;
   accountLabel: string;
-  apiKeyName: string;
-  apiKey: Record<string, any>;
+  apiKeyName?: string;
+  apiKey?: Record<string, any>;
 };
 
 type DirectMarketSnapshot = {
@@ -244,7 +250,75 @@ export class AdminDirectMarketMakingService {
     @Optional()
     @InjectRepository(TrackedOrderEntity)
     private readonly trackedOrderRepository?: Repository<TrackedOrderEntity>,
+    @Optional()
+    private readonly tradingAccountService?: TradingAccountService,
+    @Optional()
+    private readonly tokenRegistryService?: TokenRegistryService,
+    @Optional()
+    @InjectRepository(EvmExecution)
+    private readonly evmExecutionRepository?: Repository<EvmExecution>,
+    @Optional()
+    @InjectRepository(OrderLpPosition)
+    private readonly orderLpPositionRepository?: Repository<OrderLpPosition>,
   ) {}
+
+  async getDexSetup() {
+    const [dexExecutionAccounts, fundingOperatorAccounts, tokens] =
+      await Promise.all([
+        this.tradingAccountService?.listByPurpose('dex_execution') ||
+          Promise.resolve([]),
+        this.tradingAccountService?.listByPurpose('funding_operator') ||
+          Promise.resolve([]),
+        this.tokenRegistryService?.list() || Promise.resolve([]),
+      ]);
+
+    const serializeAccount = (account: {
+      id: string;
+      label: string;
+      purpose: string;
+      chainIds: number[];
+      walletAddress: string;
+      validationStatus: string;
+    }) => ({
+      id: account.id,
+      label: account.label,
+      purpose: account.purpose,
+      chainIds: account.chainIds,
+      walletAddress: account.walletAddress,
+      validationStatus: account.validationStatus,
+    });
+
+    return {
+      connectors: [
+        {
+          connectorId: 'uniswapV3',
+          exchangeType: 'amm',
+          settlementDomain: 'evm_chain',
+          supportedChainIds: [1, 137],
+          supportedIntentTypes: ['EXECUTE_AMM_SWAP'],
+        },
+        {
+          connectorId: 'pancakeV3',
+          exchangeType: 'amm',
+          settlementDomain: 'evm_chain',
+          supportedChainIds: [56],
+          supportedIntentTypes: ['EXECUTE_AMM_SWAP'],
+        },
+      ],
+      tradingAccounts: {
+        dexExecution: dexExecutionAccounts.map(serializeAccount),
+        fundingOperator: fundingOperatorAccounts.map(serializeAccount),
+      },
+      tokens: tokens.map((token) => ({
+        assetId: token.assetId,
+        chainId: token.chainId,
+        contractAddress: token.contractAddress,
+        symbol: token.symbol,
+        decimals: token.decimals,
+        isNative: token.isNative,
+      })),
+    };
+  }
 
   async directStart(
     dto: DirectStartMarketMakingDto,
@@ -277,10 +351,13 @@ export class AdminDirectMarketMakingService {
       throw new BadRequestException('Strategy definition not found');
     }
 
-    const executionAccounts = await this.resolveExecutionAccounts(
-      dto,
-      capabilities.directExecutionMode,
-    );
+    const isAmmDirectOrder = controllerType === 'ammVolume';
+    const executionAccounts = isAmmDirectOrder
+      ? this.resolveAmmExecutionAccounts()
+      : await this.resolveExecutionAccounts(
+          dto,
+          capabilities.directExecutionMode,
+        );
     const orderId = randomUUID();
 
     assertStrategyConfigOverridesSafe(
@@ -288,6 +365,11 @@ export class AdminDirectMarketMakingService {
       DIRECT_RESERVED_CONFIG_FIELDS,
     );
     const configOverrides = dto.configOverrides || {};
+
+    if (isAmmDirectOrder) {
+      await this.validateAmmDirectStartConfig(configOverrides);
+    }
+
     const resolverInput = this.buildDirectResolverInput(
       definition,
       configOverrides,
@@ -329,7 +411,7 @@ export class AdminDirectMarketMakingService {
         this.normalizeEfficientDirectConfig(resolvedConfig.resolvedConfig),
       );
     }
-    if (capabilities.directExecutionMode === 'dual_account') {
+    if (!isAmmDirectOrder && capabilities.directExecutionMode === 'dual_account') {
       await this.preloadDirectTradingRules(
         dto.exchangeName,
         dto.pair,
@@ -337,34 +419,40 @@ export class AdminDirectMarketMakingService {
         executionAccounts.secondary?.accountLabel,
       );
     }
-    const primaryMarketSnapshot = await this.resolveDirectMarketSnapshot(
-      dto.exchangeName,
-      dto.pair,
-      executionAccounts.primary.accountLabel,
-    );
+    const primaryMarketSnapshot = isAmmDirectOrder
+      ? {}
+      : await this.resolveDirectMarketSnapshot(
+          dto.exchangeName,
+          dto.pair,
+          executionAccounts.primary.accountLabel,
+        );
 
-    await this.populateAdminDirectLedgerAllocations(
-      dto.exchangeName,
-      dto.pair,
-      executionAccounts.primary.accountLabel,
-      resolvedConfig.resolvedConfig,
-      primaryMarketSnapshot,
-    );
-    this.assertAdminDirectSeedAllocationsAvailable(
-      resolvedConfig.resolvedConfig,
-    );
+    if (!isAmmDirectOrder) {
+      await this.populateAdminDirectLedgerAllocations(
+        dto.exchangeName,
+        dto.pair,
+        executionAccounts.primary.accountLabel,
+        resolvedConfig.resolvedConfig,
+        primaryMarketSnapshot,
+      );
+      this.assertAdminDirectSeedAllocationsAvailable(
+        resolvedConfig.resolvedConfig,
+      );
 
-    await this.validateAccountAllocationOverlap(
-      dto.exchangeName,
-      dto.pair,
-      executionAccounts.primary.apiKeyId,
-      executionAccounts.primary.accountLabel,
-      resolvedConfig.resolvedConfig,
-      primaryMarketSnapshot,
-    );
+      await this.validateAccountAllocationOverlap(
+        dto.exchangeName,
+        dto.pair,
+        executionAccounts.primary.apiKeyId,
+        executionAccounts.primary.accountLabel,
+        resolvedConfig.resolvedConfig,
+        primaryMarketSnapshot,
+      );
+    }
 
     const warnings =
-      capabilities.directExecutionMode === 'dual_account'
+      isAmmDirectOrder
+        ? []
+        : capabilities.directExecutionMode === 'dual_account'
         ? await this.runDualAccountBalancePreCheck(
             dto.exchangeName,
             dto.pair,
@@ -400,7 +488,9 @@ export class AdminDirectMarketMakingService {
     await this.userOrdersService.createMarketMaking(order);
 
     try {
-      await this.ensureAdminDirectLedgerSeeded(order);
+      if (!isAmmDirectOrder) {
+        await this.ensureAdminDirectLedgerSeeded(order);
+      }
       await this.marketMakingRuntimeService.startOrder(order);
       await this.userOrdersService.updateMarketMakingOrderState(
         orderId,
@@ -1063,6 +1153,7 @@ export class AdminDirectMarketMakingService {
         : configuredTradedQuoteVolume,
       realizedPnlQuote: this.readConfigString(resolvedConfig.realizedPnlQuote),
     };
+    const dexRuntime = await this.resolveDexRuntimeStatus(orderId, resolvedConfig);
 
     return {
       orderId,
@@ -1102,7 +1193,175 @@ export class AdminDirectMarketMakingService {
       userStreamCapabilities,
       userStreamRuntime,
       streamHealth,
+      dexRuntime,
       stale: executorHealth === 'stale',
+    };
+  }
+
+  private async resolveDexRuntimeStatus(
+    orderId: string,
+    resolvedConfig: Record<string, unknown>,
+  ) {
+    const connectorId = String(
+      resolvedConfig.dexId || resolvedConfig.exchangeName || '',
+    ).trim();
+    const chainId = Number(resolvedConfig.chainId || 0);
+    const isDexOrder =
+      String(resolvedConfig.executionCategory || '') === 'amm' ||
+      String(resolvedConfig.executionVenue || '') === 'dex' ||
+      Boolean(connectorId && chainId);
+
+    if (!isDexOrder) {
+      return null;
+    }
+
+    const [executions, lpPositions, ledgerEntries, balances] =
+      await Promise.all([
+        this.evmExecutionRepository
+          ? this.evmExecutionRepository.find({
+              where: { userOrderId: orderId },
+              order: { createdAt: 'DESC', id: 'DESC' },
+              take: 25,
+            })
+          : Promise.resolve([]),
+        this.orderLpPositionRepository
+          ? this.orderLpPositionRepository.find({
+              where: { userOrderId: orderId },
+              order: { createdAt: 'DESC', id: 'DESC' },
+              take: 25,
+            })
+          : Promise.resolve([]),
+        typeof this.balanceLedgerService.findEntriesByUserOrderId === 'function'
+          ? this.balanceLedgerService.findEntriesByUserOrderId(orderId)
+          : Promise.resolve([] as LedgerEntry[]),
+        typeof this.balanceLedgerService.findBalancesByUserOrderId === 'function'
+          ? this.balanceLedgerService.findBalancesByUserOrderId(orderId)
+          : Promise.resolve([] as MarketMakingOrderBalance[]),
+      ]);
+
+    const ledgerFacts = ledgerEntries
+      .filter((entry) =>
+        [
+          'swap_settle',
+          'gas_debit',
+          'lp_add_settle',
+          'lp_remove_settle',
+          'lp_fee_credit',
+          'fee_debit',
+          'reversal',
+        ].includes(entry.type),
+      )
+      .slice(-25)
+      .reverse()
+      .map((entry) => ({
+        entryId: entry.entryId,
+        orderId: entry.orderId,
+        userOrderId: entry.userOrderId,
+        accountLabel: entry.accountLabel,
+        assetId: entry.assetId,
+        amount: entry.amount,
+        type: entry.type,
+        refType: entry.refType || null,
+        refId: entry.refId || null,
+        tradingAccountId: entry.tradingAccountId || null,
+        chainId: entry.chainId || null,
+        createdAt: entry.createdAt,
+      }));
+
+    const reservationBlocks = balances
+      .filter((balance) =>
+        this.balanceLedgerService.isReservationPaused(
+          balance.orderId,
+          balance.assetId,
+        ),
+      )
+      .map((balance) => ({
+        orderId: balance.orderId,
+        userOrderId: balance.userOrderId,
+        accountLabel: balance.accountLabel,
+        assetId: balance.assetId,
+        tradingAccountId: balance.tradingAccountId || null,
+        chainId: balance.chainId || null,
+      }));
+
+    return {
+      connectorId: connectorId || null,
+      chainId: Number.isInteger(chainId) && chainId > 0 ? chainId : null,
+      tradingAccountId: this.readConfigString(resolvedConfig.tradingAccountId),
+      gasSponsorTradingAccountId: this.readConfigString(
+        resolvedConfig.gasSponsorTradingAccountId,
+      ),
+      gasSponsorLedgerOrderId: this.readConfigString(
+        resolvedConfig.gasSponsorLedgerOrderId,
+      ),
+      preflight: {
+        staticSetupValidated: Boolean(
+          connectorId &&
+            chainId &&
+            resolvedConfig.tokenIn &&
+            resolvedConfig.tokenOut &&
+            resolvedConfig.feeTier &&
+            resolvedConfig.tradingAccountId &&
+            resolvedConfig.gasSponsorLedgerOrderId,
+        ),
+        runtimeChecks: [
+          'wallet_balance_reservation',
+          'allowance_or_wrap_child_execution',
+          'pool_quote',
+          'gas_estimate',
+        ],
+      },
+      evmExecutions: executions.map((execution) => ({
+        id: execution.id,
+        parentExecutionId: execution.parentExecutionId || null,
+        executionType: execution.executionType,
+        status: execution.status,
+        intentId: execution.intentId,
+        ledgerOrderId: execution.ledgerOrderId,
+        accountLabel: execution.accountLabel,
+        connectorId: execution.connectorId,
+        exchangeType: execution.exchangeType,
+        chainId: execution.chainId,
+        tradingAccountId: execution.tradingAccountId,
+        nonce: execution.nonce,
+        txHash: execution.txHash || null,
+        submittedAt: execution.submittedAt || null,
+        confirmedAt: execution.confirmedAt || null,
+        blockNumber: execution.blockNumber || null,
+        confirmationCount: execution.confirmationCount || null,
+        requiredConfirmations: execution.requiredConfirmations,
+        gasUsed: execution.gasUsed || null,
+        gasPrice: execution.gasPrice || null,
+        effectiveGasCost: execution.effectiveGasCost || null,
+        gasSponsorLedgerOrderId: execution.gasSponsorLedgerOrderId || null,
+        manualReviewReason: execution.manualReviewReason || null,
+        updatedAt: execution.updatedAt,
+      })),
+      lpPositions: lpPositions.map((position) => ({
+        id: position.id,
+        ledgerOrderId: position.ledgerOrderId,
+        accountLabel: position.accountLabel,
+        connectorId: position.connectorId,
+        chainId: position.chainId,
+        tradingAccountId: position.tradingAccountId,
+        positionTokenId: position.positionTokenId,
+        poolAddress: position.poolAddress,
+        token0: position.token0,
+        token1: position.token1,
+        feeTier: position.feeTier,
+        tickLower: position.tickLower,
+        tickUpper: position.tickUpper,
+        liquidity: position.liquidity,
+        status: position.status,
+        openedByIntentId: position.openedByIntentId,
+        closedByIntentId: position.closedByIntentId || null,
+        lastConfirmedBlock: position.lastConfirmedBlock || null,
+        uncollectedFees0: position.uncollectedFees0 || null,
+        uncollectedFees1: position.uncollectedFees1 || null,
+        updatedAt: position.updatedAt,
+      })),
+      ledgerFacts,
+      reservationBlocks,
     };
   }
 
@@ -1585,6 +1844,96 @@ export class AdminDirectMarketMakingService {
         dto.exchangeName,
       ),
     };
+  }
+
+  private resolveAmmExecutionAccounts(): {
+    primary: DirectExecutionAccount;
+    secondary?: DirectExecutionAccount;
+  } {
+    return {
+      primary: {
+        apiKeyId: null,
+        accountLabel: 'default',
+        apiKeyName: 'DEX execution',
+      },
+    };
+  }
+
+  private async validateAmmDirectStartConfig(
+    config: Record<string, unknown>,
+  ): Promise<void> {
+    const dexId = String(config.dexId || config.exchangeName || '').trim();
+    const chainId = Number(config.chainId || 0);
+    const tokenIn = String(config.tokenIn || '').trim();
+    const tokenOut = String(config.tokenOut || '').trim();
+    const feeTier = Number(config.feeTier || 0);
+    const tradingAccountId = String(config.tradingAccountId || '').trim();
+    const gasSponsorLedgerOrderId = String(
+      config.gasSponsorLedgerOrderId || '',
+    ).trim();
+    const gasSponsorTradingAccountId = String(
+      config.gasSponsorTradingAccountId || '',
+    ).trim();
+
+    if (!['uniswapV3', 'pancakeV3'].includes(dexId)) {
+      throw new BadRequestException('AMM connector is required');
+    }
+    if (!Number.isInteger(chainId) || chainId <= 0) {
+      throw new BadRequestException('AMM chainId must be a positive integer');
+    }
+    if (!tokenIn || !tokenOut || tokenIn === tokenOut) {
+      throw new BadRequestException('AMM tokenIn and tokenOut must be distinct');
+    }
+    if (!Number.isInteger(feeTier) || feeTier <= 0) {
+      throw new BadRequestException('AMM feeTier must be a positive integer');
+    }
+    if (!tradingAccountId) {
+      throw new BadRequestException('DEX execution TradingAccount is required');
+    }
+    if (!gasSponsorLedgerOrderId) {
+      throw new BadRequestException('Gas sponsor ledger order id is required');
+    }
+    if (!this.tradingAccountService || !this.tokenRegistryService) {
+      throw new BadRequestException('DEX setup services are not available');
+    }
+
+    const [executionAccount, tokenInAssetId, tokenOutAssetId] =
+      await Promise.all([
+        this.tradingAccountService.findById(tradingAccountId),
+        this.tokenRegistryService.resolveAssetId(chainId, tokenIn),
+        this.tokenRegistryService.resolveAssetId(chainId, tokenOut),
+      ]);
+
+    if (
+      !executionAccount ||
+      executionAccount.purpose !== 'dex_execution' ||
+      executionAccount.validationStatus !== 'valid' ||
+      !executionAccount.chainIds.includes(chainId)
+    ) {
+      throw new BadRequestException(
+        'DEX execution TradingAccount is not valid for chainId',
+      );
+    }
+    if (tokenInAssetId === tokenOutAssetId) {
+      throw new BadRequestException('AMM token assets must be distinct');
+    }
+
+    if (gasSponsorTradingAccountId) {
+      const gasSponsorAccount = await this.tradingAccountService.findById(
+        gasSponsorTradingAccountId,
+      );
+
+      if (
+        !gasSponsorAccount ||
+        gasSponsorAccount.purpose !== 'funding_operator' ||
+        gasSponsorAccount.validationStatus !== 'valid' ||
+        !gasSponsorAccount.chainIds.includes(chainId)
+      ) {
+        throw new BadRequestException(
+          'Funding operator TradingAccount is not valid for chainId',
+        );
+      }
+    }
   }
 
   private async validateExecutionAccount(
