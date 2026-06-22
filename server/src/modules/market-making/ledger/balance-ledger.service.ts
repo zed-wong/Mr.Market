@@ -127,6 +127,24 @@ export class BalanceLedgerService {
     return await this.applyMutation('swap_settle', command);
   }
 
+  async settleLpAdd(
+    command: BalanceLedgerCommand,
+  ): Promise<BalanceLedgerResult> {
+    return await this.applyMutation('lp_add_settle', command);
+  }
+
+  async settleLpRemove(
+    command: BalanceLedgerCommand,
+  ): Promise<BalanceLedgerResult> {
+    return await this.applyMutation('lp_remove_settle', command);
+  }
+
+  async creditLpFee(
+    command: BalanceLedgerCommand,
+  ): Promise<BalanceLedgerResult> {
+    return await this.applyMutation('lp_fee_credit', command);
+  }
+
   async reverse(command: BalanceLedgerCommand): Promise<BalanceLedgerResult> {
     return await this.applyMutation('reversal', command);
   }
@@ -432,7 +450,10 @@ export class BalanceLedgerService {
     if (
       type !== 'fill_settle' &&
       type !== 'swap_settle' &&
+      type !== 'lp_add_settle' &&
+      type !== 'lp_remove_settle' &&
       type !== 'reward_credit' &&
+      type !== 'lp_fee_credit' &&
       type !== 'reversal' &&
       amountBn.isLessThanOrEqualTo(0)
     ) {
@@ -471,12 +492,18 @@ export class BalanceLedgerService {
     balance.chainId = command.chainId;
     const availableBn = new BigNumber(balance.available);
     const lockedBn = new BigNumber(balance.locked);
+    const externalLockedBn = new BigNumber(balance.externalLocked || 0);
 
     let nextAvailable = availableBn;
     let nextLocked = lockedBn;
+    let nextExternalLocked = externalLockedBn;
     let signedEntryAmount = amountBn;
 
-    if (type === 'deposit_credit' || type === 'reward_credit') {
+    if (
+      type === 'deposit_credit' ||
+      type === 'reward_credit' ||
+      type === 'lp_fee_credit'
+    ) {
       nextAvailable = availableBn.plus(amountBn);
       signedEntryAmount = amountBn;
     }
@@ -539,12 +566,48 @@ export class BalanceLedgerService {
       signedEntryAmount = amountBn;
     }
 
+    if (type === 'lp_add_settle') {
+      const lpDebit = amountBn.abs();
+
+      if (!amountBn.isNegative()) {
+        throw new BadRequestException('lp_add_settle amount must be negative');
+      }
+      if (lockedBn.isLessThan(lpDebit)) {
+        throw new BadRequestException(
+          'insufficient locked balance for LP add settlement',
+        );
+      }
+      nextLocked = lockedBn.minus(lpDebit);
+      nextExternalLocked = externalLockedBn.plus(lpDebit);
+      signedEntryAmount = amountBn;
+    }
+
+    if (type === 'lp_remove_settle') {
+      if (amountBn.isLessThanOrEqualTo(0)) {
+        throw new BadRequestException(
+          'lp_remove_settle amount must be greater than zero',
+        );
+      }
+      if (externalLockedBn.isLessThan(amountBn)) {
+        throw new BadRequestException(
+          'insufficient external locked balance for LP remove settlement',
+        );
+      }
+      nextExternalLocked = externalLockedBn.minus(amountBn);
+      nextAvailable = availableBn.plus(amountBn);
+      signedEntryAmount = amountBn;
+    }
+
     if (type === 'reversal') {
       nextAvailable = availableBn.plus(amountBn);
       signedEntryAmount = amountBn;
     }
 
-    if (nextAvailable.isLessThan(0) || nextLocked.isLessThan(0)) {
+    if (
+      nextAvailable.isLessThan(0) ||
+      nextLocked.isLessThan(0) ||
+      nextExternalLocked.isLessThan(0)
+    ) {
       throw new BadRequestException('balance cannot become negative');
     }
 
@@ -595,10 +658,11 @@ export class BalanceLedgerService {
       throw error;
     }
 
-    const nextTotal = nextAvailable.plus(nextLocked);
+    const nextTotal = nextAvailable.plus(nextLocked).plus(nextExternalLocked);
 
     balance.available = nextAvailable.toFixed();
     balance.locked = nextLocked.toFixed();
+    balance.externalLocked = nextExternalLocked.toFixed();
     balance.total = nextTotal.toFixed();
     balance.initialDeposit =
       type === 'deposit_credit'
@@ -607,6 +671,9 @@ export class BalanceLedgerService {
     balance.realizedDelta =
       type === 'fill_settle' ||
       type === 'swap_settle' ||
+      type === 'lp_add_settle' ||
+      type === 'lp_remove_settle' ||
+      type === 'lp_fee_credit' ||
       type === 'reward_credit' ||
       this.shouldReversalAffectRealizedDelta(reversedEntry)
         ? new BigNumber(balance.realizedDelta).plus(signedEntryAmount).toFixed()
@@ -660,6 +727,9 @@ export class BalanceLedgerService {
     return (
       reversedEntry.type === 'fill_settle' ||
       reversedEntry.type === 'swap_settle' ||
+      reversedEntry.type === 'lp_add_settle' ||
+      reversedEntry.type === 'lp_remove_settle' ||
+      reversedEntry.type === 'lp_fee_credit' ||
       reversedEntry.type === 'reward_credit' ||
       reversedEntry.type === 'reversal'
     );
@@ -751,6 +821,7 @@ export class BalanceLedgerService {
 
     let available = new BigNumber(0);
     let locked = new BigNumber(0);
+    let externalLocked = new BigNumber(0);
     let initialDeposit = new BigNumber(0);
     let realizedDelta = new BigNumber(0);
     let feePaid = new BigNumber(0);
@@ -770,9 +841,14 @@ export class BalanceLedgerService {
       if (
         entry.type === 'withdraw_debit' ||
         entry.type === 'fee_debit' ||
+        entry.type === 'gas_debit' ||
         entry.type === 'allocation_release'
       ) {
-        available = available.plus(amount);
+        if (entry.type === 'gas_debit') {
+          locked = locked.plus(amount);
+        } else {
+          available = available.plus(amount);
+        }
       }
 
       if (entry.type === 'reserve_lock') {
@@ -785,12 +861,26 @@ export class BalanceLedgerService {
         locked = locked.minus(amount);
       }
 
-      if (entry.type === 'fill_settle') {
+      if (entry.type === 'fill_settle' || entry.type === 'swap_settle') {
         if (amount.isNegative()) {
           locked = locked.plus(amount);
         } else {
           available = available.plus(amount);
         }
+      }
+
+      if (entry.type === 'lp_add_settle') {
+        locked = locked.plus(amount);
+        externalLocked = externalLocked.plus(amount.abs());
+      }
+
+      if (entry.type === 'lp_remove_settle') {
+        externalLocked = externalLocked.minus(amount);
+        available = available.plus(amount);
+      }
+
+      if (entry.type === 'lp_fee_credit') {
+        available = available.plus(amount);
       }
 
       if (entry.type === 'reversal') {
@@ -803,6 +893,10 @@ export class BalanceLedgerService {
 
       if (
         entry.type === 'fill_settle' ||
+        entry.type === 'swap_settle' ||
+        entry.type === 'lp_add_settle' ||
+        entry.type === 'lp_remove_settle' ||
+        entry.type === 'lp_fee_credit' ||
         entry.type === 'reward_credit' ||
         (entry.type === 'reversal' &&
           this.shouldReversalAffectRealizedDelta(reversedEntry))
@@ -810,18 +904,23 @@ export class BalanceLedgerService {
         realizedDelta = realizedDelta.plus(amount);
       }
 
-      if (entry.type === 'fee_debit') {
+      if (entry.type === 'fee_debit' || entry.type === 'gas_debit') {
         feePaid = feePaid.plus(amount.abs());
       }
 
-      if (entry.type === 'reversal' && reversedEntry?.type === 'fee_debit') {
+      if (
+        entry.type === 'reversal' &&
+        (reversedEntry?.type === 'fee_debit' ||
+          reversedEntry?.type === 'gas_debit')
+      ) {
         feePaid = BigNumber.maximum(feePaid.minus(amount.abs()), 0);
       }
     }
 
     balance.available = available.toFixed();
     balance.locked = locked.toFixed();
-    balance.total = available.plus(locked).toFixed();
+    balance.externalLocked = externalLocked.toFixed();
+    balance.total = available.plus(locked).plus(externalLocked).toFixed();
     balance.initialDeposit = initialDeposit.toFixed();
     balance.realizedDelta = realizedDelta.toFixed();
     balance.feePaid = feePaid.toFixed();

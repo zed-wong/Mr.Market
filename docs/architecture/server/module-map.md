@@ -53,7 +53,7 @@ The map is based on the root wiring in `server/src/app.module.ts` and each `*.mo
 ### connector
 
 - `modules/market-making/connector/connector.module.ts`
-  - Depends on: `ExecutionModule`, `TradingAccountModule`, `TokenRegistryModule`, `EvmExecutionModule`, `LedgerModule`.
+  - Depends on: `ExecutionModule`, `TradingAccountModule`, `TokenRegistryModule`, `EvmExecutionModule`, `LedgerModule`, `LpModule`.
   - Main role: connector abstraction, CLOB connector dispatch, and EVM DEX adapter providers.
   - Internal structure:
     - `connector.types.ts` - Connector interface, exchange type, capabilities, and result contracts.
@@ -77,6 +77,14 @@ The map is based on the root wiring in `server/src/app.module.ts` and each `*.mo
     - `evm-child-execution-planner.service.ts` - approve/wrap/unwrap child execution preallocation.
     - `evm-execution-reconciliation-runner.service.ts` - confirmed EVM execution vs ledger settlement checks.
     - `wallet-balance-reconciliation-runner.service.ts` - wallet balance vs aggregated ledger checks.
+- `modules/market-making/lp/lp.module.ts`
+  - Depends on: TypeORM `OrderLpPosition`, `EvmExecutionModule`, `LedgerModule`, `TokenRegistryModule`.
+  - Main role: CLMM LP position lifecycle state, pool-state cache, LP settlement, and structural LP reconciliation.
+  - Internal structure:
+    - `order-lp-position.service.ts` - durable user/ledger-order attributed LP position records.
+    - `pool-state-tracker.service.ts` - outside-tick cached pool state reads.
+    - `lp-settlement.service.ts` - `lp_add_settle`, `lp_remove_settle`, and `lp_fee_credit` ledger writes.
+    - `lp-position-reconciliation-runner.service.ts` - structural consistency checks for position state.
 
 ### infrastructure
 

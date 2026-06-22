@@ -131,6 +131,23 @@ describe('StrategyIntentExecutionService', () => {
           };
         }
 
+        if (
+          intent.type === 'ADD_LIQUIDITY' ||
+          intent.type === 'REMOVE_LIQUIDITY' ||
+          intent.type === 'COLLECT_FEES'
+        ) {
+          return {
+            status: 'submitted',
+            txHash: '0xlp',
+            evmExecutionId: 'lp-execution-1',
+            details: {
+              connectorId: intent.connectorId || intent.exchange,
+              positionId: 'position-1',
+              positionTokenId: '123',
+            },
+          };
+        }
+
         const metadata = intent.metadata || {};
         const result = await exchangeConnectorAdapterService.placeLimitOrder(
           intent.exchange,
@@ -2433,6 +2450,48 @@ describe('StrategyIntentExecutionService', () => {
         },
       ]),
     ).rejects.toThrow('EVM DEX intent metadata missing required fields');
+  });
+
+  it('executes CLMM LP intents through the connector', async () => {
+    const executionHistoryRepository = createExecutionHistoryRepository();
+    const service = createService(
+      true,
+      createConfigService(true),
+      executionHistoryRepository,
+    );
+
+    await service.consumeIntents([
+      {
+        ...baseIntent,
+        intentId: 'lp-intent-1',
+        type: 'ADD_LIQUIDITY',
+        executionCategory: 'amm',
+        connectorId: 'uniswapV3',
+        metadata: {
+          chainId: 1,
+          tradingAccountId: 'account-1',
+          positionId: 'position-1',
+        },
+      },
+    ]);
+
+    expect(connectorRegistry.resolve).toHaveBeenCalledWith('uniswapV3');
+    expect(exchangeConnectorAdapterService.placeLimitOrder).not.toHaveBeenCalled();
+    expect(executionHistoryRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: '0xlp',
+        status: 'submitted',
+        metadata: expect.objectContaining({
+          txHash: '0xlp',
+          evmExecutionId: 'lp-execution-1',
+          positionId: 'position-1',
+        }),
+      }),
+    );
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      'lp-intent-1',
+      'DONE',
+    );
   });
 
   it('increments clientOrderId sequence per order and honors metadata.orderId', async () => {

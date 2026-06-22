@@ -276,6 +276,58 @@ describe('BalanceLedgerService', () => {
     });
   });
 
+  it('moves LP add settlement into external locked and credits LP removals and fees', async () => {
+    const repos = createInMemoryRepos();
+    const service = new BalanceLedgerService(
+      repos.ledgerEntryRepository as any,
+      repos.balanceReadModelRepository as any,
+    );
+
+    await service.creditDeposit({
+      orderId: 'order-1',
+      userId: 'u1',
+      assetId: 'asset-usdc',
+      amount: '100',
+      idempotencyKey: 'dep-usdc',
+    });
+    await service.lockFunds({
+      orderId: 'order-1',
+      userId: 'u1',
+      assetId: 'asset-usdc',
+      amount: '40',
+      idempotencyKey: 'lp-lock',
+    });
+    await service.settleLpAdd({
+      orderId: 'order-1',
+      userId: 'u1',
+      assetId: 'asset-usdc',
+      amount: '-40',
+      idempotencyKey: 'lp-add',
+    });
+    await service.settleLpRemove({
+      orderId: 'order-1',
+      userId: 'u1',
+      assetId: 'asset-usdc',
+      amount: '10',
+      idempotencyKey: 'lp-remove',
+    });
+    await service.creditLpFee({
+      orderId: 'order-1',
+      userId: 'u1',
+      assetId: 'asset-usdc',
+      amount: '2',
+      idempotencyKey: 'lp-fee',
+    });
+
+    const balance = await service.getBalance('order-1', 'asset-usdc');
+
+    expect(balance.available).toBe('72');
+    expect(balance.locked).toBe('0');
+    expect(balance.externalLocked).toBe('30');
+    expect(balance.total).toBe('102');
+    expect(balance.realizedDelta).toBe('-28');
+  });
+
   it('releases admin-direct allocation without rewriting initial deposit', async () => {
     const repos = createInMemoryRepos();
     const service = new BalanceLedgerService(

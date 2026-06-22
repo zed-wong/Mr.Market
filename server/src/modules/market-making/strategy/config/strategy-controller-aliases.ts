@@ -6,6 +6,8 @@ const CONTROLLER_TYPE_ALIASES: Record<string, string> = {
   'efficient-dual-account-volume': 'efficientDualAccountVolume',
   amm_volume: 'ammVolume',
   'amm-volume': 'ammVolume',
+  liquidity_provision: 'liquidityProvision',
+  'liquidity-provision': 'liquidityProvision',
   time_indicator: 'timeIndicator',
 };
 

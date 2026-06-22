@@ -15,6 +15,7 @@ export type StrategyType =
   | 'pureMarketMaking'
   | 'efficientDualAccountVolume'
   | 'ammVolume'
+  | 'liquidityProvision'
   | 'volume'
   | 'timeIndicator';
 

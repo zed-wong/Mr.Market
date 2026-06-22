@@ -28,6 +28,7 @@ import type { StrategyController as StrategyRuntimeController } from './config/s
 import { AmmVolumeStrategyController } from './controllers/amm-volume-strategy.controller';
 import { ArbitrageStrategyController } from './controllers/arbitrage-strategy.controller';
 import { EfficientDualAccountVolumeStrategyController } from './controllers/efficient-dual-account-volume-strategy.controller';
+import { LiquidityProvisionStrategyController } from './controllers/liquidity-provision-strategy.controller';
 import { PureMarketMakingStrategyController } from './controllers/pure-market-making-strategy.controller';
 import { StrategyControllerRegistry } from './controllers/strategy-controller.registry';
 import { TimeIndicatorStrategyController } from './controllers/time-indicator-strategy.controller';
@@ -110,6 +111,7 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
     AmmVolumeStrategyController,
     PureMarketMakingStrategyController,
     EfficientDualAccountVolumeStrategyController,
+    LiquidityProvisionStrategyController,
     VolumeStrategyController,
     TimeIndicatorStrategyController,
     {
@@ -119,6 +121,7 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
         ammVolume: AmmVolumeStrategyController,
         pureMarketMaking: PureMarketMakingStrategyController,
         efficientDualAccountVolume: EfficientDualAccountVolumeStrategyController,
+        liquidityProvision: LiquidityProvisionStrategyController,
         volume: VolumeStrategyController,
         timeIndicator: TimeIndicatorStrategyController,
       ): StrategyRuntimeController[] => [
@@ -126,6 +129,7 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
         ammVolume,
         pureMarketMaking,
         efficientDualAccountVolume,
+        liquidityProvision,
         volume,
         timeIndicator,
       ],
@@ -134,6 +138,7 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
         AmmVolumeStrategyController,
         PureMarketMakingStrategyController,
         EfficientDualAccountVolumeStrategyController,
+        LiquidityProvisionStrategyController,
         VolumeStrategyController,
         TimeIndicatorStrategyController,
       ],

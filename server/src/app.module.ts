@@ -39,6 +39,7 @@ import { ExchangeOrderMapping } from './common/entities/market-making/exchange-o
 import { EvmExecution } from './common/entities/market-making/evm-execution.entity';
 import { MarketMakingLifecycleEvent } from './common/entities/market-making/market-making-lifecycle-event.entity';
 import { MarketMakingOrderIntent } from './common/entities/market-making/market-making-order-intent.entity';
+import { OrderLpPosition } from './common/entities/market-making/order-lp-position.entity';
 import { Performance } from './common/entities/market-making/performance.entity';
 import { StrategyDefinition } from './common/entities/market-making/strategy-definition.entity';
 import { StrategyExecutionHistory } from './common/entities/market-making/strategy-execution-history.entity';
@@ -180,6 +181,7 @@ function buildRedisConfig(configService: ConfigService) {
         ExchangeOrderMapping,
         TrackedOrderEntity,
         EvmExecution,
+        OrderLpPosition,
         TradingAccount,
         TokenRegistryEntry,
         Web3FundingRequest,

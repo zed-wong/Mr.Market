@@ -5,6 +5,9 @@ export type StrategyIntentType =
   | 'CANCEL_ORDER'
   | 'REPLACE_ORDER'
   | 'EXECUTE_AMM_SWAP'
+  | 'ADD_LIQUIDITY'
+  | 'REMOVE_LIQUIDITY'
+  | 'COLLECT_FEES'
   | 'STOP_CONTROLLER'
   | 'STOP_EXECUTOR';
 

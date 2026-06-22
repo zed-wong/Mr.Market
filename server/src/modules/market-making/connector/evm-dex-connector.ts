@@ -7,6 +7,7 @@ import { EvmReceiptConfirmerService } from '../evm-execution/evm-receipt-confirm
 import { GasPriceOracleService } from '../evm-execution/gas-price-oracle.service';
 import { NonceAllocatorService } from '../evm-execution/nonce-allocator.service';
 import { OrderReservationService } from '../ledger/order-reservation.service';
+import { OrderLpPositionService } from '../lp/order-lp-position.service';
 import type { StrategyOrderIntent } from '../strategy/config/strategy-intent.types';
 import { TokenRegistryService } from '../token-registry/token-registry.service';
 import { TradingAccountService } from '../trading-account/trading-account.service';
@@ -34,6 +35,7 @@ export class EvmDexConnector implements Connector {
     private readonly gasPriceOracleService: GasPriceOracleService,
     private readonly evmReceiptConfirmerService: EvmReceiptConfirmerService,
     private readonly orderReservationService: OrderReservationService,
+    private readonly orderLpPositionService: OrderLpPositionService,
   ) {}
 
   get capabilities(): ConnectorCapability {
@@ -62,6 +64,14 @@ export class EvmDexConnector implements Connector {
     const connectorId = this.readConnectorId(intent);
     const chainId = this.readChainId(metadata);
     const tradingAccountId = String(metadata.tradingAccountId || '');
+
+    if (
+      intent.type === 'ADD_LIQUIDITY' ||
+      intent.type === 'REMOVE_LIQUIDITY' ||
+      intent.type === 'COLLECT_FEES'
+    ) {
+      return await this.submitLpAction(intent, metadata, connectorId, chainId);
+    }
 
     if (intent.type !== 'EXECUTE_AMM_SWAP') {
       return {
@@ -267,10 +277,33 @@ export class EvmDexConnector implements Connector {
   }
 
   async queryState(intent: StrategyOrderIntent): Promise<ConnectorState> {
+    const metadata = this.readMetadata(intent);
+    const evmExecutionId = metadata.evmExecutionId
+      ? String(metadata.evmExecutionId)
+      : undefined;
+    const positionId = metadata.positionId ? String(metadata.positionId) : undefined;
+    const [execution, lpPosition] = await Promise.all([
+      evmExecutionId ? this.evmExecutionService.findById(evmExecutionId) : null,
+      positionId ? this.orderLpPositionService.findById(positionId) : null,
+    ]);
+
+    if (execution || lpPosition) {
+      return {
+        status: execution?.status || lpPosition?.status || 'unknown',
+        details: {
+          connectorId: this.readConnectorId(intent),
+          evmExecutionId,
+          positionId,
+          execution,
+          lpPosition,
+        },
+      };
+    }
+
     return {
       status: 'no_execution',
       details: {
-        reason: 'evm_execution_lifecycle_not_implemented_until_phase_4',
+        reason: 'evm_execution_or_lp_position_not_found',
         connectorId: this.readConnectorId(intent),
       },
     };
@@ -416,6 +449,217 @@ export class EvmDexConnector implements Connector {
       estimatedGasCost,
       tradingAccountId: command.tradingAccountId,
       chainId: command.chainId,
+    });
+  }
+
+  private async submitLpAction(
+    intent: StrategyOrderIntent,
+    metadata: Record<string, unknown>,
+    connectorId: 'uniswapV3' | 'pancakeV3',
+    chainId: number,
+  ): Promise<ConnectorActionResult> {
+    const tradingAccountId = String(metadata.tradingAccountId || '');
+
+    if (!tradingAccountId) {
+      throw new Error('CLMM intent metadata missing tradingAccountId');
+    }
+
+    const adapter = this.evmDexAdapterRegistry.get(connectorId);
+    const signer = await this.tradingAccountService.getSigner(
+      tradingAccountId,
+      chainId,
+    );
+
+    if (!signer.provider) {
+      throw new Error(`No provider configured for chainId=${chainId}`);
+    }
+
+    if (!adapter.supportsChain(chainId)) {
+      throw new Error(
+        `EVM DEX connector ${connectorId} is not configured for chainId=${chainId}`,
+      );
+    }
+
+    const userOrderId = this.readUserOrderId(intent, metadata);
+    const ledgerOrderId = this.readLedgerOrderId(intent, metadata);
+    const gasSponsorLedgerOrderId =
+      this.readGasSponsorLedgerOrderId(metadata);
+
+    if (!gasSponsorLedgerOrderId) {
+      throw new Error('CLMM intent metadata missing gasSponsorLedgerOrderId');
+    }
+
+    const gasQuote = await this.gasPriceOracleService.quoteGasPrice(
+      chainId,
+      tradingAccountId,
+    );
+    const gasLimit = EthersBigNumber.from(String(metadata.gasLimit || '500000'));
+
+    await this.reserveGasSponsor({
+      chainId,
+      tradingAccountId,
+      gasSponsorLedgerOrderId,
+      userOrderId,
+      userId: intent.userId,
+      intentId: intent.intentId,
+      gasLimit,
+      gasPrice: gasQuote.maxFeePerGas || gasQuote.gasPrice,
+    });
+
+    if (intent.type === 'ADD_LIQUIDITY') {
+      await this.reserveLpTokenIfPresent({
+        chainId,
+        tradingAccountId,
+        ledgerOrderId,
+        userOrderId,
+        userId: intent.userId,
+        intentId: intent.intentId,
+        tokenAddress: String(metadata.token0 || ''),
+        amount: String(metadata.amount0Desired || ''),
+      });
+      await this.reserveLpTokenIfPresent({
+        chainId,
+        tradingAccountId,
+        ledgerOrderId,
+        userOrderId,
+        userId: intent.userId,
+        intentId: intent.intentId,
+        tokenAddress: String(metadata.token1 || ''),
+        amount: String(metadata.amount1Desired || ''),
+      });
+    }
+
+    const confirmationPolicy =
+      this.evmReceiptConfirmerService.getConfirmationPolicy(chainId);
+    const execution = await this.nonceAllocatorService.preAllocate({
+      executionType: this.toLpExecutionType(intent.type),
+      userOrderId,
+      userId: intent.userId,
+      ledgerOrderId,
+      accountLabel: intent.accountLabel || 'default',
+      intentId: intent.intentId,
+      connectorId,
+      exchangeType: 'clmm',
+      chainId,
+      tradingAccountId,
+      requiredConfirmations: confirmationPolicy.requiredConfirmations,
+      gasSponsorLedgerOrderId,
+    });
+    const transaction = {
+      nonce: execution.nonce,
+      gasLimit,
+      gasPrice: gasQuote.maxFeePerGas ? undefined : gasQuote.gasPrice,
+      maxFeePerGas: gasQuote.maxFeePerGas,
+      maxPriorityFeePerGas: gasQuote.maxPriorityFeePerGas,
+    };
+    const tx =
+      intent.type === 'ADD_LIQUIDITY'
+        ? await adapter.mint(signer, chainId, {
+            token0: ethers.utils.getAddress(String(metadata.token0 || '')),
+            token1: ethers.utils.getAddress(String(metadata.token1 || '')),
+            fee: Number(metadata.feeTier || metadata.fee || 0),
+            tickLower: Number(metadata.tickLower),
+            tickUpper: Number(metadata.tickUpper),
+            amount0Desired: EthersBigNumber.from(String(metadata.amount0Desired || 0)),
+            amount1Desired: EthersBigNumber.from(String(metadata.amount1Desired || 0)),
+            amount0Min: EthersBigNumber.from(String(metadata.amount0Min || 0)),
+            amount1Min: EthersBigNumber.from(String(metadata.amount1Min || 0)),
+            recipient: metadata.recipient
+              ? ethers.utils.getAddress(String(metadata.recipient))
+              : ethers.utils.getAddress(await signer.getAddress()),
+            deadline: this.resolveDeadline(metadata),
+            transaction,
+          })
+        : intent.type === 'REMOVE_LIQUIDITY'
+        ? await adapter.decreaseLiquidity(signer, chainId, {
+            tokenId: String(metadata.positionTokenId || ''),
+            liquidity: EthersBigNumber.from(String(metadata.liquidity || 0)),
+            amount0Min: EthersBigNumber.from(String(metadata.amount0Min || 0)),
+            amount1Min: EthersBigNumber.from(String(metadata.amount1Min || 0)),
+            deadline: this.resolveDeadline(metadata),
+            transaction,
+          })
+        : await adapter.collect(signer, chainId, {
+            tokenId: String(metadata.positionTokenId || ''),
+            recipient: metadata.recipient
+              ? ethers.utils.getAddress(String(metadata.recipient))
+              : ethers.utils.getAddress(await signer.getAddress()),
+            amount0Max: EthersBigNumber.from(
+              String(metadata.amount0Max || ethers.constants.MaxUint256),
+            ),
+            amount1Max: EthersBigNumber.from(
+              String(metadata.amount1Max || ethers.constants.MaxUint256),
+            ),
+            transaction,
+          });
+    const submitted = await this.evmExecutionService.markSubmitted(
+      execution.id,
+      tx.hash,
+    );
+
+    return {
+      status: 'submitted',
+      txHash: tx.hash,
+      evmExecutionId: submitted.id,
+      details: {
+        connectorId,
+        chainId,
+        intentType: intent.type,
+        positionId: metadata.positionId,
+        positionTokenId: metadata.positionTokenId,
+        gasLimit: gasLimit.toString(),
+      },
+    };
+  }
+
+  private toLpExecutionType(
+    intentType: StrategyOrderIntent['type'],
+  ): 'lp_add' | 'lp_remove' | 'lp_collect' {
+    if (intentType === 'ADD_LIQUIDITY') {
+      return 'lp_add';
+    }
+    if (intentType === 'REMOVE_LIQUIDITY') {
+      return 'lp_remove';
+    }
+
+    return 'lp_collect';
+  }
+
+  private async reserveLpTokenIfPresent(command: {
+    chainId: number;
+    tradingAccountId: string;
+    ledgerOrderId: string;
+    userOrderId: string;
+    userId: string;
+    intentId: string;
+    tokenAddress: string;
+    amount: string;
+  }): Promise<void> {
+    if (!command.tokenAddress || !command.amount) {
+      return;
+    }
+
+    const amount = new BigNumber(command.amount);
+
+    if (!amount.isFinite() || amount.isLessThanOrEqualTo(0)) {
+      return;
+    }
+
+    const assetId = await this.tokenRegistryService.resolveAssetId(
+      command.chainId,
+      ethers.utils.getAddress(command.tokenAddress),
+    );
+
+    await this.orderReservationService.reserveForAmmSwapTokenIn({
+      orderId: command.ledgerOrderId,
+      userOrderId: command.userOrderId,
+      accountLabel: 'default',
+      userId: command.userId,
+      intentId: command.intentId,
+      assetId,
+      tradingAccountId: command.tradingAccountId,
+      chainId: command.chainId,
+      amount: amount.toFixed(),
     });
   }
 }

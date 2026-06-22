@@ -659,6 +659,40 @@ export class StrategyIntentExecutionService {
       }
 
       if (
+        intent.type === 'ADD_LIQUIDITY' ||
+        intent.type === 'REMOVE_LIQUIDITY' ||
+        intent.type === 'COLLECT_FEES'
+      ) {
+        const result = await this.submitLpIntent(intent);
+
+        await this.strategyExecutionHistoryRepository?.save(
+          this.strategyExecutionHistoryRepository.create({
+            userId: intent.userId,
+            clientId: intent.clientId,
+            exchange: intent.exchange,
+            pair: intent.pair,
+            side: intent.side,
+            amount: intent.qty,
+            price: intent.price,
+            strategyType: this.extractStrategyType(intent.strategyKey),
+            runtimeInstanceKey: intent.runtimeInstanceKey,
+            orderId: String(result.txHash || result.evmExecutionId || ''),
+            status: 'submitted',
+            metadata: {
+              intentId: intent.intentId,
+              intentType: intent.type,
+              executionCategory: intent.executionCategory,
+              txHash: result.txHash,
+              evmExecutionId: result.evmExecutionId,
+              positionId: result.positionId,
+            },
+          }),
+        );
+
+        executionResult = result as Record<string, unknown> | undefined;
+      }
+
+      if (
         intent.type === 'STOP_CONTROLLER' ||
         intent.type === 'STOP_EXECUTOR'
       ) {
@@ -1017,6 +1051,28 @@ export class StrategyIntentExecutionService {
   }
 
   private async submitAmmSwapIntent(
+    intent: StrategyOrderIntent,
+  ): Promise<Record<string, unknown>> {
+    const result = await this.resolveConnector(intent).submitAction({
+      ...intent,
+      connectorId: this.resolveConnectorId(intent),
+    });
+
+    if (result.status === 'not_supported') {
+      throw new Error(
+        `connector action not supported: ${JSON.stringify(result.details || {})}`,
+      );
+    }
+
+    return {
+      ...(result.details || {}),
+      status: result.status,
+      txHash: result.txHash,
+      evmExecutionId: result.evmExecutionId,
+    };
+  }
+
+  private async submitLpIntent(
     intent: StrategyOrderIntent,
   ): Promise<Record<string, unknown>> {
     const result = await this.resolveConnector(intent).submitAction({

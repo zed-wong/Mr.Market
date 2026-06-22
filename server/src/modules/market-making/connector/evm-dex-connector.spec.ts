@@ -25,6 +25,9 @@ describe('EvmDexConnector', () => {
       BigNumber.from('120000'),
     ),
     exactInputSingle: jest.fn().mockResolvedValue({ hash: '0xtx' }),
+    mint: jest.fn().mockResolvedValue({ hash: '0xlpadd' }),
+    decreaseLiquidity: jest.fn().mockResolvedValue({ hash: '0xlpremove' }),
+    collect: jest.fn().mockResolvedValue({ hash: '0xlpcollect' }),
   };
   const tradingAccountService = {
     getSigner: jest.fn().mockResolvedValue({
@@ -46,6 +49,7 @@ describe('EvmDexConnector', () => {
     }),
   };
   const evmExecutionService = {
+    findById: jest.fn().mockResolvedValue(null),
     markSubmitted: jest.fn().mockResolvedValue({
       id: 'execution-1',
     }),
@@ -65,6 +69,9 @@ describe('EvmDexConnector', () => {
   const orderReservationService = {
     reserveForAmmSwapTokenIn: jest.fn().mockResolvedValue({ applied: true }),
     reserveForGasSponsor: jest.fn().mockResolvedValue({ applied: true }),
+  };
+  const orderLpPositionService = {
+    findById: jest.fn().mockResolvedValue(null),
   };
   const baseIntent = {
     type: 'EXECUTE_AMM_SWAP' as const,
@@ -105,6 +112,9 @@ describe('EvmDexConnector', () => {
       BigNumber.from('120000'),
     );
     adapter.exactInputSingle.mockResolvedValue({ hash: '0xtx' });
+    adapter.mint.mockResolvedValue({ hash: '0xlpadd' });
+    adapter.decreaseLiquidity.mockResolvedValue({ hash: '0xlpremove' });
+    adapter.collect.mockResolvedValue({ hash: '0xlpcollect' });
     nonceAllocatorService.preAllocate.mockResolvedValue({
       id: 'execution-1',
       nonce: 7,
@@ -112,6 +122,7 @@ describe('EvmDexConnector', () => {
     evmExecutionService.markSubmitted.mockResolvedValue({
       id: 'execution-1',
     });
+    evmExecutionService.findById.mockResolvedValue(null);
     tokenRegistryService.resolveNativeAssetId.mockResolvedValue('asset-eth');
     tokenRegistryService.resolveToken.mockResolvedValue({ decimals: 18 });
     orderReservationService.reserveForAmmSwapTokenIn.mockResolvedValue({
@@ -132,6 +143,7 @@ describe('EvmDexConnector', () => {
       gasPriceOracleService as any,
       evmReceiptConfirmerService as any,
       orderReservationService as any,
+      orderLpPositionService as any,
     );
   }
 
@@ -222,6 +234,132 @@ describe('EvmDexConnector', () => {
     ).resolves.toMatchObject({
       status: 'not_supported',
       details: { reason: 'on_chain_tx_cannot_be_cancelled' },
+    });
+  });
+
+  it('submits ADD_LIQUIDITY through a durable LP EVM execution', async () => {
+    const connector = createConnector();
+
+    const result = await connector.submitAction({
+      ...baseIntent,
+      type: 'ADD_LIQUIDITY',
+      metadata: {
+        chainId: 1,
+        tradingAccountId: 'account-1',
+        gasSponsorLedgerOrderId: 'gas-sponsor-order',
+        token0: '0x0000000000000000000000000000000000000001',
+        token1: '0x0000000000000000000000000000000000000002',
+        amount0Desired: '1000',
+        amount1Desired: '2000',
+        feeTier: 3000,
+        tickLower: -120,
+        tickUpper: 120,
+        gasLimit: '500000',
+      },
+    });
+
+    expect(nonceAllocatorService.preAllocate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executionType: 'lp_add',
+        exchangeType: 'clmm',
+        connectorId: 'uniswapV3',
+      }),
+    );
+    expect(adapter.mint).toHaveBeenCalledWith(
+      expect.any(Object),
+      1,
+      expect.objectContaining({
+        token0: '0x0000000000000000000000000000000000000001',
+        token1: '0x0000000000000000000000000000000000000002',
+        amount0Desired: BigNumber.from('1000'),
+        amount1Desired: BigNumber.from('2000'),
+        transaction: expect.objectContaining({ nonce: 7 }),
+      }),
+    );
+    expect(result).toMatchObject({
+      status: 'submitted',
+      txHash: '0xlpadd',
+      evmExecutionId: 'execution-1',
+    });
+  });
+
+  it('submits REMOVE_LIQUIDITY and COLLECT_FEES through LP EVM executions', async () => {
+    const connector = createConnector();
+
+    await connector.submitAction({
+      ...baseIntent,
+      type: 'REMOVE_LIQUIDITY',
+      metadata: {
+        chainId: 1,
+        tradingAccountId: 'account-1',
+        gasSponsorLedgerOrderId: 'gas-sponsor-order',
+        positionTokenId: '123',
+        liquidity: '500',
+        gasLimit: '500000',
+      },
+    });
+    await connector.submitAction({
+      ...baseIntent,
+      intentId: 'intent-collect',
+      type: 'COLLECT_FEES',
+      metadata: {
+        chainId: 1,
+        tradingAccountId: 'account-1',
+        gasSponsorLedgerOrderId: 'gas-sponsor-order',
+        positionTokenId: '123',
+        gasLimit: '500000',
+      },
+    });
+
+    expect(adapter.decreaseLiquidity).toHaveBeenCalledWith(
+      expect.any(Object),
+      1,
+      expect.objectContaining({
+        tokenId: '123',
+        liquidity: BigNumber.from('500'),
+      }),
+    );
+    expect(adapter.collect).toHaveBeenCalledWith(
+      expect.any(Object),
+      1,
+      expect.objectContaining({
+        tokenId: '123',
+      }),
+    );
+    expect(nonceAllocatorService.preAllocate).toHaveBeenCalledWith(
+      expect.objectContaining({ executionType: 'lp_remove' }),
+    );
+    expect(nonceAllocatorService.preAllocate).toHaveBeenCalledWith(
+      expect.objectContaining({ executionType: 'lp_collect' }),
+    );
+  });
+
+  it('queries EVM execution and LP position state', async () => {
+    const connector = createConnector();
+
+    evmExecutionService.findById.mockResolvedValue({
+      id: 'execution-1',
+      status: 'confirmed',
+    });
+    orderLpPositionService.findById.mockResolvedValue({
+      id: 'position-1',
+      status: 'active',
+    });
+
+    await expect(
+      connector.queryState({
+        ...baseIntent,
+        metadata: {
+          evmExecutionId: 'execution-1',
+          positionId: 'position-1',
+        },
+      }),
+    ).resolves.toMatchObject({
+      status: 'confirmed',
+      details: {
+        evmExecutionId: 'execution-1',
+        positionId: 'position-1',
+      },
     });
   });
 });

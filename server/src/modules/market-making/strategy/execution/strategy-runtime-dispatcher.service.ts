@@ -35,6 +35,9 @@ export class StrategyRuntimeDispatcherService {
     if (normalizedControllerType === 'ammVolume') {
       return 'ammVolume';
     }
+    if (normalizedControllerType === 'liquidityProvision') {
+      return 'liquidityProvision';
+    }
     if (normalizedControllerType === 'volume') {
       return 'volume';
     }

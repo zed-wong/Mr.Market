@@ -10,6 +10,8 @@ import {
 import {
   EvmDexAdapter,
   ExactInputSingleParams,
+  PoolState,
+  PositionState,
   QuoteSingleParams,
 } from './evm-dex-adapter';
 
@@ -100,5 +102,29 @@ export class UniswapV3Adapter implements EvmDexAdapter {
       },
       p.transaction || {},
     );
+  }
+
+  async mint(): Promise<ethers.providers.TransactionResponse> {
+    throw new Error('UniswapV3 LP mint is not implemented yet');
+  }
+
+  async increaseLiquidity(): Promise<ethers.providers.TransactionResponse> {
+    throw new Error('UniswapV3 LP increaseLiquidity is not implemented yet');
+  }
+
+  async decreaseLiquidity(): Promise<ethers.providers.TransactionResponse> {
+    throw new Error('UniswapV3 LP decreaseLiquidity is not implemented yet');
+  }
+
+  async collect(): Promise<ethers.providers.TransactionResponse> {
+    throw new Error('UniswapV3 LP collect is not implemented yet');
+  }
+
+  async readPosition(): Promise<PositionState> {
+    throw new Error('UniswapV3 LP readPosition is not implemented yet');
+  }
+
+  async readPoolState(): Promise<PoolState> {
+    throw new Error('UniswapV3 LP readPoolState is not implemented yet');
   }
 }
